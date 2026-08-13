@@ -1,0 +1,222 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="源文件">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="头文件">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="资源文件">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Engine\Core\String\StringConv.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Platforms\Windows\DllMain.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Platforms\Windows\WindowsWindow.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="RuntimePCH.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Core\String\String.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Core\Logging\DefaultLogger.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Core\Logging\Log.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Core\Layer\LayerStack.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Core\GameEngine.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Core\Utils\CrashHandler.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Platforms\Windows\WindowsCrashHandler.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Core\Task\RenderThread.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Core\Task\TaskGraph.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Core\Utils\ThreadPool.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Core\Engine.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Core\OutputDevice.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Core\Utils\FileSystem.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Events\EventDispatcher.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Platforms\Windows\WindowsPlatformMisc.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Core\Utils\Resource.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Core\Window\Window.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Core\Utils\Time.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Core\Utils\PlatformMisc.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Core\Application.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Engine\Core\String\StringConv.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Core\Window\Window.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Core\Core.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Core\Platform.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Platforms\Windows\WindowsWindow.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="RuntimePCH.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Core\String\String.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Core\Events\WindowEvents.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Core\Logging\ILogger.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Core\Logging\DefaultLogger.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Core\Logging\Log.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Core\Layer\LayerStack.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Core\Layer\Layer.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Core\Engine.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Core\GameEngine.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Thirdparty\glad\include\glad\glad.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Core\Utils\CrashHandler.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Platforms\Windows\WindowsCrashHandler.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Core\Utils\ThreadPool.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Core\Math\Matrix4x4.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Core\OutputDevice.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Core\Utils\FileSystem.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Core\Utils\PlatformMisc.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Events\Event.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Events\EventDispatcher.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Events\InputEvents.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Events\WindowEvents.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Core\Utils\Resource.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Core\Object.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Core\Input.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Core\Utils\Time.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Core\Type.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Platforms\Windows\WindowsPlatformMisc.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Core\Task\TaskGraph.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Core\Task\GameThread.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Core\Task\RenderThread.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Core\Application.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Renderer\RHI\RenderPass.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Core\Task\AudioThread.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Renderer\IGraphics.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Core\Defines.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Platforms\D3D12\D3D12.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Platforms\Vulkan\VulkanTexture.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>
