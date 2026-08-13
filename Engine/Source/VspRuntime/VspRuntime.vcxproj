@@ -23,12 +23,17 @@
     <ClInclude Include="Engine\Core\Core.h" />
     <ClInclude Include="Engine\Core\Defines.h" />
     <ClInclude Include="Engine\Core\Platform.h" />
+    <ClInclude Include="Engine\Core\String\I18N.h" />
+    <ClInclude Include="Engine\Core\String\StringConv.h" />
+    <ClInclude Include="Engine\Core\String\VspString.h" />
     <ClInclude Include="Engine\Core\Type.h" />
     <ClInclude Include="RuntimePCH.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Engine\Core\Application.cpp" />
     <ClCompile Include="Engine\Core\Engine.cpp" />
+    <ClCompile Include="Engine\Core\String\StringConv.cpp" />
+    <ClCompile Include="Engine\Core\String\VspString.cpp" />
     <ClCompile Include="RuntimePCH.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
     </ClCompile>
