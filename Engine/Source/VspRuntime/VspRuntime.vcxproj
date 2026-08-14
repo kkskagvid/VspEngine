@@ -27,6 +27,7 @@
     <ClInclude Include="Engine\Core\String\StringConv.h" />
     <ClInclude Include="Engine\Core\String\VspString.h" />
     <ClInclude Include="Engine\Core\Type.h" />
+    <ClInclude Include="Engine\Core\Utils\ArrayList.h" />
     <ClInclude Include="RuntimePCH.h" />
   </ItemGroup>
   <ItemGroup>
