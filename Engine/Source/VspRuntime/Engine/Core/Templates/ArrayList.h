@@ -1,19 +1,28 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <type_traits>
 #include <utility>
 
 #include "Engine/Core/Core.h"
+#include "Engine/Core/Templates/Allocator.h"
 
 namespace Vsp
 {
 	// Dynamically resized array that stores its elements in one contiguous block of memory.
 	// Capacity grows geometrically (x1.5), so appending amortizes to constant time.
 	// No bounds checking is done by operator[]; At() checks the index range instead.
+	//
+	// All storage comes from the array's private Allocator. By default it is
+	// OS-layout (unbounded growth, stable element pointers); constructing the
+	// array with a block size switches it to the contiguous layout, where every
+	// buffer is carved out of that one reserved block. When the contiguous
+	// block is exhausted, the array migrates to a fresh, larger contiguous
+	// block (doubling each time); the migration fails only if reserving a new
+	// block itself fails, in which case DEBUG_BREAK() fires and the existing
+	// elements are kept.
 	template <typename Type>
 	class ArrayList
 	{
@@ -26,7 +35,19 @@ namespace Vsp
 		// Constructs an empty array, provided for convenient reset-style initialization.
 		ArrayList(std::nullptr_t) {}
 
+		// Contiguous-layout construction: reserves one block of
+		// nContiguousBlockSize bytes and serves every buffer from inside it.
+		// The buffers are placed in the allocator's large-object area, which is
+		// never compacted, so element pointers stay stable between migrations.
+		// When the block is exhausted the array migrates to a fresh, larger
+		// contiguous block (see the class comment).
+		explicit ArrayList(SizeType nContiguousBlockSize)
+			: m_Allocator(nContiguousBlockSize, 0)
+		{
+		}
+
 		ArrayList(const ArrayList& Other)
+			: m_Allocator(Other.m_Allocator.GetBlockSize(), Other.m_Allocator.GetSmallAllocationLimit())
 		{
 			Reserve(Other.m_Size);
 			for (SizeType Index = 0; Index < Other.m_Size; ++Index)
@@ -40,6 +61,7 @@ namespace Vsp
 			: m_pData(Other.m_pData)
 			, m_Capacity(Other.m_Capacity)
 			, m_Size(Other.m_Size)
+			, m_Allocator(std::move(Other.m_Allocator))
 		{
 			Other.m_pData = nullptr;
 			Other.m_Capacity = 0;
@@ -77,6 +99,7 @@ namespace Vsp
 				m_pData = Other.m_pData;
 				m_Capacity = Other.m_Capacity;
 				m_Size = Other.m_Size;
+				m_Allocator = std::move(Other.m_Allocator);
 				Other.m_pData = nullptr;
 				Other.m_Capacity = 0;
 				Other.m_Size = 0;
@@ -93,10 +116,17 @@ namespace Vsp
 		}
 
 		// -------- Add --------
-		// Appends a copy of Value to the end of the array and returns it.
+		// Appends a copy of Value to the end of the array and returns it. When
+		// the array cannot grow (migration to a new block failed),
+		// DEBUG_BREAK() fires and the returned reference falls back to the
+		// first element; the array itself is left unchanged.
 		Type& Add(const Type& Value)
 		{
-			EnsureCapacityForAdd();
+			if (!EnsureCapacityForAdd())
+			{
+				DEBUG_BREAK();
+				return m_pData[0];
+			}
 			Type* pElement = std::construct_at(m_pData + m_Size, Value);
 			++m_Size;
 			return *pElement;
@@ -105,7 +135,11 @@ namespace Vsp
 		// Appends Value to the end of the array, moving it, and returns it.
 		Type& Add(Type&& Value)
 		{
-			EnsureCapacityForAdd();
+			if (!EnsureCapacityForAdd())
+			{
+				DEBUG_BREAK();
+				return m_pData[0];
+			}
 			Type* pElement = std::construct_at(m_pData + m_Size, std::move(Value));
 			++m_Size;
 			return *pElement;
@@ -115,7 +149,11 @@ namespace Vsp
 		template <typename... ArgumentTypes>
 		Type& Emplace(ArgumentTypes&&... Arguments)
 		{
-			EnsureCapacityForAdd();
+			if (!EnsureCapacityForAdd())
+			{
+				DEBUG_BREAK();
+				return m_pData[0];
+			}
 			Type* pElement = std::construct_at(m_pData + m_Size, std::forward<ArgumentTypes>(Arguments)...);
 			++m_Size;
 			return *pElement;
@@ -190,6 +228,12 @@ namespace Vsp
 
 		SizeType GetCapacity() const { return m_Capacity; }
 
+		// Number of bytes reserved by the underlying allocator: 0 when it is
+		// OS-layout (the default), the current block size when the array was
+		// constructed with the contiguous layout. The value grows as the array
+		// migrates to larger blocks.
+		SizeType GetAllocatorBlockSize() const { return m_Allocator.GetBlockSize(); }
+
 		bool IsEmpty() const { return m_Size == 0; }
 
 		Type* GetData() { return m_pData; }
@@ -210,12 +254,14 @@ namespace Vsp
 
 	private:
 		// -------- Growth --------
-		void EnsureCapacityForAdd()
+		// Grows when needed and reports whether at least one more element fits.
+		bool EnsureCapacityForAdd()
 		{
 			if (m_Size >= m_Capacity)
 			{
 				GrowToCapacity(CalculateGrowCapacity(m_Size + 1));
 			}
+			return m_Size < m_Capacity;
 		}
 
 		// Geometric growth (x1.5, plus a small constant so tiny arrays grow to a usable size
@@ -228,41 +274,107 @@ namespace Vsp
 
 		void GrowToCapacity(SizeType NewCapacity)
 		{
-			if constexpr (std::is_trivially_copyable_v<Type>)
+			// The allocator owns the buffer and offers no in-place realloc, so a
+			// growing array always relocates: allocate a fresh block, move the
+			// elements over, then hand the old block back to the allocator.
+			SizeType nRequiredByteCount = NewCapacity * sizeof(Type);
+			Type* pNewData = static_cast<Type*>(m_Allocator.Allocate(nRequiredByteCount));
+			Allocator NewAllocator;   // Only used when migrating to a new block.
+			bool bMigratedToNewBlock = false;
+			if (pNewData == nullptr)
 			{
-				// Trivially copyable elements are relocated byte-wise; realloc extends the block
-				// in place whenever possible, skipping the copy entirely.
-				Type* pNewData = static_cast<Type*>(realloc(m_pData, NewCapacity * sizeof(Type)));
-				if (pNewData == nullptr)
+				// The contiguous block is exhausted: migrate to a fresh, larger
+				// contiguous block. OS layout cannot run out of blocks, so this
+				// only ever happens in contiguous mode.
+				if (!TryCreateLargerContiguousBlock(nRequiredByteCount, NewAllocator, pNewData))
 				{
 					DEBUG_BREAK();
 					return;
 				}
-				m_pData = pNewData;
+				bMigratedToNewBlock = true;
+			}
+
+			RelocateElementsTo(pNewData);
+
+			if (bMigratedToNewBlock)
+			{
+				// Adopt the new block. Releasing the old allocator frees the old
+				// block wholesale, so no per-buffer Free() is needed.
+				m_Allocator = std::move(NewAllocator);
+			}
+			else if (m_pData != nullptr)
+			{
+				m_Allocator.Free(m_pData);
+			}
+			m_pData = pNewData;
+			m_Capacity = NewCapacity;
+		}
+
+		// Moves the live elements from m_pData to pNewData, destroying the
+		// originals for non-trivial types.
+		void RelocateElementsTo(Type* pNewData)
+		{
+			if constexpr (std::is_trivially_copyable_v<Type>)
+			{
+				// Trivially copyable elements relocate byte-wise; no destruction required.
+				if (m_Size > 0)
+				{
+					memcpy(pNewData, m_pData, m_Size * sizeof(Type));
+				}
 			}
 			else
 			{
-				Type* pNewData = static_cast<Type*>(malloc(NewCapacity * sizeof(Type)));
-				if (pNewData == nullptr)
-				{
-					DEBUG_BREAK();
-					return;
-				}
 				for (SizeType Index = 0; Index < m_Size; ++Index)
 				{
 					std::construct_at(pNewData + Index, std::move(m_pData[Index]));
 					std::destroy_at(m_pData + Index);
 				}
-				free(m_pData);
-				m_pData = pNewData;
 			}
-			m_Capacity = NewCapacity;
+		}
+
+		// Reserves a fresh contiguous block - at least twice the current one
+		// and at least twice the requested bytes - and allocates OutNewData
+		// from it. Returns false when migration is impossible (OS layout) or
+		// reserving the new block itself failed.
+		bool TryCreateLargerContiguousBlock(SizeType nRequiredByteCount, Allocator& OutNewAllocator, Type*& OutNewData)
+		{
+			SizeType nCurrentBlockSize = m_Allocator.GetBlockSize();
+			if (nCurrentBlockSize == 0)
+			{
+				return false;   // OS layout cannot run out of blocks.
+			}
+
+			SizeType nNewBlockSize = nCurrentBlockSize * 2;
+			SizeType nMinimumBlockSize = nRequiredByteCount * 2;
+			if (nNewBlockSize < nMinimumBlockSize)
+			{
+				nNewBlockSize = nMinimumBlockSize;
+			}
+
+			Allocator NewAllocator(nNewBlockSize, 0);
+			if (!NewAllocator.IsContiguousLayoutMode())
+			{
+				DEBUG_BREAK();   // Reserving the new block itself failed.
+				return false;
+			}
+
+			OutNewData = static_cast<Type*>(NewAllocator.Allocate(nRequiredByteCount));
+			if (OutNewData == nullptr)
+			{
+				DEBUG_BREAK();
+				return false;
+			}
+			OutNewAllocator = std::move(NewAllocator);
+			return true;
 		}
 
 		void FreeData()
 		{
-			free(m_pData);
-			m_pData = nullptr;
+			if (m_pData != nullptr)
+			{
+				m_Allocator.Free(m_pData);
+				m_pData = nullptr;
+			}
 			m_Capacity = 0;
 		}
 
@@ -277,6 +389,11 @@ namespace Vsp
 		}
 
 	private:
+		// Every storage block is requested from and returned to this allocator.
+		// Default construction uses the OS layout; constructing with a block
+		// size switches to the contiguous layout (see the constructors).
+		Allocator m_Allocator;
+
 		Type* m_pData = nullptr;
 		SizeType m_Size = 0;
 		SizeType m_Capacity = 0;
