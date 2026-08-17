@@ -22,6 +22,8 @@ namespace Vsp
 	public:
 		Application(const ApplicationArguments& args);
 		bool IsRunning() { return m_IsRunning; }
+
+		void Update();
 		void OnEvent(Event& e);
 
 

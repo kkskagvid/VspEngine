@@ -2,20 +2,531 @@
 
 #include "Engine/Core/Templates/Allocator.h"
 
+#include <malloc.h>
+#include <utility>
+
+namespace
+{
+	// Size classes served by SizeClassAllocator, in ascending order.
+	constexpr size_t k_nSizeClassTable[Vsp::SizeClassAllocator::k_nSizeClassCount] =
+	{
+		16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512, 768, 1024
+	};
+
+	// Growth policy for the linear allocator's block chain.
+	constexpr size_t k_nMinimumLinearBlockSize = 4096;
+
+	// Growth policy for pool slabs.
+	constexpr size_t k_nMinimumSlabSize = 16 * 1024;
+	constexpr size_t k_nDefaultSlabSlotCount = 128;
+}
+
 namespace Vsp
 {
 	// =========================================================================
-	// Construction
+	// PoolAllocator
 	// =========================================================================
 
-	Allocator::Allocator(SizeType nContiguousBlockSize, SizeType nSmallAllocationLimit)
-		: m_nSmallAllocationLimit(nSmallAllocationLimit)
+	PoolAllocator::PoolAllocator() {}
+
+	PoolAllocator::~PoolAllocator()
 	{
-		InitializeContiguousBlock(nContiguousBlockSize);
+		ReleaseSlabs();
+	}
+
+	PoolAllocator::PoolAllocator(PoolAllocator&& Other)
+	{
+		MoveFrom(Other);
+	}
+
+	PoolAllocator& PoolAllocator::operator=(PoolAllocator&& Other)
+	{
+		if (this != &Other)
+		{
+			ReleaseSlabs();
+			MoveFrom(Other);
+		}
+		return *this;
+	}
+
+	void PoolAllocator::Initialize(SizeType nSlotPayloadSize)
+	{
+		m_nSlotPayloadSize = nSlotPayloadSize;
+		m_nSlotSize = (AllocatorDetail::k_nAllocationHeaderSize + nSlotPayloadSize + AllocatorDetail::k_nSlotAlignment - 1) &
+			~(AllocatorDetail::k_nSlotAlignment - 1);
+	}
+
+	void* PoolAllocator::Allocate()
+	{
+		if (m_nSlotSize == 0)
+		{
+			DEBUG_BREAK();   // Pool was never initialized.
+			return nullptr;
+		}
+
+		if (m_pFreeListHead == nullptr)
+		{
+			GrowSlab();
+		}
+		if (m_pFreeListHead == nullptr)
+		{
+			DEBUG_BREAK();
+			return nullptr;
+		}
+
+		FreeSlot* pSlot = m_pFreeListHead;
+		m_pFreeListHead = pSlot->pNextFreeSlot;
+
+		char* pSlotBytes = reinterpret_cast<char*>(pSlot);
+		AllocatorDetail::AllocationHeader* pHeader = reinterpret_cast<AllocatorDetail::AllocationHeader*>(pSlotBytes);
+		pHeader->uPayloadSize = m_nSlotPayloadSize;
+		pHeader->eBackendId = static_cast<uint8_t>(AllocatorDetail::BackendId::SizeClass);
+		pHeader->bIsFreed = 0;
+
+		m_nLiveCount++;
+		return pSlotBytes + AllocatorDetail::k_nAllocationHeaderSize;
+	}
+
+	void PoolAllocator::Free(void* pPayload)
+	{
+		FreeSlot* pSlot = reinterpret_cast<FreeSlot*>(static_cast<char*>(pPayload) - AllocatorDetail::k_nAllocationHeaderSize);
+		pSlot->pNextFreeSlot = m_pFreeListHead;
+		m_pFreeListHead = pSlot;
+		if (m_nLiveCount > 0)
+		{
+			m_nLiveCount--;
+		}
+	}
+
+	void PoolAllocator::Reset()
+	{
+		ReleaseSlabs();
+		m_pFreeListHead = nullptr;
+		m_nLiveCount = 0;
+	}
+
+	PoolAllocator::SizeType PoolAllocator::GetLiveCount() const
+	{
+		return m_nLiveCount;
+	}
+
+	PoolAllocator::SizeType PoolAllocator::GetSlotPayloadSize() const
+	{
+		return m_nSlotPayloadSize;
+	}
+
+	void PoolAllocator::GrowSlab()
+	{
+		// One contiguous slab carved into m_nSlotSize slots.
+		SizeType nSlotCount = k_nDefaultSlabSlotCount;
+		SizeType nSlabSize = sizeof(SlabHeader) + nSlotCount * m_nSlotSize;
+		if (nSlabSize < k_nMinimumSlabSize)
+		{
+			nSlotCount = (k_nMinimumSlabSize - sizeof(SlabHeader) + m_nSlotSize - 1) / m_nSlotSize;
+			nSlabSize = sizeof(SlabHeader) + nSlotCount * m_nSlotSize;
+		}
+
+		SlabHeader* pSlab = static_cast<SlabHeader*>(_aligned_malloc(nSlabSize, AllocatorDetail::k_nSlotAlignment));
+		if (pSlab == nullptr)
+		{
+			DEBUG_BREAK();
+			return;
+		}
+
+		pSlab->pNextSlab = m_pFirstSlab;
+		pSlab->nSlabSize = nSlabSize;
+		m_pFirstSlab = pSlab;
+
+		// Chain every slot into the free list. The link lives inside the slot's
+		// header zone, which is free while the slot is unused.
+		char* pSlot = reinterpret_cast<char*>(pSlab) + sizeof(SlabHeader);
+		char* pSlabEnd = reinterpret_cast<char*>(pSlab) + nSlabSize;
+		while (pSlot + m_nSlotSize <= pSlabEnd)
+		{
+			FreeSlot* pFreeSlot = reinterpret_cast<FreeSlot*>(pSlot);
+			pFreeSlot->pNextFreeSlot = m_pFreeListHead;
+			m_pFreeListHead = pFreeSlot;
+			pSlot += m_nSlotSize;
+		}
+	}
+
+	void PoolAllocator::ReleaseSlabs()
+	{
+		SlabHeader* pSlab = m_pFirstSlab;
+		while (pSlab != nullptr)
+		{
+			SlabHeader* pNextSlab = pSlab->pNextSlab;
+			_aligned_free(pSlab);
+			pSlab = pNextSlab;
+		}
+		m_pFirstSlab = nullptr;
+	}
+
+	void PoolAllocator::MoveFrom(PoolAllocator& Other)
+	{
+		m_pFreeListHead = Other.m_pFreeListHead;
+		m_pFirstSlab = Other.m_pFirstSlab;
+		m_nSlotPayloadSize = Other.m_nSlotPayloadSize;
+		m_nSlotSize = Other.m_nSlotSize;
+		m_nLiveCount = Other.m_nLiveCount;
+
+		Other.m_pFreeListHead = nullptr;
+		Other.m_pFirstSlab = nullptr;
+		Other.m_nLiveCount = 0;
+	}
+
+	// =========================================================================
+	// SizeClassAllocator
+	// =========================================================================
+
+	SizeClassAllocator::SizeClassAllocator()
+	{
+		for (SizeType Index = 0; Index < k_nSizeClassCount; ++Index)
+		{
+			m_Pools[Index].Initialize(k_nSizeClassTable[Index]);
+		}
+	}
+
+	void* SizeClassAllocator::Allocate(SizeType nSizeInBytes)
+	{
+		return m_Pools[GetClassIndex(GetSizeClass(nSizeInBytes))].Allocate();
+	}
+
+	void SizeClassAllocator::Free(void* pPayload)
+	{
+		const AllocatorDetail::AllocationHeader* pHeader =
+			reinterpret_cast<const AllocatorDetail::AllocationHeader*>(static_cast<const char*>(pPayload) - AllocatorDetail::k_nAllocationHeaderSize);
+		m_Pools[GetClassIndex(GetSizeClass(static_cast<SizeType>(pHeader->uPayloadSize)))].Free(pPayload);
+	}
+
+	void SizeClassAllocator::Reset()
+	{
+		for (SizeType Index = 0; Index < k_nSizeClassCount; ++Index)
+		{
+			m_Pools[Index].Reset();
+		}
+	}
+
+	SizeClassAllocator::SizeType SizeClassAllocator::GetLiveCount() const
+	{
+		SizeType nLiveCount = 0;
+		for (SizeType Index = 0; Index < k_nSizeClassCount; ++Index)
+		{
+			nLiveCount += m_Pools[Index].GetLiveCount();
+		}
+		return nLiveCount;
+	}
+
+	SizeClassAllocator::SizeType SizeClassAllocator::GetSizeClass(SizeType nSizeInBytes)
+	{
+		for (SizeType Index = 0; Index < k_nSizeClassCount; ++Index)
+		{
+			if (nSizeInBytes <= k_nSizeClassTable[Index])
+			{
+				return k_nSizeClassTable[Index];
+			}
+		}
+		return k_nSizeClassTable[k_nSizeClassCount - 1];
+	}
+
+	SizeClassAllocator::SizeType SizeClassAllocator::GetClassIndex(SizeType nSizeClass)
+	{
+		for (SizeType Index = 0; Index < k_nSizeClassCount; ++Index)
+		{
+			if (nSizeClass == k_nSizeClassTable[Index])
+			{
+				return Index;
+			}
+		}
+		DEBUG_BREAK();
+		return k_nSizeClassCount - 1;
+	}
+
+	// =========================================================================
+	// LinearAllocator
+	// =========================================================================
+
+	LinearAllocator::LinearAllocator() {}
+
+	LinearAllocator::~LinearAllocator()
+	{
+		ReleaseBlocks();
+	}
+
+	LinearAllocator::LinearAllocator(LinearAllocator&& Other)
+	{
+		MoveFrom(Other);
+	}
+
+	LinearAllocator& LinearAllocator::operator=(LinearAllocator&& Other)
+	{
+		if (this != &Other)
+		{
+			ReleaseBlocks();
+			MoveFrom(Other);
+		}
+		return *this;
+	}
+
+	void LinearAllocator::SetInitialBlockSize(SizeType nInitialBlockSize)
+	{
+		m_nInitialBlockSize = nInitialBlockSize;
+	}
+
+	void* LinearAllocator::Allocate(SizeType nSizeInBytes)
+	{
+		// Slot: header zone (16) + payload + footer (8), rounded up so every
+		// slot stays 16-byte aligned.
+		SizeType nSlotSize = (AllocatorDetail::k_nAllocationHeaderSize + AllocatorDetail::k_nSlotFooterSize + nSizeInBytes +
+			AllocatorDetail::k_nSlotAlignment - 1) & ~(AllocatorDetail::k_nSlotAlignment - 1);
+
+		if (m_pCurrentBlock == nullptr || m_pFrontier + nSlotSize > m_pCurrentBlockEnd)
+		{
+			// The current block is full: grow a new, larger contiguous block.
+			GrowBlock(nSlotSize);
+			if (m_pCurrentBlock == nullptr || m_pFrontier + nSlotSize > m_pCurrentBlockEnd)
+			{
+				DEBUG_BREAK();
+				return nullptr;
+			}
+		}
+
+		char* pSlotStart = m_pFrontier;
+		AllocatorDetail::AllocationHeader* pHeader = reinterpret_cast<AllocatorDetail::AllocationHeader*>(pSlotStart);
+		pHeader->uPayloadSize = nSizeInBytes;
+		pHeader->eBackendId = static_cast<uint8_t>(AllocatorDetail::BackendId::Linear);
+		pHeader->bIsFreed = 0;
+		*reinterpret_cast<SizeType*>(pSlotStart + nSlotSize - AllocatorDetail::k_nSlotFooterSize) = nSlotSize;
+
+		m_pFrontier = pSlotStart + nSlotSize;
+		m_pCurrentBlock->pFrontier = m_pFrontier;
+		m_nLiveCount++;
+		return pSlotStart + AllocatorDetail::k_nAllocationHeaderSize;
+	}
+
+	void LinearAllocator::Free(void* pPayload)
+	{
+		BlockHeader* pBlock = FindBlock(pPayload);
+		if (pBlock == nullptr)
+		{
+			DEBUG_BREAK();
+			return;
+		}
+
+		AllocatorDetail::AllocationHeader* pHeader =
+			reinterpret_cast<AllocatorDetail::AllocationHeader*>(static_cast<char*>(pPayload) - AllocatorDetail::k_nAllocationHeaderSize);
+		if (pHeader->bIsFreed != 0)
+		{
+			DEBUG_BREAK();   // Double free.
+			return;
+		}
+
+		pHeader->bIsFreed = 1;
+		if (m_nLiveCount > 0)
+		{
+			m_nLiveCount--;
+		}
+
+		// Move the block's frontier back over freed slots at the top; the next
+		// allocation reuses and overwrites the reclaimed memory.
+		ReclaimBlockFrontier(pBlock);
+	}
+
+	void LinearAllocator::Reset()
+	{
+		ReleaseBlocks();
+		m_nLiveCount = 0;
+	}
+
+	bool LinearAllocator::ContainsAddress(const void* pAddress) const
+	{
+		return FindBlock(pAddress) != nullptr;
+	}
+
+	LinearAllocator::SizeType LinearAllocator::GetTotalBlockByteCount() const
+	{
+		SizeType nTotalByteCount = 0;
+		for (const BlockHeader* pBlock = m_pFirstBlock; pBlock != nullptr; pBlock = pBlock->pNextBlock)
+		{
+			nTotalByteCount += pBlock->nBlockSize;
+		}
+		return nTotalByteCount;
+	}
+
+	LinearAllocator::SizeType LinearAllocator::GetLiveCount() const
+	{
+		return m_nLiveCount;
+	}
+
+	void LinearAllocator::GrowBlock(SizeType nRequiredSlotSize)
+	{
+		SizeType nNewBlockSize = m_nLastBlockSize * 2;
+		SizeType nMinimumBlockSize = m_nInitialBlockSize > nRequiredSlotSize ? m_nInitialBlockSize : nRequiredSlotSize;
+		if (nMinimumBlockSize < k_nMinimumLinearBlockSize)
+		{
+			nMinimumBlockSize = k_nMinimumLinearBlockSize;
+		}
+		if (nNewBlockSize < nMinimumBlockSize)
+		{
+			nNewBlockSize = nMinimumBlockSize;
+		}
+
+		BlockHeader* pBlock = static_cast<BlockHeader*>(_aligned_malloc(sizeof(BlockHeader) + nNewBlockSize, AllocatorDetail::k_nSlotAlignment));
+		if (pBlock == nullptr)
+		{
+			DEBUG_BREAK();
+			return;
+		}
+
+		pBlock->pNextBlock = m_pFirstBlock;
+		pBlock->nBlockSize = nNewBlockSize;
+		m_pFirstBlock = pBlock;
+		m_pCurrentBlock = pBlock;
+		m_pCurrentBlockStart = reinterpret_cast<char*>(pBlock) + sizeof(BlockHeader);
+		m_pCurrentBlockEnd = m_pCurrentBlockStart + nNewBlockSize;
+		m_pFrontier = m_pCurrentBlockStart;
+		pBlock->pFrontier = m_pFrontier;
+		m_nLastBlockSize = nNewBlockSize;
+	}
+
+	void LinearAllocator::ReclaimBlockFrontier(BlockHeader* pBlock)
+	{
+		char* pBlockStart = reinterpret_cast<char*>(pBlock) + sizeof(BlockHeader);
+		while (pBlock->pFrontier > pBlockStart)
+		{
+			SizeType nSlotSize = *reinterpret_cast<SizeType*>(pBlock->pFrontier - AllocatorDetail::k_nSlotFooterSize);
+			if (nSlotSize < AllocatorDetail::k_nMinimumSlotSize ||
+				nSlotSize > static_cast<SizeType>(pBlock->pFrontier - pBlockStart))
+			{
+				DEBUG_BREAK();
+				break;
+			}
+			const AllocatorDetail::AllocationHeader* pHeader =
+				reinterpret_cast<const AllocatorDetail::AllocationHeader*>(pBlock->pFrontier - nSlotSize);
+			if (pHeader->bIsFreed == 0)
+			{
+				break;
+			}
+			pBlock->pFrontier -= nSlotSize;
+		}
+
+		if (pBlock == m_pCurrentBlock)
+		{
+			m_pFrontier = pBlock->pFrontier;
+		}
+	}
+
+	LinearAllocator::BlockHeader* LinearAllocator::FindBlock(const void* pPayload) const
+	{
+		uintptr_t uPayloadAddress = reinterpret_cast<uintptr_t>(pPayload);
+		for (BlockHeader* pBlock = m_pFirstBlock; pBlock != nullptr; pBlock = pBlock->pNextBlock)
+		{
+			uintptr_t uBlockStart = reinterpret_cast<uintptr_t>(pBlock) + sizeof(BlockHeader);
+			uintptr_t uBlockEnd = uBlockStart + pBlock->nBlockSize;
+			if (uPayloadAddress >= uBlockStart && uPayloadAddress < uBlockEnd)
+			{
+				return pBlock;
+			}
+		}
+		return nullptr;
+	}
+
+	void LinearAllocator::ReleaseBlocks()
+	{
+		BlockHeader* pBlock = m_pFirstBlock;
+		while (pBlock != nullptr)
+		{
+			BlockHeader* pNextBlock = pBlock->pNextBlock;
+			_aligned_free(pBlock);
+			pBlock = pNextBlock;
+		}
+		m_pFirstBlock = nullptr;
+		m_pCurrentBlock = nullptr;
+		m_pCurrentBlockStart = nullptr;
+		m_pCurrentBlockEnd = nullptr;
+		m_pFrontier = nullptr;
+		m_nLastBlockSize = 0;
+	}
+
+	void LinearAllocator::MoveFrom(LinearAllocator& Other)
+	{
+		m_pFirstBlock = Other.m_pFirstBlock;
+		m_pCurrentBlock = Other.m_pCurrentBlock;
+		m_pCurrentBlockStart = Other.m_pCurrentBlockStart;
+		m_pCurrentBlockEnd = Other.m_pCurrentBlockEnd;
+		m_pFrontier = Other.m_pFrontier;
+		m_nInitialBlockSize = Other.m_nInitialBlockSize;
+		m_nLastBlockSize = Other.m_nLastBlockSize;
+		m_nLiveCount = Other.m_nLiveCount;
+
+		Other.m_pFirstBlock = nullptr;
+		Other.m_pCurrentBlock = nullptr;
+		Other.m_pCurrentBlockStart = nullptr;
+		Other.m_pCurrentBlockEnd = nullptr;
+		Other.m_pFrontier = nullptr;
+		Other.m_nLastBlockSize = 0;
+		Other.m_nLiveCount = 0;
+	}
+
+	// =========================================================================
+	// SystemAllocator
+	// =========================================================================
+
+	void* SystemAllocator::Allocate(SizeType nSizeInBytes)
+	{
+		SizeType nTotalByteCount = AllocatorDetail::k_nAllocationHeaderSize + nSizeInBytes;
+		char* pBase = static_cast<char*>(_aligned_malloc(nTotalByteCount, AllocatorDetail::k_nAllocationHeaderSize));
+		if (pBase == nullptr)
+		{
+			DEBUG_BREAK();
+			return nullptr;
+		}
+
+		AllocatorDetail::AllocationHeader* pHeader = reinterpret_cast<AllocatorDetail::AllocationHeader*>(pBase);
+		pHeader->uPayloadSize = nSizeInBytes;
+		pHeader->eBackendId = static_cast<uint8_t>(AllocatorDetail::BackendId::System);
+		pHeader->bIsFreed = 0;
+
+		m_nLiveCount++;
+		return pBase + AllocatorDetail::k_nAllocationHeaderSize;
+	}
+
+	void SystemAllocator::Free(void* pPayload)
+	{
+		_aligned_free(static_cast<char*>(pPayload) - AllocatorDetail::k_nAllocationHeaderSize);
+		if (m_nLiveCount > 0)
+		{
+			m_nLiveCount--;
+		}
+	}
+
+	SystemAllocator::SizeType SystemAllocator::GetLiveCount() const
+	{
+		return m_nLiveCount;
+	}
+
+	// =========================================================================
+	// Allocator
+	// =========================================================================
+
+	Allocator::Allocator(SizeType nSizeClassLimit, SizeType nLinearLimit)
+		: m_nSizeClassLimit(nSizeClassLimit)
+		, m_nLinearLimit(nLinearLimit)
+	{
+	}
+
+	Allocator Allocator::CreateContiguous(SizeType nContiguousBlockSize)
+	{
+		Allocator ContiguousAllocator;
+		ContiguousAllocator.m_bIsContiguousLayoutMode = true;
+		ContiguousAllocator.m_LinearAllocator.SetInitialBlockSize(nContiguousBlockSize);
+		return ContiguousAllocator;
 	}
 
 	Allocator::Allocator(Allocator&& Other)
 	{
+		m_SizeClassAllocator = std::move(Other.m_SizeClassAllocator);
+		m_LinearAllocator = std::move(Other.m_LinearAllocator);
 		MoveFrom(Other);
 	}
 
@@ -23,27 +534,16 @@ namespace Vsp
 	{
 		if (this != &Other)
 		{
-			ReleaseContiguousBlock();
+			m_SizeClassAllocator = std::move(Other.m_SizeClassAllocator);
+			m_LinearAllocator = std::move(Other.m_LinearAllocator);
 			MoveFrom(Other);
 		}
 		return *this;
 	}
 
-	Allocator::~Allocator()
-	{
-		ReleaseContiguousBlock();
-	}
-
-	// =========================================================================
-	// Allocation
-	// =========================================================================
+	Allocator::~Allocator() {}
 
 	void* Allocator::Allocate(SizeType nSizeInBytes)
-	{
-		return AllocateAligned(nSizeInBytes, k_nMaximumAlignment);
-	}
-
-	void* Allocator::AllocateAligned(SizeType nSizeInBytes, SizeType nAlignment)
 	{
 		if (nSizeInBytes == 0)
 		{
@@ -51,6 +551,26 @@ namespace Vsp
 			nSizeInBytes = 1;
 		}
 
+		// Contiguous mode: the linear block chain serves everything.
+		if (m_bIsContiguousLayoutMode)
+		{
+			return m_LinearAllocator.Allocate(nSizeInBytes);
+		}
+
+		// Hybrid mode: pick the backend that fits the request best.
+		if (nSizeInBytes <= m_nSizeClassLimit)
+		{
+			return m_SizeClassAllocator.Allocate(nSizeInBytes);
+		}
+		if (nSizeInBytes <= m_nLinearLimit)
+		{
+			return m_LinearAllocator.Allocate(nSizeInBytes);
+		}
+		return m_SystemAllocator.Allocate(nSizeInBytes);
+	}
+
+	void* Allocator::AllocateAligned(SizeType nSizeInBytes, SizeType nAlignment)
+	{
 		if (nAlignment == 0 || nAlignment > k_nMaximumAlignment || !IsPowerOfTwo(nAlignment))
 		{
 			// Unsupported alignment: clamp to the maximum the allocator can give.
@@ -58,11 +578,9 @@ namespace Vsp
 			nAlignment = k_nMaximumAlignment;
 		}
 
-		if (IsContiguousLayoutMode())
-		{
-			return AllocateFromContiguousBlock(nSizeInBytes, IsSmallAllocation(nSizeInBytes));
-		}
-		return AllocateFromOs(nSizeInBytes, nAlignment);
+		// Every backend hands out 16-byte aligned payloads, which satisfies any
+		// alignment up to k_nMaximumAlignment.
+		return Allocate(nSizeInBytes);
 	}
 
 	void Allocator::Free(void* pMemory)
@@ -73,632 +591,92 @@ namespace Vsp
 			return;
 		}
 
-		if (IsContiguousLayoutMode())
+		// The header in front of the payload names the owning backend, so the
+		// free path is a single O(1) dispatch.
+		const AllocatorDetail::AllocationHeader* pHeader = reinterpret_cast<const AllocatorDetail::AllocationHeader*>(
+			static_cast<const char*>(pMemory) - AllocatorDetail::k_nAllocationHeaderSize);
+		switch (static_cast<AllocatorDetail::BackendId>(pHeader->eBackendId))
 		{
-			FreeFromContiguousBlock(pMemory);
-		}
-		else
-		{
-			FreeFromOs(pMemory);
-		}
-	}
-
-	void Allocator::MarkReachable(void* pMemory)
-	{
-		if (pMemory == nullptr || !IsContiguousLayoutMode() || !ContainsAddress(pMemory))
-		{
+		case AllocatorDetail::BackendId::SizeClass:
+			m_SizeClassAllocator.Free(pMemory);
+			break;
+		case AllocatorDetail::BackendId::Linear:
+			m_LinearAllocator.Free(pMemory);
+			break;
+		case AllocatorDetail::BackendId::System:
+			m_SystemAllocator.Free(pMemory);
+			break;
+		default:
 			DEBUG_BREAK();
-			return;
+			break;
 		}
-
-		char* pPayload = static_cast<char*>(pMemory);
-
-		// The side follows from the address, exactly like in Free().
-		bool bIsSmallArea;
-		if (pPayload < m_pSmallFrontier)
-		{
-			bIsSmallArea = true;
-		}
-		else if (pPayload >= m_pLargeFrontier)
-		{
-			bIsSmallArea = false;
-		}
-		else
-		{
-			DEBUG_BREAK();   // Address inside the free gap between the areas.
-			return;
-		}
-
-		char* pSlotStart = pPayload - (bIsSmallArea ? k_nHeaderZoneSize : k_nLargePayloadOffset);
-		AllocationHeader* pHeader = reinterpret_cast<AllocationHeader*>(pSlotStart);
-
-		// Sanity: the header must describe a plausible slot inside the active
-		// region of its area, and the footer must agree.
-		if (pHeader->bIsSmallAllocation != (bIsSmallArea ? 1 : 0) ||
-			pHeader->nSlotSize < k_nMinimumSlotSize ||
-			(pHeader->nSlotSize & (k_nSlotAlignment - 1)) != 0 ||
-			(bIsSmallArea
-				? pSlotStart + pHeader->nSlotSize > m_pSmallFrontier ||
-				*reinterpret_cast<SizeType*>(pSlotStart + pHeader->nSlotSize - k_nSlotFooterSize) != pHeader->nSlotSize
-				: pSlotStart < m_pLargeFrontier || pSlotStart + pHeader->nSlotSize > m_pBlockEnd ||
-				*reinterpret_cast<SizeType*>(pSlotStart + k_nHeaderZoneSize) != pHeader->nSlotSize))
-		{
-			DEBUG_BREAK();
-			return;
-		}
-
-		pHeader->bIsReachable = 1;
-	}
-
-	void Allocator::ClearReachabilityMarks()
-	{
-		if (!IsContiguousLayoutMode())
-		{
-			DEBUG_BREAK();
-			return;
-		}
-
-		// Generational area.
-		char* pCursor = m_pGen2Start;
-		char* pAreaEnd = m_pSmallFrontier;
-		while (pCursor < pAreaEnd)
-		{
-			AllocationHeader* pHeader = reinterpret_cast<AllocationHeader*>(pCursor);
-			pHeader->bIsReachable = 0;
-			pCursor += pHeader->nSlotSize;
-		}
-
-		// Large-object area.
-		pCursor = m_pLargeFrontier;
-		pAreaEnd = m_pBlockEnd;
-		while (pCursor < pAreaEnd)
-		{
-			AllocationHeader* pHeader = reinterpret_cast<AllocationHeader*>(pCursor);
-			pHeader->bIsReachable = 0;
-			pCursor += pHeader->nSlotSize;
-		}
-	}
-
-	void Allocator::CollectGeneration(uint8_t uGeneration)
-	{
-		if (!IsContiguousLayoutMode())
-		{
-			DEBUG_BREAK();
-			return;
-		}
-		if (uGeneration > 2)
-		{
-			DEBUG_BREAK();
-			uGeneration = 2;
-		}
-
-		// Gen0 is always collected; surviving slots are compacted to the low
-		// end of the gen0 range and promoted into gen1 by moving the gen0
-		// watermark above them.
-		char* pNewGen0Start = SweepAndCompactRange(m_pGen0Start, m_pSmallFrontier);
-		m_pGen0Start = pNewGen0Start;
-		m_pSmallFrontier = pNewGen0Start;
-
-		// Collecting gen1 (or gen2) also compacts gen1; its survivors become gen2.
-		if (uGeneration >= 1)
-		{
-			char* pNewGen1Start = SweepAndCompactRange(m_pGen1Start, m_pGen0Start);
-			m_pGen1Start = pNewGen1Start;
-			m_pGen0Start = pNewGen1Start;
-			m_pSmallFrontier = pNewGen1Start;
-		}
-
-		// A gen2 collection compacts gen2; survivors stay gen2 at the block base.
-		if (uGeneration >= 2)
-		{
-			char* pNewGen2End = SweepAndCompactRange(m_pGen2Start, m_pGen1Start);
-			m_pGen1Start = pNewGen2End;
-			m_pGen0Start = pNewGen2End;
-			m_pSmallFrontier = pNewGen2End;
-		}
-
-		RecountLiveSlots();
 	}
 
 	void Allocator::Reset()
 	{
-		if (IsContiguousLayoutMode())
-		{
-			ResetObjectWatermarks();
-		}
-		m_nLiveAllocationCount = 0;
-		m_nLiveSmallAllocationCount = 0;
-		m_nLiveLargeAllocationCount = 0;
+		m_SizeClassAllocator.Reset();
+		m_LinearAllocator.Reset();
 	}
-
-	// =========================================================================
-	// Observers
-	// =========================================================================
 
 	bool Allocator::IsContiguousLayoutMode() const
 	{
-		return m_bIsContiguousLayout;
+		return m_bIsContiguousLayoutMode;
 	}
 
 	Allocator::SizeType Allocator::GetBlockSize() const
 	{
-		return m_nBlockSize;
+		return m_LinearAllocator.GetTotalBlockByteCount();
+	}
+
+	Allocator::SizeType Allocator::GetSizeClassLimit() const
+	{
+		return m_nSizeClassLimit;
+	}
+
+	Allocator::SizeType Allocator::GetLinearLimit() const
+	{
+		return m_nLinearLimit;
 	}
 
 	bool Allocator::ContainsAddress(const void* pAddress) const
 	{
-		if (!m_bIsContiguousLayout)
-		{
-			return false;
-		}
-		uintptr_t uAddress = reinterpret_cast<uintptr_t>(pAddress);
-		return uAddress >= reinterpret_cast<uintptr_t>(m_pBlockBase) &&
-			uAddress < reinterpret_cast<uintptr_t>(m_pBlockEnd);
-	}
-
-	Allocator::SizeType Allocator::GetUsedByteCount() const
-	{
-		if (!IsContiguousLayoutMode())
-		{
-			return 0;
-		}
-		return static_cast<SizeType>((m_pSmallFrontier - m_pBlockBase) + (m_pBlockEnd - m_pLargeFrontier));
-	}
-
-	Allocator::SizeType Allocator::GetAvailableByteCount() const
-	{
-		if (!IsContiguousLayoutMode())
-		{
-			return 0;
-		}
-		return static_cast<SizeType>(m_pLargeFrontier - m_pSmallFrontier);
-	}
-
-	bool Allocator::IsEmpty() const
-	{
-		return m_nLiveAllocationCount == 0;
+		return m_LinearAllocator.ContainsAddress(pAddress);
 	}
 
 	Allocator::SizeType Allocator::GetLiveAllocationCount() const
 	{
-		return m_nLiveAllocationCount;
+		return m_SizeClassAllocator.GetLiveCount() + m_LinearAllocator.GetLiveCount() + m_SystemAllocator.GetLiveCount();
 	}
 
-	Allocator::SizeType Allocator::GetLiveSmallAllocationCount() const
+	Allocator::SizeType Allocator::GetLivePoolAllocationCount() const
 	{
-		return m_nLiveSmallAllocationCount;
+		return m_SizeClassAllocator.GetLiveCount();
 	}
 
-	Allocator::SizeType Allocator::GetLiveLargeAllocationCount() const
+	Allocator::SizeType Allocator::GetLiveLinearAllocationCount() const
 	{
-		return m_nLiveLargeAllocationCount;
+		return m_LinearAllocator.GetLiveCount();
 	}
 
-	const void* Allocator::GetGen0StartAddress() const
+	Allocator::SizeType Allocator::GetLiveSystemAllocationCount() const
 	{
-		return m_pGen0Start;
+		return m_SystemAllocator.GetLiveCount();
 	}
 
-	const void* Allocator::GetGen1StartAddress() const
+	bool Allocator::IsEmpty() const
 	{
-		return m_pGen1Start;
-	}
-
-	const void* Allocator::GetGen2StartAddress() const
-	{
-		return m_pGen2Start;
-	}
-
-	Allocator::SizeType Allocator::GetSmallAllocationLimit() const
-	{
-		return m_nSmallAllocationLimit;
-	}
-
-	void Allocator::SetSmallAllocationLimit(SizeType nSmallAllocationLimit)
-	{
-		m_nSmallAllocationLimit = nSmallAllocationLimit;
-	}
-
-	bool Allocator::IsSmallAllocation(SizeType nSizeInBytes) const
-	{
-		return nSizeInBytes <= m_nSmallAllocationLimit;
-	}
-
-	// =========================================================================
-	// Contiguous layout
-	// =========================================================================
-
-	void* Allocator::AllocateFromContiguousBlock(SizeType nSizeInBytes, bool bIsSmallAllocation)
-	{
-		// Slot: 16-byte header zone + payload + 8-byte footer, rounded up so
-		// every slot and every frontier stay 16-byte aligned.
-		SizeType nSlotSize = AlignUpValue(k_nHeaderZoneSize + k_nSlotFooterSize + nSizeInBytes, k_nSlotAlignment);
-
-		if (bIsSmallAllocation)
-		{
-			// Small objects join gen0 by bumping the allocation pointer.
-			char* pSlotStart = m_pSmallFrontier;
-			if (pSlotStart + nSlotSize > m_pLargeFrontier)
-			{
-				// The generational area is exhausted: run an automatic full
-				// mark-compact to reclaim garbage, then try again. The same
-				// rules as CollectGeneration(2) apply - only slots that were
-				// marked reachable and not freed survive; everything else is
-				// garbage and its space is reused.
-				CollectGeneration(2);
-				pSlotStart = m_pSmallFrontier;
-				if (pSlotStart + nSlotSize > m_pLargeFrontier)
-				{
-					DEBUG_BREAK();
-					return nullptr;
-				}
-			}
-
-			AllocationHeader* pHeader = reinterpret_cast<AllocationHeader*>(pSlotStart);
-			pHeader->nSlotSize = nSlotSize;
-			pHeader->bIsSmallAllocation = 1;
-			pHeader->bIsFreed = 0;
-			pHeader->bIsReachable = 0;
-			*reinterpret_cast<SizeType*>(pSlotStart + nSlotSize - k_nSlotFooterSize) = nSlotSize;
-
-			m_pSmallFrontier = pSlotStart + nSlotSize;
-			m_nLiveSmallAllocationCount++;
-			m_nLiveAllocationCount++;
-			return pSlotStart + k_nHeaderZoneSize;
-		}
-
-		// Large objects grow down from the high end of the block. The large
-		// area is never compacted, so exhausting it cannot be relieved by a
-		// collection; Free() at the area frontier is the only way to reclaim it.
-		SizeType nLargeSlotSize = AlignUpValue(k_nLargePayloadOffset + nSizeInBytes, k_nSlotAlignment);
-		char* pSlotStart = m_pLargeFrontier - nLargeSlotSize;
-		if (pSlotStart < m_pSmallFrontier)
-		{
-			DEBUG_BREAK();
-			return nullptr;
-		}
-
-		AllocationHeader* pHeader = reinterpret_cast<AllocationHeader*>(pSlotStart);
-		pHeader->nSlotSize = nLargeSlotSize;
-		pHeader->bIsSmallAllocation = 0;
-		pHeader->bIsFreed = 0;
-		pHeader->bIsReachable = 0;
-		*reinterpret_cast<SizeType*>(pSlotStart + k_nHeaderZoneSize) = nLargeSlotSize;
-
-		m_pLargeFrontier = pSlotStart;
-		m_nLiveLargeAllocationCount++;
-		m_nLiveAllocationCount++;
-		return pSlotStart + k_nLargePayloadOffset;
-	}
-
-	void Allocator::FreeFromContiguousBlock(void* pMemory)
-	{
-		if (!ContainsAddress(pMemory))
-		{
-			DEBUG_BREAK();
-			return;
-		}
-
-		char* pPayload = static_cast<char*>(pMemory);
-
-		// The side follows from the address: the generational area lies below
-		// the small frontier, the large-object area at or above the large
-		// frontier, and the two never overlap.
-		bool bIsSmallArea;
-		if (pPayload < m_pSmallFrontier)
-		{
-			bIsSmallArea = true;
-		}
-		else if (pPayload >= m_pLargeFrontier)
-		{
-			bIsSmallArea = false;
-		}
-		else
-		{
-			DEBUG_BREAK();   // Address inside the free gap between the areas.
-			return;
-		}
-
-		char* pSlotStart = pPayload - (bIsSmallArea ? k_nHeaderZoneSize : k_nLargePayloadOffset);
-		AllocationHeader* pHeader = reinterpret_cast<AllocationHeader*>(pSlotStart);
-
-		// Sanity: the header must describe a plausible, not-yet-freed slot on
-		// the side implied by the address, and header/footer must agree.
-		if (pHeader->bIsFreed != 0 ||
-			pHeader->bIsSmallAllocation != (bIsSmallArea ? 1 : 0) ||
-			pHeader->nSlotSize < k_nMinimumSlotSize ||
-			(pHeader->nSlotSize & (k_nSlotAlignment - 1)) != 0)
-		{
-			DEBUG_BREAK();
-			return;
-		}
-
-		if (bIsSmallArea)
-		{
-			if (pSlotStart + pHeader->nSlotSize > m_pSmallFrontier ||
-				*reinterpret_cast<SizeType*>(pSlotStart + pHeader->nSlotSize - k_nSlotFooterSize) != pHeader->nSlotSize)
-			{
-				DEBUG_BREAK();
-				return;
-			}
-			m_nLiveSmallAllocationCount--;
-		}
-		else
-		{
-			if (pSlotStart < m_pLargeFrontier || pSlotStart + pHeader->nSlotSize > m_pBlockEnd ||
-				*reinterpret_cast<SizeType*>(pSlotStart + k_nHeaderZoneSize) != pHeader->nSlotSize)
-			{
-				DEBUG_BREAK();
-				return;
-			}
-			m_nLiveLargeAllocationCount--;
-		}
-
-		pHeader->bIsFreed = 1;
-		m_nLiveAllocationCount--;
-
-		// Move the frontier pointer of the freed side; subsequent allocations
-		// reuse and overwrite the reclaimed memory.
-		if (bIsSmallArea)
-		{
-			ReclaimSmallFrontier();
-		}
-		else
-		{
-			ReclaimLargeFrontier();
-		}
-	}
-
-	void Allocator::ReclaimSmallFrontier()
-	{
-		// Pop the gen0 allocation pointer back over freed slots at the top of
-		// the generational area. Only gen0 slots can be popped: gen1/gen2
-		// reclamation belongs to CollectGeneration().
-		while (m_pSmallFrontier > m_pGen0Start)
-		{
-			SizeType nSlotSize = *reinterpret_cast<SizeType*>(m_pSmallFrontier - k_nSlotFooterSize);
-			if (nSlotSize < k_nMinimumSlotSize ||
-				nSlotSize > static_cast<SizeType>(m_pSmallFrontier - m_pGen0Start))
-			{
-				DEBUG_BREAK();
-				break;
-			}
-			AllocationHeader* pHeader = reinterpret_cast<AllocationHeader*>(m_pSmallFrontier - nSlotSize);
-			if (pHeader->bIsSmallAllocation == 0 || pHeader->bIsFreed == 0)
-			{
-				break;
-			}
-			m_pSmallFrontier -= nSlotSize;
-		}
-	}
-
-	void Allocator::ReclaimLargeFrontier()
-	{
-		// Walk the large frontier back over freed slots at the top of the
-		// large-object area. The frontier is the slot START, so the footer of
-		// the newest large slot sits right after it.
-		while (m_pLargeFrontier < m_pBlockEnd)
-		{
-			SizeType nSlotSize = *reinterpret_cast<SizeType*>(m_pLargeFrontier + k_nHeaderZoneSize);
-			if (nSlotSize < k_nMinimumSlotSize ||
-				nSlotSize > static_cast<SizeType>(m_pBlockEnd - m_pLargeFrontier))
-			{
-				DEBUG_BREAK();
-				break;
-			}
-			AllocationHeader* pHeader = reinterpret_cast<AllocationHeader*>(m_pLargeFrontier);
-			if (pHeader->bIsSmallAllocation != 0 || pHeader->bIsFreed == 0)
-			{
-				break;
-			}
-			m_pLargeFrontier += nSlotSize;
-		}
-	}
-
-	char* Allocator::SweepAndCompactRange(char* pRangeStart, char* pRangeEnd)
-	{
-		// Sweep + sliding compaction over one generation range. Reachable,
-		// not-freed slots are moved down toward pRangeStart (memmove handles
-		// the overlap); dead slots are discarded and overwritten. Returns the
-		// address just past the compacted survivors.
-		char* pCursor = pRangeStart;
-		char* pDestination = pRangeStart;
-		while (pCursor < pRangeEnd)
-		{
-			AllocationHeader* pHeader = reinterpret_cast<AllocationHeader*>(pCursor);
-			SizeType nSlotSize = pHeader->nSlotSize;
-			if (nSlotSize < k_nMinimumSlotSize ||
-				(nSlotSize & (k_nSlotAlignment - 1)) != 0 ||
-				pCursor + nSlotSize > pRangeEnd)
-			{
-				DEBUG_BREAK();
-				return pRangeEnd;
-			}
-
-			if (pHeader->bIsReachable != 0 && pHeader->bIsFreed == 0)
-			{
-				// Survivors keep their marks while the later stages of the same
-				// collection still need them (a promoted slot is swept again as
-				// part of the older generation); CollectGeneration clears every
-				// mark once all stages have run.
-				if (pDestination != pCursor)
-				{
-					memmove(pDestination, pCursor, nSlotSize);
-				}
-				pDestination += nSlotSize;
-			}
-			pCursor += nSlotSize;
-		}
-		return pDestination;
-	}
-
-	void Allocator::RecountLiveSlots()
-	{
-		// After a collection the generational area only contains survivors;
-		// walk it once to refresh the counters and to end the sweep by
-		// clearing every remaining reachability mark, so the next collection
-		// starts from a clean marking phase.
-		m_nLiveSmallAllocationCount = 0;
-		char* pCursor = m_pGen2Start;
-		char* pAreaEnd = m_pSmallFrontier;
-		while (pCursor < pAreaEnd)
-		{
-			AllocationHeader* pHeader = reinterpret_cast<AllocationHeader*>(pCursor);
-			SizeType nSlotSize = pHeader->nSlotSize;
-			if (nSlotSize < k_nMinimumSlotSize ||
-				(nSlotSize & (k_nSlotAlignment - 1)) != 0 ||
-				pCursor + nSlotSize > pAreaEnd)
-			{
-				DEBUG_BREAK();
-				break;
-			}
-			pHeader->bIsReachable = 0;
-			m_nLiveSmallAllocationCount++;
-			pCursor += nSlotSize;
-		}
-		m_nLiveAllocationCount = m_nLiveSmallAllocationCount + m_nLiveLargeAllocationCount;
-	}
-
-	// =========================================================================
-	// OS layout
-	// =========================================================================
-
-	void* Allocator::AllocateFromOs(SizeType nSizeInBytes, SizeType nAlignment)
-	{
-		// _aligned_malloc expects the size to be a multiple of the alignment.
-		SizeType nAlignedSize = AlignUpValue(nSizeInBytes, nAlignment);
-		void* pMemory = _aligned_malloc(nAlignedSize, nAlignment);
-		if (pMemory == nullptr)
-		{
-			DEBUG_BREAK();
-			return nullptr;
-		}
-		m_nLiveAllocationCount++;
-		return pMemory;
-	}
-
-	void Allocator::FreeFromOs(void* pMemory)
-	{
-		_aligned_free(pMemory);
-		if (m_nLiveAllocationCount > 0)
-		{
-			m_nLiveAllocationCount--;
-		}
-	}
-
-	// =========================================================================
-	// Block management
-	// =========================================================================
-
-	void Allocator::InitializeContiguousBlock(SizeType nContiguousBlockSize)
-	{
-		if (nContiguousBlockSize == 0)
-		{
-			// OS layout mode: no block is reserved.
-			return;
-		}
-
-		// Round the usable size down so the block end stays slot-aligned.
-		SizeType nAlignedBlockSize = AlignDownValue(nContiguousBlockSize, k_nSlotAlignment);
-		if (nAlignedBlockSize < k_nMinimumSlotSize)
-		{
-			DEBUG_BREAK();
-			return;
-		}
-
-		char* pRawAllocation = static_cast<char*>(malloc(nAlignedBlockSize + k_nSlotAlignment));
-		if (pRawAllocation == nullptr)
-		{
-			DEBUG_BREAK();
-			return;
-		}
-
-		m_pBlockAllocation = pRawAllocation;
-		m_pBlockBase = AlignUpAddress(pRawAllocation, k_nSlotAlignment);
-		m_pBlockEnd = m_pBlockBase + nAlignedBlockSize;
-		m_nBlockSize = nAlignedBlockSize;
-		m_bIsContiguousLayout = true;
-		ResetObjectWatermarks();
-	}
-
-	void Allocator::ReleaseContiguousBlock()
-	{
-		free(m_pBlockAllocation);
-		m_pBlockAllocation = nullptr;
-		m_pBlockBase = nullptr;
-		m_pBlockEnd = nullptr;
-		m_pGen2Start = nullptr;
-		m_pGen1Start = nullptr;
-		m_pGen0Start = nullptr;
-		m_pSmallFrontier = nullptr;
-		m_pLargeFrontier = nullptr;
-		m_nBlockSize = 0;
-		m_bIsContiguousLayout = false;
-	}
-
-	void Allocator::ResetObjectWatermarks()
-	{
-		// Empty heap: all three generation watermarks and the allocation
-		// pointer collapse onto the block base; the large frontier sits at the
-		// block end.
-		m_pGen2Start = m_pBlockBase;
-		m_pGen1Start = m_pBlockBase;
-		m_pGen0Start = m_pBlockBase;
-		m_pSmallFrontier = m_pBlockBase;
-		m_pLargeFrontier = m_pBlockEnd;
+		return GetLiveAllocationCount() == 0;
 	}
 
 	void Allocator::MoveFrom(Allocator& Other)
 	{
-		m_pBlockAllocation = Other.m_pBlockAllocation;
-		m_pBlockBase = Other.m_pBlockBase;
-		m_pBlockEnd = Other.m_pBlockEnd;
-		m_pGen2Start = Other.m_pGen2Start;
-		m_pGen1Start = Other.m_pGen1Start;
-		m_pGen0Start = Other.m_pGen0Start;
-		m_pSmallFrontier = Other.m_pSmallFrontier;
-		m_pLargeFrontier = Other.m_pLargeFrontier;
-		m_nBlockSize = Other.m_nBlockSize;
-		m_nSmallAllocationLimit = Other.m_nSmallAllocationLimit;
-		m_nLiveAllocationCount = Other.m_nLiveAllocationCount;
-		m_nLiveSmallAllocationCount = Other.m_nLiveSmallAllocationCount;
-		m_nLiveLargeAllocationCount = Other.m_nLiveLargeAllocationCount;
-		m_bIsContiguousLayout = Other.m_bIsContiguousLayout;
+		m_nSizeClassLimit = Other.m_nSizeClassLimit;
+		m_nLinearLimit = Other.m_nLinearLimit;
+		m_bIsContiguousLayoutMode = Other.m_bIsContiguousLayoutMode;
 
-		// The moved-from allocator becomes a valid, empty OS-layout allocator.
-		Other.m_pBlockAllocation = nullptr;
-		Other.m_pBlockBase = nullptr;
-		Other.m_pBlockEnd = nullptr;
-		Other.m_pGen2Start = nullptr;
-		Other.m_pGen1Start = nullptr;
-		Other.m_pGen0Start = nullptr;
-		Other.m_pSmallFrontier = nullptr;
-		Other.m_pLargeFrontier = nullptr;
-		Other.m_nBlockSize = 0;
-		Other.m_nLiveAllocationCount = 0;
-		Other.m_nLiveSmallAllocationCount = 0;
-		Other.m_nLiveLargeAllocationCount = 0;
-		Other.m_bIsContiguousLayout = false;
-	}
-
-	// =========================================================================
-	// Address helpers
-	// =========================================================================
-
-	Allocator::SizeType Allocator::AlignUpValue(SizeType nValue, SizeType nAlignment)
-	{
-		return (nValue + nAlignment - 1) & ~(nAlignment - 1);
-	}
-
-	Allocator::SizeType Allocator::AlignDownValue(SizeType nValue, SizeType nAlignment)
-	{
-		return nValue & ~(nAlignment - 1);
-	}
-
-	char* Allocator::AlignUpAddress(char* pAddress, SizeType nAlignment)
-	{
-		uintptr_t uAddress = reinterpret_cast<uintptr_t>(pAddress);
-		return reinterpret_cast<char*>(AlignUpValue(static_cast<SizeType>(uAddress), nAlignment));
+		Other.m_nSizeClassLimit = k_nDefaultSizeClassLimit;
+		Other.m_nLinearLimit = k_nDefaultLinearLimit;
+		Other.m_bIsContiguousLayoutMode = false;
 	}
 
 	bool Allocator::IsPowerOfTwo(SizeType nValue)

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Engine/Core/Core.h"
+
 namespace Vsp
 {
 	template <typename Type>
@@ -11,6 +13,8 @@ namespace Vsp
 	template <typename Type>
 	class RefPtr
 	{
-
+	public:
+	private:
+		uint64_t m_RefCount;
 	};
 }

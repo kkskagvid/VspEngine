@@ -28,7 +28,10 @@
     <ClInclude Include="Engine\Core\String\VspString.h" />
     <ClInclude Include="Engine\Core\Templates\Allocator.h" />
     <ClInclude Include="Engine\Core\Templates\ArrayList.h" />
+    <ClInclude Include="Engine\Core\Templates\Callback.h" />
+    <ClInclude Include="Engine\Core\Templates\Delegate.h" />
     <ClInclude Include="Engine\Core\Templates\Memory.h" />
+    <ClInclude Include="Engine\Core\Templates\VspObject.h" />
     <ClInclude Include="Engine\Core\Type.h" />
     <ClInclude Include="Engine\Core\Utils\ArrayList.h" />
     <ClInclude Include="Engine\Core\Window.h" />

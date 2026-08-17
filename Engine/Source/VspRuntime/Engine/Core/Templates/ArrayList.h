@@ -16,13 +16,13 @@ namespace Vsp
 	// No bounds checking is done by operator[]; At() checks the index range instead.
 	//
 	// All storage comes from the array's private Allocator. By default it is
-	// OS-layout (unbounded growth, stable element pointers); constructing the
-	// array with a block size switches it to the contiguous layout, where every
-	// buffer is carved out of that one reserved block. When the contiguous
-	// block is exhausted, the array migrates to a fresh, larger contiguous
-	// block (doubling each time); the migration fails only if reserving a new
-	// block itself fails, in which case DEBUG_BREAK() fires and the existing
-	// elements are kept.
+	// hybrid (small buffers from size-class pools, medium buffers from the
+	// linear block chain, huge buffers from the OS); constructing the array
+	// with a block size selects the contiguous mode, where every buffer comes
+	// out of the allocator's linear block chain. When a block is exhausted the
+	// allocator grows a new, larger contiguous block and the buffers are never
+	// copied; growth only fails if the OS itself runs out of memory, in which
+	// case DEBUG_BREAK() fires and the existing elements are kept.
 	template <typename Type>
 	class ArrayList
 	{
@@ -35,20 +35,27 @@ namespace Vsp
 		// Constructs an empty array, provided for convenient reset-style initialization.
 		ArrayList(std::nullptr_t) {}
 
-		// Contiguous-layout construction: reserves one block of
-		// nContiguousBlockSize bytes and serves every buffer from inside it.
-		// The buffers are placed in the allocator's large-object area, which is
-		// never compacted, so element pointers stay stable between migrations.
-		// When the block is exhausted the array migrates to a fresh, larger
-		// contiguous block (see the class comment).
+		// Contiguous-mode construction: every buffer is carved out of the
+		// allocator's linear block chain, starting with a block of
+		// nContiguousBlockSize bytes (the chain grows beyond it on demand).
 		explicit ArrayList(SizeType nContiguousBlockSize)
-			: m_Allocator(nContiguousBlockSize, 0)
+			: m_Allocator(Allocator::CreateContiguous(nContiguousBlockSize))
 		{
 		}
 
 		ArrayList(const ArrayList& Other)
-			: m_Allocator(Other.m_Allocator.GetBlockSize(), Other.m_Allocator.GetSmallAllocationLimit())
 		{
+			// Mirror the source's allocator layout: contiguous arrays keep the
+			// contiguous mode, hybrid arrays copy the same size limits.
+			if (Other.m_Allocator.IsContiguousLayoutMode())
+			{
+				m_Allocator = Allocator::CreateContiguous(Other.m_Allocator.GetBlockSize());
+			}
+			else
+			{
+				m_Allocator = Allocator(Other.m_Allocator.GetSizeClassLimit(), Other.m_Allocator.GetLinearLimit());
+			}
+
 			Reserve(Other.m_Size);
 			for (SizeType Index = 0; Index < Other.m_Size; ++Index)
 			{
@@ -275,34 +282,22 @@ namespace Vsp
 		void GrowToCapacity(SizeType NewCapacity)
 		{
 			// The allocator owns the buffer and offers no in-place realloc, so a
-			// growing array always relocates: allocate a fresh block, move the
-			// elements over, then hand the old block back to the allocator.
-			SizeType nRequiredByteCount = NewCapacity * sizeof(Type);
-			Type* pNewData = static_cast<Type*>(m_Allocator.Allocate(nRequiredByteCount));
-			Allocator NewAllocator;   // Only used when migrating to a new block.
-			bool bMigratedToNewBlock = false;
+			// growing array always relocates: allocate a fresh buffer, move the
+			// elements over, then hand the old buffer back to the allocator.
+			// In contiguous mode the allocator itself grows new contiguous
+			// blocks when the current one is full, so growth never stops (until
+			// the OS runs out of memory) and buffers are never copied for the
+			// block chain.
+			Type* pNewData = static_cast<Type*>(m_Allocator.Allocate(NewCapacity * sizeof(Type)));
 			if (pNewData == nullptr)
 			{
-				// The contiguous block is exhausted: migrate to a fresh, larger
-				// contiguous block. OS layout cannot run out of blocks, so this
-				// only ever happens in contiguous mode.
-				if (!TryCreateLargerContiguousBlock(nRequiredByteCount, NewAllocator, pNewData))
-				{
-					DEBUG_BREAK();
-					return;
-				}
-				bMigratedToNewBlock = true;
+				DEBUG_BREAK();
+				return;
 			}
 
 			RelocateElementsTo(pNewData);
 
-			if (bMigratedToNewBlock)
-			{
-				// Adopt the new block. Releasing the old allocator frees the old
-				// block wholesale, so no per-buffer Free() is needed.
-				m_Allocator = std::move(NewAllocator);
-			}
-			else if (m_pData != nullptr)
+			if (m_pData != nullptr)
 			{
 				m_Allocator.Free(m_pData);
 			}
@@ -332,42 +327,6 @@ namespace Vsp
 			}
 		}
 
-		// Reserves a fresh contiguous block - at least twice the current one
-		// and at least twice the requested bytes - and allocates OutNewData
-		// from it. Returns false when migration is impossible (OS layout) or
-		// reserving the new block itself failed.
-		bool TryCreateLargerContiguousBlock(SizeType nRequiredByteCount, Allocator& OutNewAllocator, Type*& OutNewData)
-		{
-			SizeType nCurrentBlockSize = m_Allocator.GetBlockSize();
-			if (nCurrentBlockSize == 0)
-			{
-				return false;   // OS layout cannot run out of blocks.
-			}
-
-			SizeType nNewBlockSize = nCurrentBlockSize * 2;
-			SizeType nMinimumBlockSize = nRequiredByteCount * 2;
-			if (nNewBlockSize < nMinimumBlockSize)
-			{
-				nNewBlockSize = nMinimumBlockSize;
-			}
-
-			Allocator NewAllocator(nNewBlockSize, 0);
-			if (!NewAllocator.IsContiguousLayoutMode())
-			{
-				DEBUG_BREAK();   // Reserving the new block itself failed.
-				return false;
-			}
-
-			OutNewData = static_cast<Type*>(NewAllocator.Allocate(nRequiredByteCount));
-			if (OutNewData == nullptr)
-			{
-				DEBUG_BREAK();
-				return false;
-			}
-			OutNewAllocator = std::move(NewAllocator);
-			return true;
-		}
-
 		void FreeData()
 		{
 			if (m_pData != nullptr)
@@ -389,9 +348,10 @@ namespace Vsp
 		}
 
 	private:
-		// Every storage block is requested from and returned to this allocator.
-		// Default construction uses the OS layout; constructing with a block
-		// size switches to the contiguous layout (see the constructors).
+		// Every storage buffer is requested from and returned to this
+		// allocator. Default construction uses the hybrid mode (size-based
+		// routing); constructing with a block size switches to the contiguous
+		// mode (see the constructors).
 		Allocator m_Allocator;
 
 		Type* m_pData = nullptr;

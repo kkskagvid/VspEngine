@@ -218,6 +218,15 @@
     <ClInclude Include="Engine\Core\Templates\Allocator.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="Engine\Core\Templates\Callback.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Core\Templates\Delegate.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Core\Templates\VspObject.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="Platforms\D3D12\D3D12.h">
       <Filter>头文件</Filter>
     </ClInclude>
