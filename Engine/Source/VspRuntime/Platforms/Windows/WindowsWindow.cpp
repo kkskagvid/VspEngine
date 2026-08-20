@@ -1,13 +1,13 @@
-#include "RuntimePCH.h"
+#include "Core/RuntimePCH.h"
 
 #include <Windowsx.h>
 
-#include "Engine/Core/Logging/Log.h"
-#include "Engine/Core/Platform.h"
-#include "Engine/Core/Window.h"
-#include "Engine/Core/String/StringConv.h"
-#include "Engine/Events/WindowEvents.h"
-#include "Engine/Events/InputEvents.h"
+#include "Core/Logging/Log.h"
+#include "Core/Platform.h"
+#include "Core/Window.h"
+#include "Core/String/StringConv.h"
+#include "Core/Events/WindowEvents.h"
+#include "Core/Events/InputEvents.h"
 
 #include "Platforms/Windows/WindowsWindow.h"
 

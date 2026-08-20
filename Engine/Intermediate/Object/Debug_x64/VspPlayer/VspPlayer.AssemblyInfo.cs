@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("VspPlayer")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+32fae6a754cc61569914519bf185925df4b3e0b6")]
 [assembly: System.Reflection.AssemblyProductAttribute("VspPlayer")]
 [assembly: System.Reflection.AssemblyTitleAttribute("VspPlayer")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

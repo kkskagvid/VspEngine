@@ -3,7 +3,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 
-#include "Engine/Core/Window.h"
+#include "Core/Window.h"
 
 namespace Vsp
 {
