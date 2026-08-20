@@ -54,7 +54,7 @@ namespace Vsp
         HINSTANCE     m_HInstance = nullptr;
         HWND          m_HWnd      = nullptr;
         HDC           m_HDC       = nullptr;
-        std::wstring  m_ClassName;               ///< Cached window class name for unregistration
+        VspString     m_ClassName;               ///< Cached window class name for unregistration
 
         EventCallback    m_EventCallback;
         WindowProperties m_Properties;

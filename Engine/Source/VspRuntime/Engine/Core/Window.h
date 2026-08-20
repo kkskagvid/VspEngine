@@ -1,8 +1,7 @@
 #pragma once
 
-#include <string>
-
 #include "Engine/Core/Core.h"
+#include "Engine/Core/String/VspString.h"
 #include "Engine/Events/Event.h"
 
 namespace Vsp
@@ -15,7 +14,7 @@ namespace Vsp
         /**
          * @brief 窗口标题。
          */
-        std::string Title;
+        VspString Title;
 
         /**
          * @brief 窗口宽度。
@@ -48,7 +47,7 @@ namespace Vsp
         WindowDisplayMode DisplayMode;
 
         WindowProperties(
-            std::string title = "Vesper Engine",
+            VspString title = "Vesper Engine",
             uint32_t width = 1280,
             uint32_t height = 720,
             WindowState state = WindowState::Normal,

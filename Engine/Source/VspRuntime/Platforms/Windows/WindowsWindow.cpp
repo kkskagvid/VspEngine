@@ -34,10 +34,8 @@ namespace Vsp
 
         m_HInstance = ::GetModuleHandleW(nullptr);
 
-        std::string className = properties.Title + " Window Class";
-        m_ClassName = ConvertToWString(className.c_str());
-
-        std::wstring wTitle = ConvertToWString(properties.Title.c_str());
+        VspString className = properties.Title + " Window Class";
+        m_ClassName = className;
 
         WNDCLASSEXW windowClass = {};
         windowClass.cbSize        = sizeof(WNDCLASSEXW);
@@ -50,7 +48,7 @@ namespace Vsp
         windowClass.hCursor       = LoadCursorW(nullptr, IDC_ARROW);
         windowClass.hbrBackground = nullptr;
         windowClass.lpszMenuName  = nullptr;
-        windowClass.lpszClassName = m_ClassName.c_str();
+        windowClass.lpszClassName = m_ClassName.ToWideText().GetData();
         windowClass.hIconSm       = LoadIconW(m_HInstance, MAKEINTRESOURCEW(101));
 
         if (!RegisterClassExW(&windowClass))
@@ -143,8 +141,8 @@ namespace Vsp
 
         m_HWnd = CreateWindowExW(
             windowExStyle,
-            m_ClassName.c_str(),
-            wTitle.c_str(),
+            m_ClassName.ToWideText().GetData(),
+            properties.Title.ToWideText().GetData(),
             windowStyle,
             windowX,
             windowY,
@@ -203,7 +201,7 @@ namespace Vsp
             m_HWnd = nullptr;
         }
 
-        UnregisterClassW(m_ClassName.c_str(), m_HInstance);
+        UnregisterClassW(m_ClassName.ToWideText().GetData(), m_HInstance);
     }
 
     void WindowsWindow::Update()

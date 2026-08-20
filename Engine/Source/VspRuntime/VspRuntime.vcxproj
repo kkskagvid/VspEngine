@@ -22,10 +22,13 @@
     <ClInclude Include="Engine\Core\Application.h" />
     <ClInclude Include="Engine\Core\Core.h" />
     <ClInclude Include="Engine\Core\Defines.h" />
+    <ClInclude Include="Engine\Core\Engine.h" />
+    <ClInclude Include="Engine\Core\Logging\Log.h" />
     <ClInclude Include="Engine\Core\Platform.h" />
     <ClInclude Include="Engine\Core\String\I18N.h" />
     <ClInclude Include="Engine\Core\String\StringConv.h" />
     <ClInclude Include="Engine\Core\String\VspString.h" />
+    <ClInclude Include="Engine\Core\String\VspStringFormat.h" />
     <ClInclude Include="Engine\Core\Templates\Allocator.h" />
     <ClInclude Include="Engine\Core\Templates\ArrayList.h" />
     <ClInclude Include="Engine\Core\Templates\Callback.h" />
@@ -39,6 +42,7 @@
     <ClInclude Include="Engine\Events\EventDispatcher.h" />
     <ClInclude Include="Engine\Events\InputEvents.h" />
     <ClInclude Include="Engine\Events\WindowEvents.h" />
+    <ClInclude Include="Engine\Renderer\IGraphics.h" />
     <ClInclude Include="Platforms\Windows\WindowsWindow.h" />
     <ClInclude Include="RuntimePCH.h" />
   </ItemGroup>

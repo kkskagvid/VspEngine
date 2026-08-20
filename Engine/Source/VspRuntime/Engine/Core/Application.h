@@ -26,7 +26,6 @@ namespace Vsp
 		void Update();
 		void OnEvent(Event& e);
 
-
 	private:
 		void OnWindowResize(WindowResizeEvent& event);
 		void OnWindowClose(WindowCloseEvent& event);
