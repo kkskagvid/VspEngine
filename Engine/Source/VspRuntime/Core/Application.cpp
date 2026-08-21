@@ -1,4 +1,4 @@
-#include "Core/RuntimePCH.h"
+#include "Common/RuntimePCH.h"
 
 #include "Application.h"
 #include "Templates/Delegate.h"

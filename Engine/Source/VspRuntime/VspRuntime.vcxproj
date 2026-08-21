@@ -19,6 +19,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Common\NativeApi.h" />
     <ClInclude Include="Core\Application.h" />
     <ClInclude Include="Core\Core.h" />
     <ClInclude Include="Core\Defines.h" />
@@ -42,9 +43,11 @@
     <ClInclude Include="Core\Events\EventDispatcher.h" />
     <ClInclude Include="Core\Events\InputEvents.h" />
     <ClInclude Include="Core\Events\WindowEvents.h" />
-    <ClInclude Include="Renderer\IGraphics.h" />
+    <ClInclude Include="Graphics\IGraphics.h" />
     <ClInclude Include="Platforms\Windows\WindowsWindow.h" />
-    <ClInclude Include="RuntimePCH.h" />
+    <ClInclude Include="Common\RuntimePCH.h" />
+    <ClInclude Include="Scripting\BridgeFunctions.h" />
+    <ClInclude Include="Scripting\ManagedScript.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Core\Application.cpp" />
@@ -56,9 +59,10 @@
     <ClCompile Include="Core\Events\EventDispatcher.cpp" />
     <ClCompile Include="Platforms\Windows\DllMain.cpp" />
     <ClCompile Include="Platforms\Windows\WindowsWindow.cpp" />
-    <ClCompile Include="RuntimePCH.cpp">
+    <ClCompile Include="Common\RuntimePCH.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="Scripting\ScriptBehaviour.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>18.0</VCProjectVersion>
@@ -163,7 +167,7 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>RuntimePCH.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(SolutionDir)Engine\Source\VspRuntime;$(SolutionDir)Engine\Source\Thirdparty\fmt\include;$(SolutionDir)Engine\Source\Thirdparty\OpenGL;$(SolutionDir)Engine\Source\Thirdparty\glad\include;$(SolutionDir)Engine\Source\Thirdparty\ICU\icu4c-77_1\include;$(SolutionDir)Engine\Source\Thirdparty\mimalloc\include;$(SolutionDir)Engine\Source\Thirdparty\glm;$(SolutionDir)Engine\Source\Thirdparty\Vulkan\Include;$(SolutionDir)Engine\Source\Thirdparty\FreeType2\freetype-2.14.3\include;$(SolutionDir)Engine\Source\Thirdparty\HarfBuzz\harfbuzz-14.2.0\src;$(SolutionDir)Engine\Source\Thirdparty\DirectX-Headers\include\directx</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)Engine\Source\VspRuntime;$(SolutionDir)Engine\Source\Thirdparty\fmt\include;$(SolutionDir)Engine\Source\Thirdparty\glm;$(SolutionDir)Engine\Source\Thirdparty\Vulkan\Include;$(SolutionDir)Engine\Source\Thirdparty\FreeType2\freetype-2.14.3\include;$(SolutionDir)Engine\Source\Thirdparty\HarfBuzz\harfbuzz-14.2.0\src;$(SolutionDir)Engine\Source\Thirdparty\dotnet\runtime10.0.10\</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <LanguageStandard_C>stdc11</LanguageStandard_C>
       <CompileAs>CompileAsCpp</CompileAs>
@@ -187,7 +191,7 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>RuntimePCH.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(SolutionDir)Engine\Source\VspRuntime;$(SolutionDir)Engine\Source\Thirdparty\fmt\include;$(SolutionDir)Engine\Source\Thirdparty\OpenGL;$(SolutionDir)Engine\Source\Thirdparty\glad\include;$(SolutionDir)Engine\Source\Thirdparty\ICU\icu4c-77_1\include;$(SolutionDir)Engine\Source\Thirdparty\mimalloc\include;$(SolutionDir)Engine\Source\Thirdparty\glm;$(SolutionDir)Engine\Source\Thirdparty\Vulkan\Include;$(SolutionDir)Engine\Source\Thirdparty\FreeType2\freetype-2.14.3\include;$(SolutionDir)Engine\Source\Thirdparty\HarfBuzz\harfbuzz-14.2.0\src;$(SolutionDir)Engine\Source\Thirdparty\DirectX-Headers\include\directx</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)Engine\Source\VspRuntime;$(SolutionDir)Engine\Source\Thirdparty\fmt\include;$(SolutionDir)Engine\Source\Thirdparty\glm;$(SolutionDir)Engine\Source\Thirdparty\Vulkan\Include;$(SolutionDir)Engine\Source\Thirdparty\FreeType2\freetype-2.14.3\include;$(SolutionDir)Engine\Source\Thirdparty\HarfBuzz\harfbuzz-14.2.0\src;$(SolutionDir)Engine\Source\Thirdparty\dotnet\runtime10.0.10\</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <LanguageStandard_C>stdc11</LanguageStandard_C>
       <Optimization>MaxSpeed</Optimization>
