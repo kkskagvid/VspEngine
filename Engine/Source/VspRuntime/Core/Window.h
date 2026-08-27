@@ -68,6 +68,7 @@ namespace Vsp
         virtual void Destroy() = 0;
 
         virtual WindowProperties GetProperties() const = 0;
+        virtual bool IsValid() const { return true; }
         virtual void* GetNativeWindowHandle() const = 0;
         virtual void* GetNativeDisplayHandle() const = 0;
         virtual void GetClientSize(int& outWidth, int& outHeight) const = 0;

@@ -1,8 +1,11 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-		<TargetFrameworks>net10.0</TargetFrameworks>
+		<TargetFramework>net10.0</TargetFramework>
         <Nullable>enable</Nullable>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <!-- The C++ host supplies its own runtimeconfig.json (Launch.runtimeconfig.json). -->
+        <GenerateRuntimeConfigurationFiles>false</GenerateRuntimeConfigurationFiles>
 
         <OutputPath>$(SolutionDir)Engine\Intermediate\Binaries\$(Configuration)_$(Platform)\</OutputPath>
         <OutDir>$(OutputPath)</OutDir>

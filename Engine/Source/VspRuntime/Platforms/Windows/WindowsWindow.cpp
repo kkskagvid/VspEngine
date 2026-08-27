@@ -1,4 +1,4 @@
-#include "Common/RuntimePCH.h"
+#include "RuntimePCH.h"
 
 #include <Windowsx.h>
 
@@ -37,6 +37,9 @@ namespace Vsp
         VspString className = properties.Title + " Window Class";
         m_ClassName = className;
 
+        ArrayList<wchar_t> wideClassName = m_ClassName.ToWideText();
+        ArrayList<wchar_t> wideWindowTitle = properties.Title.ToWideText();
+
         WNDCLASSEXW windowClass = {};
         windowClass.cbSize        = sizeof(WNDCLASSEXW);
         windowClass.style         = CS_HREDRAW | CS_VREDRAW;
@@ -48,14 +51,17 @@ namespace Vsp
         windowClass.hCursor       = LoadCursorW(nullptr, IDC_ARROW);
         windowClass.hbrBackground = nullptr;
         windowClass.lpszMenuName  = nullptr;
-        windowClass.lpszClassName = m_ClassName.ToWideText().GetData();
+        windowClass.lpszClassName = wideClassName.GetData();
         windowClass.hIconSm       = LoadIconW(m_HInstance, MAKEINTRESOURCEW(101));
 
         if (!RegisterClassExW(&windowClass))
         {
-            LOG_ERROR(kLogTag, "RegisterClassExW failed.");
+            LOG_ERROR(kLogTag, "RegisterClassExW failed (Win32 error {}).", static_cast<int>(::GetLastError()));
             return false;
         }
+
+        LOG_INFO(kLogTag, "Registered window class '{}' (hInstance {:#x}).",
+            className.ToStdString(), reinterpret_cast<uintptr_t>(m_HInstance));
 
         DWORD windowStyle   = 0;
         DWORD windowExStyle = WS_EX_APPWINDOW | WS_EX_WINDOWEDGE;
@@ -139,10 +145,15 @@ namespace Vsp
         }
         }
 
+        WNDCLASSEXW lookupClass = {};
+        const BOOL bClassFound = GetClassInfoExW(m_HInstance, wideClassName.GetData(), &lookupClass);
+        LOG_INFO(kLogTag, "Class lookup before CreateWindowExW: {} (error {}).",
+            bClassFound ? "found" : "NOT FOUND", static_cast<int>(::GetLastError()));
+
         m_HWnd = CreateWindowExW(
             windowExStyle,
-            m_ClassName.ToWideText().GetData(),
-            properties.Title.ToWideText().GetData(),
+            wideClassName.GetData(),
+            wideWindowTitle.GetData(),
             windowStyle,
             windowX,
             windowY,
@@ -155,7 +166,9 @@ namespace Vsp
 
         if (!m_HWnd)
         {
-            LOG_ERROR(kLogTag, "CreateWindowExW failed.");
+            LOG_ERROR(kLogTag, "CreateWindowExW failed (Win32 error {}, class '{}', hInstance {:#x}).",
+                static_cast<int>(::GetLastError()), m_ClassName.ToStdString(),
+                reinterpret_cast<uintptr_t>(m_HInstance));
             return false;
         }
 
@@ -732,6 +745,19 @@ namespace Vsp
                 m_EventCallback(e);
             }
             break;
+
+        case WM_CHAR:
+        {
+            // Typed text arrives as UTF-16 code units (BMP code points map 1:1;
+            // surrogate pairs are delivered as two events and can be stitched
+            // together by a consumer that needs astral characters).
+            if (m_EventCallback)
+            {
+                KeyTypedEvent e(static_cast<unsigned int>(wParam));
+                m_EventCallback(e);
+            }
+            break;
+        }
 
         // ── System Commands ─────────────────────────────────────────────
 

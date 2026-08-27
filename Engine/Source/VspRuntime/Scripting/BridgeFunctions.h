@@ -1,39 +1,42 @@
 #pragma once
 
+#include <cstdint>
+
 #include <nethost.h>
 #include <hostfxr.h>
 #include <coreclr_delegates.h>
 
-#include "Core/String/VspString.h"
-
 namespace Vsp
 {
-    namespace Detail
-    {
-        using CreateInstanceFn      = int   (*)(const char* typeName);
-        using CallOnInitFn          = void  (*)(int id);
-        using CallOnUpdateFn        = void  (*)(int id);
-        using DestroyInstanceFn     = void  (*)(int id);
-        using CreateAllScriptsFn    = int*  (*)(int* outCount);
-        using FreeIntArrayFn        = void  (*)(void* ptr);
-    }
+	// -------------------------------------------------------------------------
+	// BridgeFunctions
+	// -------------------------------------------------------------------------
+	// Raw function pointers into the managed bridge (VspEngine.NativeBridge in
+	// VspPlayer.dll), fetched through hostfxr's
+	// load_assembly_and_get_function_pointer. Every managed entry point is
+	// marked [UnmanagedCallersOnly], so the pointers follow the platform
+	// calling convention (STDMETHODCALLTYPE == the native default on x64).
+	// -------------------------------------------------------------------------
 
-    struct BridgeFunctions
-    {
-        Detail::CreateInstanceFn    CreateInst;
-        Detail::CallOnInitFn        OnInit;
-        Detail::CallOnUpdateFn      OnUpdate;
-        Detail::DestroyInstanceFn   DestroyInst;
-        Detail::CreateAllScriptsFn  CreateAllScripts;
-        Detail::FreeIntArrayFn      FreeIntArray;
-    };
+	namespace ManagedBridgeDetail
+	{
+		using CreateInstanceFn   = int32_t  (STDMETHODCALLTYPE*)(const char_t* pTypeNameUtf16);
+		using CreateAllScriptsFn = int32_t* (STDMETHODCALLTYPE*)(int32_t* pOutCount);
+		using FreeIntArrayFn     = void     (STDMETHODCALLTYPE*)(void* pArray);
+		using CallOnInitFn       = void     (STDMETHODCALLTYPE*)(int32_t nInstanceId);
+		using CallOnStartFn      = void     (STDMETHODCALLTYPE*)(int32_t nInstanceId);
+		using CallOnUpdateFn     = void     (STDMETHODCALLTYPE*)(int32_t nInstanceId);
+		using DestroyInstanceFn  = void     (STDMETHODCALLTYPE*)(int32_t nInstanceId);
+	}
 
-
-    bool GetBridgeFunctions(const VspString& assemblyPath, BridgeFunctions& bridge)
-    {
-
-    }
-
-    hostfxr_handle g_RuntimeHandle = nullptr;
-    load_assembly_and_get_function_pointer_fn g_LoadAssemblyFn = nullptr;
+	struct BridgeFunctions
+	{
+		ManagedBridgeDetail::CreateInstanceFn   CreateInstance = nullptr;
+		ManagedBridgeDetail::CreateAllScriptsFn CreateAllScripts = nullptr;
+		ManagedBridgeDetail::FreeIntArrayFn     FreeIntArray = nullptr;
+		ManagedBridgeDetail::CallOnInitFn       CallOnInit = nullptr;
+		ManagedBridgeDetail::CallOnStartFn      CallOnStart = nullptr;
+		ManagedBridgeDetail::CallOnUpdateFn     CallOnUpdate = nullptr;
+		ManagedBridgeDetail::DestroyInstanceFn  DestroyInstance = nullptr;
+	};
 }

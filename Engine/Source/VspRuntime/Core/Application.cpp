@@ -1,20 +1,21 @@
-#include "Common/RuntimePCH.h"
+#include "RuntimePCH.h"
 
 #include "Application.h"
+#include "Core/Input/InputManager.h"
 #include "Templates/Delegate.h"
 
 namespace Vsp
 {
 	Application::Application(const ApplicationArguments& args)
+		: Application(args, WindowProperties())
 	{
-		FUNC_DECLARE_DELEGATE(Del1, void, Event&);
-		Del1 Del1Ins;
-		Del1Ins.Bind(this, OnEvent);
+	}
 
-		m_Window = Window::Create();
+	Application::Application(const ApplicationArguments& args, const WindowProperties& windowProperties)
+	{
+		m_Window = Window::Create(windowProperties);
 		if (!m_Window)
 		{
-			//LOG_ERROR(kLogTag, "Failed to create window!");
 			return;
 		}
 
@@ -25,17 +26,26 @@ namespace Vsp
 
 	void Application::Update()
 	{
-		m_Window->Update();
+		if (m_Window)
+		{
+			m_Window->Update();
+		}
 	}
 
 	void Application::OnEvent(Event& e)
 	{
 		m_EventDispatcher.Dispatch(e);
+
+		// Forward input events into the engine-wide input state.
+		const EventCategory eCategory = e.GetCategory();
+		if ((eCategory & EventCategory::Input) != EventCategory::None)
+		{
+			InputManager::Get().OnEvent(e);
+		}
 	}
 
 	void Application::OnWindowResize(WindowResizeEvent& event)
 	{
-		
 	}
 
 	void Application::OnWindowClose(WindowCloseEvent & event)

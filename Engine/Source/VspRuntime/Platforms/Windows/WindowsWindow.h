@@ -15,6 +15,8 @@ namespace Vsp
 
         void Destroy() override;
 
+        bool IsValid() const override { return m_HWnd != nullptr; }
+
         void* GetNativeWindowHandle() const override { return m_HWnd; }
         void* GetNativeDisplayHandle() const override { return m_HDC; }
         void GetClientSize(int& outWidth, int& outHeight) const override;

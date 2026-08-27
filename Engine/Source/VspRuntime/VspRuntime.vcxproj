@@ -37,6 +37,13 @@
     <ClInclude Include="Core\Templates\Memory.h" />
     <ClInclude Include="Core\Templates\VspObject.h" />
     <ClInclude Include="Core\Type.h" />
+    <ClInclude Include="Core\Input\KeyCode.h" />
+    <ClInclude Include="Core\Input\InputManager.h" />
+    <ClInclude Include="Graphics\Vulkan\VulkanRHI.h" />
+    <ClInclude Include="Graphics\Vulkan\VulkanSwapChain.h" />
+    <ClInclude Include="Graphics\Vulkan\VulkanRenderer2D.h" />
+    <ClInclude Include="Scripting\ScriptCore.h" />
+    <ClInclude Include="Scripting\ScriptEngine.h" />
     <ClInclude Include="Engine\Core\Utils\ArrayList.h" />
     <ClInclude Include="Core\Window.h" />
     <ClInclude Include="Core\Events\Event.h" />
@@ -48,6 +55,7 @@
     <ClInclude Include="Common\RuntimePCH.h" />
     <ClInclude Include="Scripting\BridgeFunctions.h" />
     <ClInclude Include="Scripting\ManagedScript.h" />
+    <ClInclude Include="Scripting\ScriptExport.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Core\Application.cpp" />
@@ -61,7 +69,16 @@
     <ClCompile Include="Platforms\Windows\WindowsWindow.cpp" />
     <ClCompile Include="Common\RuntimePCH.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="Core\Input\InputManager.cpp" />
+    <ClCompile Include="Core\Logging\Log.cpp" />
+    <ClCompile Include="Graphics\Vulkan\VulkanRHI.cpp" />
+    <ClCompile Include="Graphics\Vulkan\VulkanSwapChain.cpp" />
+    <ClCompile Include="Graphics\Vulkan\VulkanRenderer2D.cpp" />
+    <ClCompile Include="Scripting\NativeExports.cpp" />
+    <ClCompile Include="Scripting\ScriptCore.cpp" />
+    <ClCompile Include="Scripting\ScriptEngine.cpp" />
     <ClCompile Include="Scripting\ScriptBehaviour.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
@@ -162,12 +179,13 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;VSP_BUILD_DLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;VSP_BUILD_DLL;_HAS_EXCEPTIONS=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
+      <ExceptionHandling>false</ExceptionHandling>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>RuntimePCH.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(SolutionDir)Engine\Source\VspRuntime;$(SolutionDir)Engine\Source\Thirdparty\fmt\include;$(SolutionDir)Engine\Source\Thirdparty\glm;$(SolutionDir)Engine\Source\Thirdparty\Vulkan\Include;$(SolutionDir)Engine\Source\Thirdparty\FreeType2\freetype-2.14.3\include;$(SolutionDir)Engine\Source\Thirdparty\HarfBuzz\harfbuzz-14.2.0\src;$(SolutionDir)Engine\Source\Thirdparty\dotnet\runtime10.0.10\</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)Engine\Source\VspRuntime;$(SolutionDir)Engine\Source\VspRuntime\Common;$(SolutionDir)Engine\Source\Thirdparty\fmt\include;$(SolutionDir)Engine\Source\Thirdparty\glm;$(VULKAN_SDK)\Include;$(IntDir);$(SolutionDir)Engine\Source\Thirdparty\FreeType2\freetype-2.14.3\include;$(SolutionDir)Engine\Source\Thirdparty\HarfBuzz\harfbuzz-14.2.0\src;$(SolutionDir)Engine\Source\Thirdparty\dotnet\runtime10.0.10\</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <LanguageStandard_C>stdc11</LanguageStandard_C>
       <CompileAs>CompileAsCpp</CompileAs>
@@ -176,8 +194,8 @@
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
-      <AdditionalLibraryDirectories>$(SolutionDir)Engine\Binaries\ICU\Debug;$(SolutionDir)Engine\Binaries\mimalloc\Debug;$(SolutionDir)Engine\Binaries\freetype;$(SolutionDir)Engine\Binaries\harfbuzz\Debug</AdditionalLibraryDirectories>
-      <AdditionalDependencies>icu.lib;mimalloc.lib;freetype.lib;harfbuzz.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)Engine\Binaries\ICU\Debug;$(SolutionDir)Engine\Binaries\mimalloc\Debug;$(SolutionDir)Engine\Binaries\freetype;$(SolutionDir)Engine\Binaries\harfbuzz\Debug;$(SolutionDir)Engine\Binaries\Vulkun</AdditionalLibraryDirectories>
+      <AdditionalDependencies>icu.lib;mimalloc.lib;freetype.lib;harfbuzz.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -186,12 +204,13 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;VSP_BUILD_DLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;VSP_BUILD_DLL;_HAS_EXCEPTIONS=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
+      <ExceptionHandling>false</ExceptionHandling>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>RuntimePCH.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(SolutionDir)Engine\Source\VspRuntime;$(SolutionDir)Engine\Source\Thirdparty\fmt\include;$(SolutionDir)Engine\Source\Thirdparty\glm;$(SolutionDir)Engine\Source\Thirdparty\Vulkan\Include;$(SolutionDir)Engine\Source\Thirdparty\FreeType2\freetype-2.14.3\include;$(SolutionDir)Engine\Source\Thirdparty\HarfBuzz\harfbuzz-14.2.0\src;$(SolutionDir)Engine\Source\Thirdparty\dotnet\runtime10.0.10\</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)Engine\Source\VspRuntime;$(SolutionDir)Engine\Source\VspRuntime\Common;$(SolutionDir)Engine\Source\Thirdparty\fmt\include;$(SolutionDir)Engine\Source\Thirdparty\glm;$(VULKAN_SDK)\Include;$(IntDir);$(SolutionDir)Engine\Source\Thirdparty\FreeType2\freetype-2.14.3\include;$(SolutionDir)Engine\Source\Thirdparty\HarfBuzz\harfbuzz-14.2.0\src;$(SolutionDir)Engine\Source\Thirdparty\dotnet\runtime10.0.10\</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <LanguageStandard_C>stdc11</LanguageStandard_C>
       <Optimization>MaxSpeed</Optimization>
@@ -202,8 +221,18 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
       <AdditionalLibraryDirectories>$(SolutionDir)Engine\Binaries\ICU\Release;$(SolutionDir)Engine\Binaries\mimalloc\Release;$(SolutionDir)Engine\Binaries\Vulkun;$(SolutionDir)Engine\Binaries\freetype;$(SolutionDir)Engine\Binaries\harfbuzz\Release</AdditionalLibraryDirectories>
-      <AdditionalDependencies>icu.lib;mimalloc.lib;freetype.lib;harfbuzz.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>icu.lib;mimalloc.lib;freetype.lib;harfbuzz.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <PreBuildEvent>
+      <Command>if not exist &quot;$(IntDir)ShaderBinary.h&quot; powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)Graphics\Vulkan\Shaders\CompileShaders.ps1&quot; -OutputPath &quot;$(IntDir)ShaderBinary.h&quot;</Command>
+    </PreBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <PreBuildEvent>
+      <Command>if not exist &quot;$(IntDir)ShaderBinary.h&quot; powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)Graphics\Vulkan\Shaders\CompileShaders.ps1&quot; -OutputPath &quot;$(IntDir)ShaderBinary.h&quot;</Command>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

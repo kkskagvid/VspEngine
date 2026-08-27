@@ -1,16 +1,15 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
+using System;
 
 namespace VspEngine
 {
 	public abstract class GameObject
 	{
-		private uint m_InstanceID;
+		/// <summary>Non-negative integer handle used by the C++ host to address this object (0 = invalid).</summary>
+		public uint InstanceID { get; internal set; }
 
 		public uint GetInstanceID()
 		{
-			return m_InstanceID;
+			return InstanceID;
 		}
 	}
 }

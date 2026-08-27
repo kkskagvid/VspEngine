@@ -55,10 +55,11 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;_WINDOWS;_HAS_EXCEPTIONS=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(SolutionDir)Engine\Source\VspRuntime;$(SolutionDir)Engine\Source\Thirdparty\fmt\include;$(SolutionDir)Engine\Source\Thirdparty\OpenGL;$(SolutionDir)Engine\Source\Thirdparty\ICU\icu4c-77_1\include;$(SolutionDir)Engine\Source\Thirdparty\mimalloc\include</AdditionalIncludeDirectories>
+      <ExceptionHandling>false</ExceptionHandling>
+      <AdditionalIncludeDirectories>$(SolutionDir)Engine\Source\VspRuntime;$(SolutionDir)Engine\Source\Thirdparty\fmt\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard_C>stdc11</LanguageStandard_C>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
@@ -67,6 +68,10 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalDependencies>dbghelp.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <PostBuildEvent>
+      <Command>xcopy /Y /D &quot;$(ProjectDir)Config\Launch.runtimeconfig.json&quot; &quot;$(OutDir)&quot; &gt;nul
+if exist &quot;$(VULKAN_SDK)\Bin\vulkan-1.dll&quot; copy /Y &quot;$(VULKAN_SDK)\Bin\vulkan-1.dll&quot; &quot;$(OutDir)&quot; &gt;nul</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -74,10 +79,11 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;_WINDOWS;_HAS_EXCEPTIONS=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>$(SolutionDir)Engine\Source\VspRuntime;$(SolutionDir)Engine\Source\Thirdparty\fmt\include;$(SolutionDir)Engine\Source\Thirdparty\OpenGL;$(SolutionDir)Engine\Source\Thirdparty\ICU\icu4c-77_1\include;$(SolutionDir)Engine\Source\Thirdparty\mimalloc\include</AdditionalIncludeDirectories>
+      <ExceptionHandling>false</ExceptionHandling>
+      <AdditionalIncludeDirectories>$(SolutionDir)Engine\Source\VspRuntime;$(SolutionDir)Engine\Source\Thirdparty\fmt\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard_C>stdc11</LanguageStandard_C>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
@@ -86,26 +92,20 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalDependencies>dbghelp.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <PostBuildEvent>
+      <Command>xcopy /Y /D &quot;$(ProjectDir)Config\Launch.runtimeconfig.json&quot; &quot;$(OutDir)&quot; &gt;nul
+if exist &quot;$(VULKAN_SDK)\Bin\vulkan-1.dll&quot; copy /Y &quot;$(VULKAN_SDK)\Bin\vulkan-1.dll&quot; &quot;$(OutDir)&quot; &gt;nul</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="LaunchLoop.cpp" />
     <ClCompile Include="Windows\LaunchWindows.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <Image Include="Resource\DefaultEngine.ico" />
-    <Image Include="Resource\EngineIcon.ico" />
+    <None Include="Config\Launch.runtimeconfig.json" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="Resource\Launch.aps" />
-  </ItemGroup>
-  <ItemGroup>
-    <ResourceCompile Include="Resource\Launch.rc" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="Resource\resource.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\Runtime\Runtime.vcxproj">
+    <ProjectReference Include="..\VspRuntime\VspRuntime.vcxproj">
       <Project>{b5752592-6d1c-4ca0-8ac5-45881dbfaffa}</Project>
     </ProjectReference>
   </ItemGroup>

@@ -4,6 +4,7 @@
     <Platform Name="x86" />
   </Configurations>
   <Project Path="Engine/Source/Launch/Launch.vcxproj" Id="7d9ae143-94ef-4137-9659-d25c0652c16e">
+    <BuildDependency Project="Engine/Source/VspPlayer/VspPlayer.csproj" />
     <Platform Project="x64" />
   </Project>
   <Project Path="Engine/Source/VspPlayer/VspPlayer.csproj">

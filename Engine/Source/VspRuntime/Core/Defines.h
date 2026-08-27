@@ -3,13 +3,11 @@
 #ifdef VSP_PLATFORM_WINDOWS
 	#ifdef VSP_BUILD_DLL
 		#define RUNTIME_API __declspec(dllexport)
-		#define CSHARP_EXPORT extern "C" __declspec(dllexport)
 	#else
 		#define RUNTIME_API __declspec(dllimport)
 	#endif
 #else
 	#define RUNTIME_API
-	#define CS_API
 #endif
 
 #if VSP_ENGINE_DEBUG
