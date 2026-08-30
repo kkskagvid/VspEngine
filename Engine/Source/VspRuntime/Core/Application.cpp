@@ -1,5 +1,8 @@
 #include "RuntimePCH.h"
 
+#include <functional>
+#include <memory>
+
 #include "Application.h"
 #include "Core/Input/InputManager.h"
 #include "Templates/Delegate.h"

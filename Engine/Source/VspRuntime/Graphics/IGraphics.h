@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Core/Core.h"
-#include "Core/String/VspString.h"
 
 namespace Vsp
 {
@@ -9,16 +8,17 @@ namespace Vsp
 	// IGraphics
 	// -------------------------------------------------------------------------
 	// Minimal interface shared by graphics backends. Implementations never
-	// throw: failures are reported through outErrorText.
+	// throw and report failures through the engine log (Log) instead of
+	// out-parameters: every function logs its own errors internally.
 	// -------------------------------------------------------------------------
 	class RUNTIME_API IGraphics
 	{
 	public:
 		virtual ~IGraphics() = default;
 
-		virtual bool Initialize(void* pNativeWindowHandle, VspString& outErrorText) = 0;
+		virtual bool Initialize(void* pNativeWindowHandle) = 0;
 		virtual void Shutdown() = 0;
 		virtual void OnWindowResize(uint32_t uWidth, uint32_t uHeight) = 0;
-		virtual bool RenderFrame(VspString& outErrorText) = 0;
+		virtual bool RenderFrame() = 0;
 	};
 }

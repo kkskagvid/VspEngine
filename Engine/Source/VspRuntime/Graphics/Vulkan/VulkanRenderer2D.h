@@ -12,15 +12,13 @@ namespace Vsp
 	// VulkanRenderer2D
 	// -------------------------------------------------------------------------
 	// Minimal 2D renderer drawing one colored triangle, used to validate the
-	// engine. Depending on the negotiated device capabilities it runs one of
-	// two implementations:
-	//   - Vulkan13Bindless  : Vulkan 1.3 with descriptor indexing; the texture
-	//                         is sampled out of a large bindless array through
-	//                         nonuniformEXT.
-	//   - Vulkan12Fallback  : classic descriptor sets (combined image sampler),
-	//                         compatible with plain Vulkan 1.2 devices.
+	// engine. It only runs the Vulkan 1.3 bindless implementation: the texture
+	// is sampled out of a large bindless array through nonuniformEXT. Devices
+	// below Vulkan 1.3 (or without bindless descriptor indexing) are rejected
+	// during device negotiation - there is no Vulkan 1.2 fallback path.
 	// The triangle position and color mode are set every frame by the game
 	// engine based on what the managed scripts reported.
+	// All errors are logged through the Log module; nothing throws.
 	// -------------------------------------------------------------------------
 #pragma warning(push)
 #pragma warning(disable : 4251)   // Members of non-dll-interface helper classes.
@@ -56,17 +54,17 @@ namespace Vsp
 
 		~VulkanRenderer2D() override;
 
-		bool Initialize(void* pNativeWindowHandle, VspString& outErrorText) override;
+		bool Initialize(void* pNativeWindowHandle) override;
 		void Shutdown() override;
 		void OnWindowResize(uint32_t uWidth, uint32_t uHeight) override;
-		bool RenderFrame(VspString& outErrorText) override;
+		bool RenderFrame() override;
 
 		void SetTrianglePosition(float fPositionX, float fPositionY);
 		void SetColorMode(int32_t nColorMode);
 
 		// Reads the most recently presented swapchain image back to the CPU and
 		// writes it as a 32-bit BMP (used by automated acceptance tests).
-		bool CaptureFramebuffer(const VspString& sFilePath, VspString& outErrorText);
+		bool CaptureFramebuffer(const VspString& sFilePath);
 
 		VulkanFeaturePath GetFeaturePath() const { return m_Context.GetDeviceProperties().eFeaturePath; }
 		const VulkanDeviceProperties& GetDeviceProperties() const { return m_Context.GetDeviceProperties(); }
@@ -103,21 +101,14 @@ namespace Vsp
 		VkImageView m_VkTextureView = VK_NULL_HANDLE;
 		VkSampler m_VkTextureSampler = VK_NULL_HANDLE;
 
-		// -------- Bindless descriptors (Vulkan 1.3 path) --------
-		VkDescriptorSetLayout m_VkBindlessDescriptorSetLayout = VK_NULL_HANDLE;
-		VkDescriptorPool m_VkBindlessDescriptorPool = VK_NULL_HANDLE;
-		VkDescriptorSet m_VkBindlessDescriptorSets[k_nMaxFramesInFlight] = {};
+		// -------- Bindless descriptors (the only supported path) --------
+		VkDescriptorSetLayout m_VkDescriptorSetLayout = VK_NULL_HANDLE;
+		VkDescriptorPool m_VkDescriptorPool = VK_NULL_HANDLE;
+		VkDescriptorSet m_VkDescriptorSets[k_nMaxFramesInFlight] = {};
 
-		// -------- Fallback descriptors (Vulkan 1.2 path) --------
-		VkDescriptorSetLayout m_VkFallbackDescriptorSetLayout = VK_NULL_HANDLE;
-		VkDescriptorPool m_VkFallbackDescriptorPool = VK_NULL_HANDLE;
-		VkDescriptorSet m_VkFallbackDescriptorSets[k_nMaxFramesInFlight] = {};
-
-		// -------- Pipelines --------
-		VkPipelineLayout m_VkBindlessPipelineLayout = VK_NULL_HANDLE;
-		VkPipeline m_VkBindlessPipeline = VK_NULL_HANDLE;
-		VkPipelineLayout m_VkFallbackPipelineLayout = VK_NULL_HANDLE;
-		VkPipeline m_VkFallbackPipeline = VK_NULL_HANDLE;
+		// -------- Pipeline --------
+		VkPipelineLayout m_VkPipelineLayout = VK_NULL_HANDLE;
+		VkPipeline m_VkPipeline = VK_NULL_HANDLE;
 
 		// -------- Script-driven state --------
 		float m_fTrianglePositionX = 0.0f;
@@ -127,18 +118,16 @@ namespace Vsp
 		bool m_bIsInitialized = false;
 
 		// -------- Creation helpers --------
-		bool CreateFrameResources(VspString& outErrorText);
-		bool CreateTriangleGeometry(VspString& outErrorText);
-		bool CreateDemoTexture(VspString& outErrorText);
-		bool CreateBindlessDescriptors(VspString& outErrorText);
-		bool CreateFallbackDescriptors(VspString& outErrorText);
-		bool CreatePipelines(VspString& outErrorText);
+		bool CreateFrameResources();
+		bool CreateTriangleGeometry();
+		bool CreateDemoTexture();
+		bool CreateBindlessDescriptors();
+		bool CreatePipelines();
 		bool CreateGraphicsPipeline(
 			VkShaderModule vertexShader,
 			VkShaderModule fragmentShader,
 			VkPipelineLayout pipelineLayout,
-			VkPipeline& outPipeline,
-			VspString& outErrorText) const;
+			VkPipeline& outPipeline) const;
 
 		// -------- Frame helpers --------
 		void DestroyFrameResources();
@@ -156,8 +145,7 @@ namespace Vsp
 			VkImage image,
 			VkFormat format,
 			VkImageLayout oldLayout,
-			VkImageLayout newLayout,
-			VspString& outErrorText);
+			VkImageLayout newLayout);
 	};
 #pragma warning(pop)
 }

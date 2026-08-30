@@ -14,14 +14,6 @@ namespace Vsp
 {
 	static constexpr const char* kLogTag = "VulkanRenderer2D";
 
-	// Formats a VkResult for error text.
-	static VspString FormatVkResultNumber(VkResult eResult)
-	{
-		char sBuffer[32];
-		snprintf(sBuffer, sizeof(sBuffer), "%d", static_cast<int32_t>(eResult));
-		return VspString(sBuffer);
-	}
-
 	// The acceptance triangle: one vertex per corner, distinct vertex colors.
 	static constexpr VulkanRenderer2D::Vertex2D k_sTriangleVertices[] =
 	{
@@ -41,39 +33,28 @@ namespace Vsp
 		Shutdown();
 	}
 
-	bool VulkanRenderer2D::Initialize(void* pNativeWindowHandle, VspString& outErrorText)
+	bool VulkanRenderer2D::Initialize(void* pNativeWindowHandle)
 	{
-		outErrorText = nullptr;
 
-		if (!m_Context.Initialize("Vsp Engine", pNativeWindowHandle, outErrorText))
+		if (!m_Context.Initialize("Vsp Engine", pNativeWindowHandle))
 		{
-			// Device below Vulkan 1.2 lands here with an "Unsupported device" message.
-			LOG_ERROR(kLogTag, "{}", outErrorText.ToStdString());
+			// Device below Vulkan 1.2 lands here: the context has already
+			// logged the "Unsupported device" details through the Log module.
 			return false;
 		}
 
-		if (!m_SwapChain.Initialize(m_Context, 1280, 720, outErrorText)) return false;
-		if (!CreateFrameResources(outErrorText)) return false;
-		if (!CreateTriangleGeometry(outErrorText)) return false;
-		if (!CreateDemoTexture(outErrorText)) return false;
+		if (!m_SwapChain.Initialize(m_Context, 1280, 720)) return false;
+		if (!CreateFrameResources()) return false;
+		if (!CreateTriangleGeometry()) return false;
+		if (!CreateDemoTexture()) return false;
 
-		// Only the active feature path is built: its descriptor set layout must
-		// exist before its pipeline layout/pipeline, and the other path's
-		// bindless layout would not even be creatable on a 1.2-only device.
-		if (m_Context.SupportsBindless())
-		{
-			if (!CreateBindlessDescriptors(outErrorText)) return false;
-			if (!CreatePipelines(outErrorText)) return false;
-		}
-		else
-		{
-			if (!CreateFallbackDescriptors(outErrorText)) return false;
-			if (!CreatePipelines(outErrorText)) return false;
-		}
+		// Descriptor set layout first, then the pipeline that references it.
+		// Bindless is the only supported implementation.
+		if (!CreateBindlessDescriptors()) return false;
+		if (!CreatePipelines()) return false;
 
 		m_bIsInitialized = true;
-		LOG_INFO(kLogTag, "Renderer ready (feature path: {}).",
-			m_Context.SupportsBindless() ? "Vulkan 1.3 bindless" : "Vulkan 1.2 fallback");
+		LOG_INFO(kLogTag, "Renderer ready (feature path: Vulkan 1.3 bindless).");
 		return true;
 	}
 
@@ -108,10 +89,9 @@ namespace Vsp
 			return;
 		}
 
-		VspString sErrorText;
-		if (!m_SwapChain.Recreate(uWidth, uHeight, sErrorText))
+		if (!m_SwapChain.Recreate(uWidth, uHeight))
 		{
-			LOG_ERROR(kLogTag, "{}", sErrorText.ToStdString());
+			// The recreate failure was already logged inside the swapchain.
 		}
 	}
 
@@ -130,7 +110,7 @@ namespace Vsp
 	// FrameResources (command buffers, per-frame uniforms, sync primitives)
 	// -------------------------------------------------------------------------
 
-	bool VulkanRenderer2D::CreateFrameResources(VspString& outErrorText)
+	bool VulkanRenderer2D::CreateFrameResources()
 	{
 		const VkDevice device = m_Context.GetDevice();
 
@@ -143,7 +123,7 @@ namespace Vsp
 		VkCommandBuffer commandBuffers[k_nMaxFramesInFlight] = {};
 		if (vkAllocateCommandBuffers(device, &commandBufferAllocateInfo, commandBuffers) != VK_SUCCESS)
 		{
-			outErrorText = "vkAllocateCommandBuffers failed.";
+			LOG_ERROR(kLogTag, "vkAllocateCommandBuffers failed.");
 			return false;
 		}
 
@@ -163,7 +143,7 @@ namespace Vsp
 				vkCreateSemaphore(device, &semaphoreCreateInfo, nullptr, &frame.renderFinishedSemaphore) != VK_SUCCESS ||
 				vkCreateFence(device, &fenceCreateInfo, nullptr, &frame.inFlightFence) != VK_SUCCESS)
 			{
-				outErrorText = "Failed to create frame sync objects.";
+				LOG_ERROR(kLogTag, "Failed to create frame sync objects.");
 				return false;
 			}
 
@@ -173,8 +153,7 @@ namespace Vsp
 				VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
 				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 				frame.uniformBuffer,
-				frame.uniformBufferMemory,
-				outErrorText);
+				frame.uniformBufferMemory);
 			if (frame.uniformBuffer == VK_NULL_HANDLE)
 			{
 				return false;
@@ -214,7 +193,7 @@ namespace Vsp
 	// Triangle geometry
 	// -------------------------------------------------------------------------
 
-	bool VulkanRenderer2D::CreateTriangleGeometry(VspString& outErrorText)
+	bool VulkanRenderer2D::CreateTriangleGeometry()
 	{
 		const VkDeviceSize k_nBufferByteSize = sizeof(k_sTriangleVertices);
 
@@ -225,8 +204,7 @@ namespace Vsp
 			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 			stagingBuffer,
-			stagingBufferMemory,
-			outErrorText);
+			stagingBufferMemory);
 		if (stagingBuffer == VK_NULL_HANDLE)
 		{
 			return false;
@@ -242,8 +220,7 @@ namespace Vsp
 			VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 			m_VkVertexBuffer,
-			m_VkVertexBufferMemory,
-			outErrorText);
+			m_VkVertexBufferMemory);
 		if (m_VkVertexBuffer == VK_NULL_HANDLE)
 		{
 			vkDestroyBuffer(m_Context.GetDevice(), stagingBuffer, nullptr);
@@ -252,7 +229,7 @@ namespace Vsp
 		}
 
 		// Copy staging -> device local through a one-time command buffer.
-		VkCommandBuffer commandBuffer = m_Context.BeginOneTimeCommandBuffer(outErrorText);
+		VkCommandBuffer commandBuffer = m_Context.BeginOneTimeCommandBuffer();
 		if (commandBuffer == VK_NULL_HANDLE)
 		{
 			return false;
@@ -262,7 +239,7 @@ namespace Vsp
 		copyRegion.size = k_nBufferByteSize;
 		vkCmdCopyBuffer(commandBuffer, stagingBuffer, m_VkVertexBuffer, 1, &copyRegion);
 
-		const bool bSuccess = m_Context.EndOneTimeCommandBuffer(commandBuffer, outErrorText);
+		const bool bSuccess = m_Context.EndOneTimeCommandBuffer(commandBuffer);
 
 		vkDestroyBuffer(m_Context.GetDevice(), stagingBuffer, nullptr);
 		vkFreeMemory(m_Context.GetDevice(), stagingBufferMemory, nullptr);
@@ -290,7 +267,7 @@ namespace Vsp
 	// bindless array sampling is exercised on both paths)
 	// -------------------------------------------------------------------------
 
-	bool VulkanRenderer2D::CreateDemoTexture(VspString& outErrorText)
+	bool VulkanRenderer2D::CreateDemoTexture()
 	{
 		constexpr uint32_t k_nTextureWidth = 8;
 		constexpr uint32_t k_nTextureHeight = 8;
@@ -315,8 +292,7 @@ namespace Vsp
 			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 			stagingBuffer,
-			stagingBufferMemory,
-			outErrorText);
+			stagingBufferMemory);
 		if (stagingBuffer == VK_NULL_HANDLE)
 		{
 			return false;
@@ -345,7 +321,7 @@ namespace Vsp
 
 		if (vkCreateImage(device, &imageCreateInfo, nullptr, &m_VkTextureImage) != VK_SUCCESS)
 		{
-			outErrorText = "vkCreateImage failed.";
+			LOG_ERROR(kLogTag, "vkCreateImage failed.");
 			return false;
 		}
 
@@ -355,7 +331,7 @@ namespace Vsp
 		const uint32_t nMemoryTypeIndex = m_Context.FindMemoryTypeIndex(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 		if (nMemoryTypeIndex == UINT32_MAX)
 		{
-			outErrorText = "No DEVICE_LOCAL memory type for the demo texture.";
+			LOG_ERROR(kLogTag, "No DEVICE_LOCAL memory type for the demo texture.");
 			return false;
 		}
 
@@ -367,18 +343,18 @@ namespace Vsp
 		if (vkAllocateMemory(device, &allocateInfo, nullptr, &m_VkTextureMemory) != VK_SUCCESS ||
 			vkBindImageMemory(device, m_VkTextureImage, m_VkTextureMemory, 0) != VK_SUCCESS)
 		{
-			outErrorText = "Failed to allocate/bind demo texture memory.";
+			LOG_ERROR(kLogTag, "Failed to allocate/bind demo texture memory.");
 			return false;
 		}
 
 		// Transition UNDEFINED -> TRANSFER_DST, copy, TRANSFER_DST -> SHADER_READ_ONLY.
 		if (!TransitionImageLayout(m_Context, m_VkTextureImage, VK_FORMAT_R8G8B8A8_UNORM,
-			VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, outErrorText))
+			VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL))
 		{
 			return false;
 		}
 
-		VkCommandBuffer commandBuffer = m_Context.BeginOneTimeCommandBuffer(outErrorText);
+		VkCommandBuffer commandBuffer = m_Context.BeginOneTimeCommandBuffer();
 		if (commandBuffer == VK_NULL_HANDLE)
 		{
 			return false;
@@ -403,14 +379,14 @@ namespace Vsp
 			1,
 			&copyRegion);
 
-		const bool bCopySuccess = m_Context.EndOneTimeCommandBuffer(commandBuffer, outErrorText);
+		const bool bCopySuccess = m_Context.EndOneTimeCommandBuffer(commandBuffer);
 
 		vkDestroyBuffer(device, stagingBuffer, nullptr);
 		vkFreeMemory(device, stagingBufferMemory, nullptr);
 
 		if (!bCopySuccess ||
 			!TransitionImageLayout(m_Context, m_VkTextureImage, VK_FORMAT_R8G8B8A8_UNORM,
-				VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, outErrorText))
+				VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL))
 		{
 			return false;
 		}
@@ -429,7 +405,7 @@ namespace Vsp
 
 		if (vkCreateImageView(device, &viewCreateInfo, nullptr, &m_VkTextureView) != VK_SUCCESS)
 		{
-			outErrorText = "vkCreateImageView failed.";
+			LOG_ERROR(kLogTag, "vkCreateImageView failed.");
 			return false;
 		}
 
@@ -454,7 +430,7 @@ namespace Vsp
 
 		if (vkCreateSampler(device, &samplerCreateInfo, nullptr, &m_VkTextureSampler) != VK_SUCCESS)
 		{
-			outErrorText = "vkCreateSampler failed.";
+			LOG_ERROR(kLogTag, "vkCreateSampler failed.");
 			return false;
 		}
 
@@ -485,15 +461,12 @@ namespace Vsp
 		VkImage image,
 		VkFormat format,
 		VkImageLayout oldLayout,
-		VkImageLayout newLayout,
-		VspString& outErrorText)
+		VkImageLayout newLayout)
 	{
-		VspString sUnused;
-		VkCommandBuffer commandBuffer = context.BeginOneTimeCommandBuffer(sUnused);
+		VkCommandBuffer commandBuffer = context.BeginOneTimeCommandBuffer();
 		if (commandBuffer == VK_NULL_HANDLE)
 		{
-			outErrorText = sUnused;
-			return false;
+			return false;   // The context already logged the failure.
 		}
 
 		VkPipelineStageFlags sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
@@ -528,7 +501,7 @@ namespace Vsp
 		}
 		else
 		{
-			outErrorText = "Unsupported image layout transition.";
+			LOG_ERROR(kLogTag, "Unsupported image layout transition.");
 			return false;
 		}
 
@@ -541,14 +514,14 @@ namespace Vsp
 			0, nullptr,
 			1, &barrier);
 
-		return context.EndOneTimeCommandBuffer(commandBuffer, outErrorText);
+		return context.EndOneTimeCommandBuffer(commandBuffer);
 	}
 
 	// -------------------------------------------------------------------------
-	// Descriptors (bindless + fallback)
+	// Descriptors (bindless)
 	// -------------------------------------------------------------------------
 
-	bool VulkanRenderer2D::CreateBindlessDescriptors(VspString& outErrorText)
+	bool VulkanRenderer2D::CreateBindlessDescriptors()
 	{
 		const VkDevice device = m_Context.GetDevice();
 
@@ -585,9 +558,9 @@ namespace Vsp
 		layoutCreateInfo.bindingCount = 2;
 		layoutCreateInfo.pBindings = bindings;
 
-		if (vkCreateDescriptorSetLayout(device, &layoutCreateInfo, nullptr, &m_VkBindlessDescriptorSetLayout) != VK_SUCCESS)
+		if (vkCreateDescriptorSetLayout(device, &layoutCreateInfo, nullptr, &m_VkDescriptorSetLayout) != VK_SUCCESS)
 		{
-			outErrorText = "Failed to create bindless descriptor set layout.";
+			LOG_ERROR(kLogTag, "Failed to create bindless descriptor set layout.");
 			return false;
 		}
 
@@ -605,27 +578,27 @@ namespace Vsp
 		poolCreateInfo.poolSizeCount = 2;
 		poolCreateInfo.pPoolSizes = poolSizes;
 
-		if (vkCreateDescriptorPool(device, &poolCreateInfo, nullptr, &m_VkBindlessDescriptorPool) != VK_SUCCESS)
+		if (vkCreateDescriptorPool(device, &poolCreateInfo, nullptr, &m_VkDescriptorPool) != VK_SUCCESS)
 		{
-			outErrorText = "Failed to create bindless descriptor pool.";
+			LOG_ERROR(kLogTag, "Failed to create bindless descriptor pool.");
 			return false;
 		}
 
 		VkDescriptorSetLayout layouts[k_nMaxFramesInFlight] =
 		{
-			m_VkBindlessDescriptorSetLayout,
-			m_VkBindlessDescriptorSetLayout,
+			m_VkDescriptorSetLayout,
+			m_VkDescriptorSetLayout,
 		};
 
 		VkDescriptorSetAllocateInfo allocateInfo = {};
 		allocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-		allocateInfo.descriptorPool = m_VkBindlessDescriptorPool;
+		allocateInfo.descriptorPool = m_VkDescriptorPool;
 		allocateInfo.descriptorSetCount = k_nMaxFramesInFlight;
 		allocateInfo.pSetLayouts = layouts;
 
-		if (vkAllocateDescriptorSets(device, &allocateInfo, m_VkBindlessDescriptorSets) != VK_SUCCESS)
+		if (vkAllocateDescriptorSets(device, &allocateInfo, m_VkDescriptorSets) != VK_SUCCESS)
 		{
-			outErrorText = "Failed to allocate bindless descriptor sets.";
+			LOG_ERROR(kLogTag, "Failed to allocate bindless descriptor sets.");
 			return false;
 		}
 
@@ -645,7 +618,7 @@ namespace Vsp
 
 			VkWriteDescriptorSet writes[2] = {};
 			writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			writes[0].dstSet = m_VkBindlessDescriptorSets[uFrameIndex];
+			writes[0].dstSet = m_VkDescriptorSets[uFrameIndex];
 			writes[0].dstBinding = 0;
 			writes[0].dstArrayElement = 0;
 			writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -653,7 +626,7 @@ namespace Vsp
 			writes[0].pBufferInfo = &bufferInfo;
 
 			writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			writes[1].dstSet = m_VkBindlessDescriptorSets[uFrameIndex];
+			writes[1].dstSet = m_VkDescriptorSets[uFrameIndex];
 			writes[1].dstBinding = 1;
 			writes[1].dstArrayElement = 0;
 			writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -667,106 +640,6 @@ namespace Vsp
 		return true;
 	}
 
-	bool VulkanRenderer2D::CreateFallbackDescriptors(VspString& outErrorText)
-	{
-		const VkDevice device = m_Context.GetDevice();
-
-		// Layout: binding 0 = per-frame camera UBO (vertex),
-		//         binding 1 = combined image sampler (fragment).
-		VkDescriptorSetLayoutBinding bindings[2] = {};
-		bindings[0].binding = 0;
-		bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		bindings[0].descriptorCount = 1;
-		bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-		bindings[1].binding = 1;
-		bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		bindings[1].descriptorCount = 1;
-		bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-		VkDescriptorSetLayoutCreateInfo layoutCreateInfo = {};
-		layoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-		layoutCreateInfo.bindingCount = 2;
-		layoutCreateInfo.pBindings = bindings;
-
-		if (vkCreateDescriptorSetLayout(device, &layoutCreateInfo, nullptr, &m_VkFallbackDescriptorSetLayout) != VK_SUCCESS)
-		{
-			outErrorText = "Failed to create fallback descriptor set layout.";
-			return false;
-		}
-
-		VkDescriptorPoolSize poolSizes[2] = {};
-		poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		poolSizes[0].descriptorCount = k_nMaxFramesInFlight;
-		poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		poolSizes[1].descriptorCount = k_nMaxFramesInFlight;
-
-		VkDescriptorPoolCreateInfo poolCreateInfo = {};
-		poolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-		poolCreateInfo.maxSets = k_nMaxFramesInFlight;
-		poolCreateInfo.poolSizeCount = 2;
-		poolCreateInfo.pPoolSizes = poolSizes;
-
-		if (vkCreateDescriptorPool(device, &poolCreateInfo, nullptr, &m_VkFallbackDescriptorPool) != VK_SUCCESS)
-		{
-			outErrorText = "Failed to create fallback descriptor pool.";
-			return false;
-		}
-
-		VkDescriptorSetLayout layouts[k_nMaxFramesInFlight] =
-		{
-			m_VkFallbackDescriptorSetLayout,
-			m_VkFallbackDescriptorSetLayout,
-		};
-
-		VkDescriptorSetAllocateInfo allocateInfo = {};
-		allocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-		allocateInfo.descriptorPool = m_VkFallbackDescriptorPool;
-		allocateInfo.descriptorSetCount = k_nMaxFramesInFlight;
-		allocateInfo.pSetLayouts = layouts;
-
-		if (vkAllocateDescriptorSets(device, &allocateInfo, m_VkFallbackDescriptorSets) != VK_SUCCESS)
-		{
-			outErrorText = "Failed to allocate fallback descriptor sets.";
-			return false;
-		}
-
-		VkDescriptorImageInfo imageInfo = {};
-		imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		imageInfo.imageView = m_VkTextureView;
-		imageInfo.sampler = m_VkTextureSampler;
-
-		for (uint32_t uFrameIndex = 0; uFrameIndex < k_nMaxFramesInFlight; ++uFrameIndex)
-		{
-			VkDescriptorBufferInfo bufferInfo = {};
-			bufferInfo.buffer = m_Frames[uFrameIndex].uniformBuffer;
-			bufferInfo.offset = 0;
-			bufferInfo.range = sizeof(CameraUniformData);
-
-			VkWriteDescriptorSet writes[2] = {};
-			writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			writes[0].dstSet = m_VkFallbackDescriptorSets[uFrameIndex];
-			writes[0].dstBinding = 0;
-			writes[0].dstArrayElement = 0;
-			writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-			writes[0].descriptorCount = 1;
-			writes[0].pBufferInfo = &bufferInfo;
-
-			writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			writes[1].dstSet = m_VkFallbackDescriptorSets[uFrameIndex];
-			writes[1].dstBinding = 1;
-			writes[1].dstArrayElement = 0;
-			writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-			writes[1].descriptorCount = 1;
-			writes[1].pImageInfo = &imageInfo;
-
-			vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
-		}
-
-		LOG_INFO(kLogTag, "Fallback descriptors ready (classic combined image sampler).");
-		return true;
-	}
-
 	void VulkanRenderer2D::DestroyDescriptors()
 	{
 		if (!m_Context.IsInitialized())
@@ -776,38 +649,27 @@ namespace Vsp
 
 		const VkDevice device = m_Context.GetDevice();
 
-		if (m_VkBindlessDescriptorPool != VK_NULL_HANDLE) { vkDestroyDescriptorPool(device, m_VkBindlessDescriptorPool, nullptr); m_VkBindlessDescriptorPool = VK_NULL_HANDLE; }
-		if (m_VkBindlessDescriptorSetLayout != VK_NULL_HANDLE) { vkDestroyDescriptorSetLayout(device, m_VkBindlessDescriptorSetLayout, nullptr); m_VkBindlessDescriptorSetLayout = VK_NULL_HANDLE; }
-		if (m_VkFallbackDescriptorPool != VK_NULL_HANDLE) { vkDestroyDescriptorPool(device, m_VkFallbackDescriptorPool, nullptr); m_VkFallbackDescriptorPool = VK_NULL_HANDLE; }
-		if (m_VkFallbackDescriptorSetLayout != VK_NULL_HANDLE) { vkDestroyDescriptorSetLayout(device, m_VkFallbackDescriptorSetLayout, nullptr); m_VkFallbackDescriptorSetLayout = VK_NULL_HANDLE; }
+		if (m_VkDescriptorPool != VK_NULL_HANDLE) { vkDestroyDescriptorPool(device, m_VkDescriptorPool, nullptr); m_VkDescriptorPool = VK_NULL_HANDLE; }
+		if (m_VkDescriptorSetLayout != VK_NULL_HANDLE) { vkDestroyDescriptorSetLayout(device, m_VkDescriptorSetLayout, nullptr); m_VkDescriptorSetLayout = VK_NULL_HANDLE; }
 	}
 
 	// -------------------------------------------------------------------------
 	// Pipelines
 	// -------------------------------------------------------------------------
 
-	bool VulkanRenderer2D::CreatePipelines(VspString& outErrorText)
+	bool VulkanRenderer2D::CreatePipelines()
 	{
 		const VkDevice device = m_Context.GetDevice();
 
-		// Only the active feature path's pipeline is built (the other path's
-		// descriptor set layout may not even exist on this device).
-		const bool bUseBindless = m_Context.SupportsBindless();
-
+		// The bindless implementation is the only supported path.
 		// Note: the generated header stores the SPIR-V size in uint32 words;
 		// vkCreateShaderModule expects bytes.
 		VkShaderModule vertexShader = m_Context.CreateShaderModule(
-			bUseBindless ? Shaders::k_TriangleBindless_vertSpv : Shaders::k_TriangleFallback_vertSpv,
-			bUseBindless
-				? Shaders::k_nTriangleBindless_vertSpvSize * sizeof(uint32_t)
-				: Shaders::k_nTriangleFallback_vertSpvSize * sizeof(uint32_t),
-			outErrorText);
+			Shaders::k_TriangleBindless_vertSpv,
+			Shaders::k_nTriangleBindless_vertSpvSize * sizeof(uint32_t));
 		VkShaderModule fragmentShader = m_Context.CreateShaderModule(
-			bUseBindless ? Shaders::k_TriangleBindless_fragSpv : Shaders::k_TriangleFallback_fragSpv,
-			bUseBindless
-				? Shaders::k_nTriangleBindless_fragSpvSize * sizeof(uint32_t)
-				: Shaders::k_nTriangleFallback_fragSpvSize * sizeof(uint32_t),
-			outErrorText);
+			Shaders::k_TriangleBindless_fragSpv,
+			Shaders::k_nTriangleBindless_fragSpvSize * sizeof(uint32_t));
 
 		if (vertexShader == VK_NULL_HANDLE || fragmentShader == VK_NULL_HANDLE)
 		{
@@ -820,40 +682,30 @@ namespace Vsp
 		pushConstantRange.offset = 0;
 		pushConstantRange.size = sizeof(PushConstants);
 
-		VkDescriptorSetLayout activeSetLayout = bUseBindless
-			? m_VkBindlessDescriptorSetLayout
-			: m_VkFallbackDescriptorSetLayout;
-		VkPipelineLayout* pTargetLayout = bUseBindless
-			? &m_VkBindlessPipelineLayout
-			: &m_VkFallbackPipelineLayout;
-		VkPipeline* pTargetPipeline = bUseBindless
-			? &m_VkBindlessPipeline
-			: &m_VkFallbackPipeline;
-
 		VkPipelineLayoutCreateInfo layoutCreateInfo = {};
 		layoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		layoutCreateInfo.setLayoutCount = 1;
-		layoutCreateInfo.pSetLayouts = &activeSetLayout;
+		layoutCreateInfo.pSetLayouts = &m_VkDescriptorSetLayout;
 		layoutCreateInfo.pushConstantRangeCount = 1;
 		layoutCreateInfo.pPushConstantRanges = &pushConstantRange;
 
-		if (vkCreatePipelineLayout(device, &layoutCreateInfo, nullptr, pTargetLayout) != VK_SUCCESS)
+		if (vkCreatePipelineLayout(device, &layoutCreateInfo, nullptr, &m_VkPipelineLayout) != VK_SUCCESS)
 		{
-			outErrorText = "vkCreatePipelineLayout failed.";
+			LOG_ERROR(kLogTag, "vkCreatePipelineLayout failed.");
 			vkDestroyShaderModule(device, vertexShader, nullptr);
 			vkDestroyShaderModule(device, fragmentShader, nullptr);
 			return false;
 		}
 
 		const bool bPipelineCreated = CreateGraphicsPipeline(
-			vertexShader, fragmentShader, *pTargetLayout, *pTargetPipeline, outErrorText);
+			vertexShader, fragmentShader, m_VkPipelineLayout, m_VkPipeline);
 
 		vkDestroyShaderModule(device, vertexShader, nullptr);
 		vkDestroyShaderModule(device, fragmentShader, nullptr);
 
 		if (!bPipelineCreated)
 		{
-			outErrorText = (bUseBindless ? "Bindless pipeline: " : "Fallback pipeline: ") + outErrorText;
+			// CreateGraphicsPipeline already logged the failure details.
 			return false;
 		}
 		return true;
@@ -863,8 +715,7 @@ namespace Vsp
 		VkShaderModule vertexShader,
 		VkShaderModule fragmentShader,
 		VkPipelineLayout pipelineLayout,
-		VkPipeline& outPipeline,
-		VspString& outErrorText) const
+		VkPipeline& outPipeline) const
 	{
 		const VkDevice device = m_Context.GetDevice();
 
@@ -978,7 +829,7 @@ namespace Vsp
 		const VkResult eResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr, &outPipeline);
 		if (eResult != VK_SUCCESS)
 		{
-			outErrorText = "vkCreateGraphicsPipelines failed (VkResult " + FormatVkResultNumber(eResult) + ").";
+			LOG_ERROR(kLogTag, "vkCreateGraphicsPipelines failed (VkResult {}).", static_cast<int32_t>(eResult));
 			return false;
 		}
 		return true;
@@ -993,10 +844,8 @@ namespace Vsp
 
 		const VkDevice device = m_Context.GetDevice();
 
-		if (m_VkBindlessPipeline != VK_NULL_HANDLE) { vkDestroyPipeline(device, m_VkBindlessPipeline, nullptr); m_VkBindlessPipeline = VK_NULL_HANDLE; }
-		if (m_VkBindlessPipelineLayout != VK_NULL_HANDLE) { vkDestroyPipelineLayout(device, m_VkBindlessPipelineLayout, nullptr); m_VkBindlessPipelineLayout = VK_NULL_HANDLE; }
-		if (m_VkFallbackPipeline != VK_NULL_HANDLE) { vkDestroyPipeline(device, m_VkFallbackPipeline, nullptr); m_VkFallbackPipeline = VK_NULL_HANDLE; }
-		if (m_VkFallbackPipelineLayout != VK_NULL_HANDLE) { vkDestroyPipelineLayout(device, m_VkFallbackPipelineLayout, nullptr); m_VkFallbackPipelineLayout = VK_NULL_HANDLE; }
+		if (m_VkPipeline != VK_NULL_HANDLE) { vkDestroyPipeline(device, m_VkPipeline, nullptr); m_VkPipeline = VK_NULL_HANDLE; }
+		if (m_VkPipelineLayout != VK_NULL_HANDLE) { vkDestroyPipelineLayout(device, m_VkPipelineLayout, nullptr); m_VkPipelineLayout = VK_NULL_HANDLE; }
 	}
 
 	// -------------------------------------------------------------------------
@@ -1105,46 +954,23 @@ namespace Vsp
 		PushConstants pushConstants;
 		BuildPushConstants(pushConstants);
 
-		if (m_Context.SupportsBindless())
-		{
-			vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_VkBindlessPipeline);
-			vkCmdBindDescriptorSets(
-				commandBuffer,
-				VK_PIPELINE_BIND_POINT_GRAPHICS,
-				m_VkBindlessPipelineLayout,
-				0,
-				1,
-				&m_VkBindlessDescriptorSets[m_nCurrentFrameIndex],
-				0,
-				nullptr);
-			vkCmdPushConstants(
-				commandBuffer,
-				m_VkBindlessPipelineLayout,
-				VK_SHADER_STAGE_FRAGMENT_BIT,
-				0,
-				sizeof(PushConstants),
-				&pushConstants);
-		}
-		else
-		{
-			vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_VkFallbackPipeline);
-			vkCmdBindDescriptorSets(
-				commandBuffer,
-				VK_PIPELINE_BIND_POINT_GRAPHICS,
-				m_VkFallbackPipelineLayout,
-				0,
-				1,
-				&m_VkFallbackDescriptorSets[m_nCurrentFrameIndex],
-				0,
-				nullptr);
-			vkCmdPushConstants(
-				commandBuffer,
-				m_VkFallbackPipelineLayout,
-				VK_SHADER_STAGE_FRAGMENT_BIT,
-				0,
-				sizeof(PushConstants),
-				&pushConstants);
-		}
+		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_VkPipeline);
+		vkCmdBindDescriptorSets(
+			commandBuffer,
+			VK_PIPELINE_BIND_POINT_GRAPHICS,
+			m_VkPipelineLayout,
+			0,
+			1,
+			&m_VkDescriptorSets[m_nCurrentFrameIndex],
+			0,
+			nullptr);
+		vkCmdPushConstants(
+			commandBuffer,
+			m_VkPipelineLayout,
+			VK_SHADER_STAGE_FRAGMENT_BIT,
+			0,
+			sizeof(PushConstants),
+			&pushConstants);
 
 		const VkDeviceSize k_nVertexBufferOffset = 0;
 		vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_VkVertexBuffer, &k_nVertexBufferOffset);
@@ -1154,7 +980,7 @@ namespace Vsp
 		vkEndCommandBuffer(commandBuffer);
 	}
 
-	bool VulkanRenderer2D::RenderFrame(VspString& outErrorText)
+	bool VulkanRenderer2D::RenderFrame()
 	{
 		if (!m_bIsInitialized || m_bIsMinimized)
 		{
@@ -1172,11 +998,17 @@ namespace Vsp
 		vkWaitForFences(m_Context.GetDevice(), 1, &frame.inFlightFence, VK_TRUE, UINT64_MAX);
 		vkResetFences(m_Context.GetDevice(), 1, &frame.inFlightFence);
 
-		if (!m_SwapChain.AcquireNextImage(frame.imageAvailableSemaphore, outErrorText))
+		const SwapChainAcquireResult eAcquireResult =
+			m_SwapChain.AcquireNextImage(frame.imageAvailableSemaphore);
+		if (eAcquireResult == SwapChainAcquireResult::Failed)
+		{
+			return false;   // The acquire failure was already logged inside the swapchain.
+		}
+		if (eAcquireResult == SwapChainAcquireResult::OutOfDate)
 		{
 			// Out of date (resized): rebuild and retry next frame.
 			VkExtent2D extent = m_SwapChain.GetExtent();
-			if (!m_SwapChain.Recreate(extent.width, extent.height, outErrorText))
+			if (!m_SwapChain.Recreate(extent.width, extent.height))
 			{
 				return false;
 			}
@@ -1194,8 +1026,7 @@ namespace Vsp
 			frame.imageAvailableSemaphore,
 			frame.renderFinishedSemaphore,
 			frame.inFlightFence,
-			bIsOutOfDate,
-			outErrorText))
+			bIsOutOfDate))
 		{
 			return false;
 		}
@@ -1203,7 +1034,7 @@ namespace Vsp
 		if (bIsOutOfDate)
 		{
 			VkExtent2D extent = m_SwapChain.GetExtent();
-			m_SwapChain.Recreate(extent.width, extent.height, outErrorText);
+			m_SwapChain.Recreate(extent.width, extent.height);
 		}
 
 		m_nCurrentFrameIndex = (m_nCurrentFrameIndex + 1) % k_nMaxFramesInFlight;
@@ -1242,11 +1073,11 @@ namespace Vsp
 	};
 	#pragma pack(pop)
 
-	bool VulkanRenderer2D::CaptureFramebuffer(const VspString& sFilePath, VspString& outErrorText)
+	bool VulkanRenderer2D::CaptureFramebuffer(const VspString& sFilePath)
 	{
 		if (!m_bIsInitialized)
 		{
-			outErrorText = "Renderer is not initialized.";
+			LOG_ERROR(kLogTag, "Renderer is not initialized.");
 			return false;
 		}
 
@@ -1274,7 +1105,7 @@ namespace Vsp
 		if (eAcquireResult != VK_SUCCESS)
 		{
 			vkDestroyFence(device, acquireFence, nullptr);
-			outErrorText = "vkAcquireNextImageKHR failed during capture.";
+			LOG_ERROR(kLogTag, "vkAcquireNextImageKHR failed during capture.");
 			return false;
 		}
 		vkWaitForFences(device, 1, &acquireFence, VK_TRUE, UINT64_MAX);
@@ -1292,8 +1123,7 @@ namespace Vsp
 			VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 			stagingBuffer,
-			stagingMemory,
-			outErrorText);
+			stagingMemory);
 		if (stagingBuffer == VK_NULL_HANDLE)
 		{
 			return false;
@@ -1303,7 +1133,7 @@ namespace Vsp
 			VkAccessFlags srcAccess, VkAccessFlags dstAccess,
 			VkPipelineStageFlags srcStage, VkPipelineStageFlags dstStage) -> bool
 		{
-			VkCommandBuffer commandBuffer = m_Context.BeginOneTimeCommandBuffer(outErrorText);
+			VkCommandBuffer commandBuffer = m_Context.BeginOneTimeCommandBuffer();
 			if (commandBuffer == VK_NULL_HANDLE)
 			{
 				return false;
@@ -1325,7 +1155,7 @@ namespace Vsp
 			barrier.subresourceRange.layerCount = 1;
 
 			vkCmdPipelineBarrier(commandBuffer, srcStage, dstStage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
-			return m_Context.EndOneTimeCommandBuffer(commandBuffer, outErrorText);
+			return m_Context.EndOneTimeCommandBuffer(commandBuffer);
 		};
 
 		bool bSuccess = true;
@@ -1338,7 +1168,7 @@ namespace Vsp
 
 		if (bSuccess)
 		{
-			VkCommandBuffer commandBuffer = m_Context.BeginOneTimeCommandBuffer(outErrorText);
+			VkCommandBuffer commandBuffer = m_Context.BeginOneTimeCommandBuffer();
 			if (commandBuffer == VK_NULL_HANDLE)
 			{
 				bSuccess = false;
@@ -1356,7 +1186,7 @@ namespace Vsp
 					stagingBuffer,
 					1,
 					&copyRegion);
-				bSuccess = m_Context.EndOneTimeCommandBuffer(commandBuffer, outErrorText);
+				bSuccess = m_Context.EndOneTimeCommandBuffer(commandBuffer);
 			}
 		}
 
@@ -1394,10 +1224,10 @@ namespace Vsp
 			infoHeader.uImageByteSize = uImageByteSize;
 
 			FILE* pFile = nullptr;
-			fopen_s(&pFile, sFilePath.ToStdString().c_str(), "wb");
+			fopen_s(&pFile, sFilePath.GetData(), "wb");
 			if (pFile == nullptr)
 			{
-				outErrorText = "Failed to open capture file for writing.";
+				LOG_ERROR(kLogTag, "Failed to open capture file for writing.");
 				bSuccess = false;
 			}
 			else
@@ -1420,9 +1250,9 @@ namespace Vsp
 		vkDestroyBuffer(device, stagingBuffer, nullptr);
 		vkFreeMemory(device, stagingMemory, nullptr);
 
-		if (!bSuccess && outErrorText.IsEmpty())
+		if (!bSuccess)
 		{
-			outErrorText = "Framebuffer capture failed.";
+			LOG_ERROR(kLogTag, "Framebuffer capture failed.");
 		}
 		return bSuccess;
 	}

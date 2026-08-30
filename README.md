@@ -6,20 +6,40 @@ through the CoreCLR Hosting API (nethost + hostfxr).
 
 ## Features
 
-- **Vulkan renderer with automatic feature-path negotiation**
-  - Device reports **Vulkan < 1.2**  -> startup error: "Unsupported device" (no exceptions used anywhere).
-  - Device reports **Vulkan 1.3** + descriptor-indexing features -> **bindless path**
-    (4096-slot sampled-image array indexed with `nonuniformEXT`).
-  - Otherwise (**Vulkan 1.2**, or 1.3 without bindless features) -> classic-descriptor **fallback path**.
-  - Both paths render the same demo triangle; only one is built per device.
+- **Vulkan 1.3 bindless renderer (no 1.2 fallback)**
+  - Device reports **Vulkan < 1.3** or lacks bindless descriptor-indexing features
+    (descriptorBindingPartiallyBound / runtimeDescriptorArray /
+    shaderSampledImageArrayNonUniformIndexing) -> startup error: "Unsupported device".
+  - The **only** implementation is the bindless one: a 4096-slot sampled-image array
+    indexed with `nonuniformEXT`. There is no Vulkan 1.2 fallback path.
+  - All Vulkan classes log their own errors through the engine Log module - there are
+    no `VspString& outErrorText` out-parameters anywhere in `Graphics/Vulkan`.
 - **Complete keyboard + mouse input** (`Core/Input/InputManager`): held/pressed/released
   edge state, mouse position/delta/wheel, typed characters. Window messages flow
   Win32 -> events -> InputManager -> scripts.
+- **Output devices** (`Core/Output/OutputDevice.h`): `DebugOutputDevice`,
+  `ConsoleOutputDevice`, `FileOutputDevice` plus an `OutputDeviceRegistry` that
+  enumerates ("gets") the available devices and looks them up by name.
+- **Engine formatter with custom type support** (`Core/String/VspStringFormat.h`):
+  `VspFormat::Format(...)` supports `{}`, `{n}`, `{:x}`, `{:#x}`, `{:X}`, `{:f}`
+  placeholders. Custom types opt in by specializing the **`VspFormatter<Type>`**
+  template struct and implementing its **`Parse`** (interprets the ":spec" text) and
+  **`Format`** (appends the formatted value) static methods - see the
+  `VspFormatter<Position2D>` specialization in `Scripting/ScriptCore.h` (the
+  ":p" / ":P" specifiers).
+- **Pluggable logging** (`Core/Logging`): the `Log` facade formats each entry once
+  and forwards it to replaceable `LogBackend`s (any `OutputDevice` adapts via
+  `OutputDeviceLogBackend`). `Log` also keeps a bounded history of recent entries;
+  a **Fatal** entry collects that history into a crash report, shows a crash prompt
+  (unless disabled) and aborts the process.
 - **C# scripting via CoreCLR Hosting API** (`Scripting/ScriptEngine`):
   - `nethost.dll` -> `get_hostfxr_path` -> `hostfxr_initialize_for_runtime_config` ->
     `load_assembly_and_get_function_pointer`.
-  - The C++ host calls into managed `VspEngine.NativeBridge` (`[UnmanagedCallersOnly]` entry points)
-    to create and drive script instances by **non-negative integer InstanceID** (0 = invalid).
+  - The **C++ host generates the non-negative InstanceID** (0 = invalid, 1-based) and
+    enumerates the managed script types itself (GetScriptTypeCount / GetScriptTypeName).
+  - Every managed `GameObject` holds its own `IntPtr` (`NativePtr`, the object's
+    GCHandle); the host passes that pointer back on every lifecycle call, so
+    `NativeBridge` keeps **no instances Dictionary**.
   - Managed code calls back into the native runtime through `DllImport("VspRuntime")`
     (`Input`, `Time`, `Transform`, `Renderer`), so interop is fully bidirectional.
 - **Unity-style scripting model** (`VspPlayer`): `GameObject` / `Component` / `ScriptBehaviour`
@@ -27,6 +47,8 @@ through the CoreCLR Hosting API (nethost + hostfxr).
   `Transform.Position`.
 - C++20, MSVC, **no C++ exceptions** (`/EHs-c-`, `_HAS_EXCEPTIONS=0`). Function names are
   PascalCase; class fields use Hungarian notation (`m_pDevice`, `m_nFrameIndex`, `m_fDeltaTime`, ...).
+  The precompiled header (`Common/RuntimePCH.h`) contains **no standard-library includes**:
+  every translation unit and header declares the headers it actually uses.
 
 ## Demo (acceptance test)
 
@@ -66,12 +88,11 @@ Useful flags (see `LaunchLoop.cpp`):
 | Flag                     | Meaning                                              |
 | ------------------------ | ---------------------------------------------------- |
 | `--frames N`             | exit after N frames (smoke tests)                    |
-| `--silent`               | errors go to the log instead of a message box        |
+| `--silent`               | errors go to the log; fatal crash prompt disabled    |
 | `--key VK:MS`            | post synthetic WM_KEYDOWN/KEYUP to the engine window |
 | `--capture N:path.bmp`   | save the framebuffer after frame N (BMP)             |
 
-Environment switches: `VSP_NO_VALIDATION=1` disables the validation layer,
-`VSP_FORCE_FALLBACK=1` forces the Vulkan 1.2 fallback path.
+Environment switch: `VSP_NO_VALIDATION=1` disables the Vulkan validation layer.
 
 Example acceptance run (see `Engine/Tools/Acceptance/AnalyzeShots.ps1` for analysis):
 

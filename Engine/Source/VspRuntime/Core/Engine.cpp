@@ -178,11 +178,12 @@ namespace Vsp
 		}
 		m_pImpl->RefreshWindowSize();
 
-		// 2. Vulkan renderer (reports unsupported devices itself).
+		// 2. Vulkan renderer (logs its own errors, including unsupported devices).
 		m_pImpl->pRenderer = std::make_unique<VulkanRenderer2D>();
 		if (!m_pImpl->pRenderer->Initialize(
-			m_pImpl->pApplication->GetWindow()->GetNativeWindowHandle(), outErrorText))
+			m_pImpl->pApplication->GetWindow()->GetNativeWindowHandle()))
 		{
+			outErrorText = "Failed to initialize the Vulkan renderer (see the engine log for details).";
 			return false;
 		}
 
@@ -206,8 +207,6 @@ namespace Vsp
 		for (uint32_t uIndex = 0; uIndex < scriptEngine.GetScriptInstanceCount(); ++uIndex)
 		{
 			// Simple sequential walk: init + start every instance.
-			// (Instance list access via GetPrimaryScriptInstanceId covers the
-			// single-script demo; a full iterator API is future work.)
 			if (uIndex == 0)
 			{
 				scriptEngine.CallScriptInit(m_pImpl->uPrimaryScriptInstanceId);
@@ -217,12 +216,9 @@ namespace Vsp
 
 		// 4. Report what the renderer negotiated.
 		const VulkanDeviceProperties& deviceProperties = m_pImpl->pRenderer->GetDeviceProperties();
-		LOG_INFO(kLogTag, "Device: {} (Vulkan {}.{}.{}, feature path: {})",
-			deviceProperties.sDeviceName.ToStdString(),
-			deviceProperties.uApiMajor, deviceProperties.uApiMinor, deviceProperties.uApiPatch,
-			m_pImpl->pRenderer->GetFeaturePath() == VulkanFeaturePath::Vulkan13Bindless
-				? "Vulkan 1.3 bindless"
-				: "Vulkan 1.2 fallback");
+		LOG_INFO(kLogTag, "Device: {} (Vulkan {}.{}.{}, feature path: Vulkan 1.3 bindless)",
+			deviceProperties.sDeviceName.GetData(),
+			deviceProperties.uApiMajor, deviceProperties.uApiMinor, deviceProperties.uApiPatch);
 
 		m_pImpl->bInitialized = true;
 		return true;
@@ -296,11 +292,10 @@ namespace Vsp
 				}
 			}
 
-			// 3. Render.
-			VspString sErrorText;
-			if (!m_pImpl->pRenderer->RenderFrame(sErrorText))
+			// 3. Render (the renderer logs its own errors).
+			if (!m_pImpl->pRenderer->RenderFrame())
 			{
-				LOG_ERROR(kLogTag, "{}", sErrorText.ToStdString());
+				LOG_ERROR(kLogTag, "Frame rendering failed.");
 			}
 
 			// 3b. Framebuffer captures (acceptance tests).
@@ -315,18 +310,19 @@ namespace Vsp
 					float fPositionX = 0.0f;
 					float fPositionY = 0.0f;
 					ScriptCore::Get().GetTransformPosition(m_pImpl->uPrimaryScriptInstanceId, fPositionX, fPositionY);
-					LOG_INFO(kLogTag, "Capture at frame {}: script position=({}, {}), deltaTime={}, elapsed={} ms.",
-						m_pImpl->uFrameCount, fPositionX, fPositionY,
+					LOG_INFO(kLogTag, "Capture at frame {}: script position={:p}, deltaTime={}, elapsed={} ms.",
+						m_pImpl->uFrameCount, Position2D{ fPositionX, fPositionY },
 						ScriptCore::Get().GetDeltaTime(),
 						static_cast<uint32_t>(m_pImpl->fElapsedSeconds * 1000.0f));
 
-					if (!m_pImpl->pRenderer->CaptureFramebuffer(capture.sFilePath, sErrorText))
+					if (!m_pImpl->pRenderer->CaptureFramebuffer(capture.sFilePath))
 					{
-						LOG_ERROR(kLogTag, "Framebuffer capture failed: {}", sErrorText.ToStdString());
+						// The capture failure was already logged inside the renderer.
+						LOG_ERROR(kLogTag, "Framebuffer capture failed.");
 					}
 					else
 					{
-						LOG_INFO(kLogTag, "Framebuffer captured to {}", capture.sFilePath.ToStdString());
+						LOG_INFO(kLogTag, "Framebuffer captured to {}", capture.sFilePath.GetData());
 					}
 				}
 			}

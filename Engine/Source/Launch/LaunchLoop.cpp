@@ -5,6 +5,8 @@
 #include "Core/Core.h"
 #include "Core/Engine.h"
 #include "Core/Logging/Log.h"
+#include "Core/Logging/LogBackend.h"
+#include "Core/Output/OutputDevice.h"
 #include "Core/String/VspString.h"
 
 namespace Vsp
@@ -182,6 +184,8 @@ namespace Vsp
 			VspString sArgument(pArguments[nIndex]);
 			const bool bNeedsValue = sArgument.Equals("--frames") ||
 				sArgument.Equals("--width") || sArgument.Equals("--height") ||
+				sArgument.Equals("--title") || sArgument.Equals("--assembly") ||
+				sArgument.Equals("--runtime-config") || sArgument.Equals("--dotnet-root") ||
 				sArgument.Equals("--key") || sArgument.Equals("--capture");
 			if (bNeedsValue && nIndex + 1 < nArgumentCount)
 			{
@@ -197,6 +201,22 @@ namespace Vsp
 				else if (sArgument.Equals("--height"))
 				{
 					options.uWindowHeight = static_cast<uint32_t>(wcstoul(pValue, nullptr, 10));
+				}
+				else if (sArgument.Equals("--title"))
+				{
+					options.sWindowTitle = VspString(pValue);
+				}
+				else if (sArgument.Equals("--assembly"))
+				{
+					options.sAssemblyPath = VspString(pValue);
+				}
+				else if (sArgument.Equals("--runtime-config"))
+				{
+					options.sRuntimeConfigPath = VspString(pValue);
+				}
+				else if (sArgument.Equals("--dotnet-root"))
+				{
+					options.sDotNetRootPath = VspString(pValue);
 				}
 				else if (sArgument.Equals("--key"))
 				{
@@ -220,11 +240,40 @@ namespace Vsp
 			}
 		}
 
-		// Direct log output into a file next to the executable.
+		// Wire up the replaceable logging backends: debugger, console and a
+		// log file next to the executable. Backends are plain borrowed
+		// pointers registered with the Log facade, so the output targets can
+		// be swapped at any time.
+		OutputDeviceRegistry& deviceRegistry = OutputDeviceRegistry::Get();
+		static FileOutputDevice s_FileOutputDevice;
+		static OutputDeviceLogBackend s_DebugLogBackend(deviceRegistry.FindDeviceByName("Debug"));
+		static OutputDeviceLogBackend s_ConsoleLogBackend(deviceRegistry.FindDeviceByName("Console"));
+		static OutputDeviceLogBackend s_FileLogBackend(&s_FileOutputDevice);
+
+		Log::AddBackend(&s_DebugLogBackend);
+		Log::AddBackend(&s_ConsoleLogBackend);
+
 		const VspString sLogFilePath = sExecutableDirectory + "\\Launch.log";
-		LogDetail::SetLogFilePath(sLogFilePath.ToStdString().c_str());
+		if (s_FileOutputDevice.Open(sLogFilePath))
+		{
+			Log::AddBackend(&s_FileLogBackend);
+		}
+		else
+		{
+			LOG_WARNING(kLogTag, "Failed to open the log file {}; file logging is disabled.", sLogFilePath.GetData());
+		}
+
+		// --silent also disables the fatal crash prompt (automation mode).
+		Log::SetCrashPromptEnabled(options.bShowErrorDialog);
+
+		// Enumerate ("get") the available output devices and report them.
+		for (uint32_t uIndex = 0; uIndex < deviceRegistry.GetDeviceCount(); ++uIndex)
+		{
+			LOG_INFO(kLogTag, "Available output device [{}]: {}", uIndex, deviceRegistry.GetDeviceAt(uIndex)->GetDeviceName());
+		}
+
 		LOG_INFO(kLogTag, "Launch starting (assembly: {}, dotnet root: {}).",
-			options.sAssemblyPath.ToStdString(), options.sDotNetRootPath.ToStdString());
+			options.sAssemblyPath.GetData(), options.sDotNetRootPath.GetData());
 
 		GameEngineConfig config;
 		config.sWindowTitle = options.sWindowTitle;
@@ -241,21 +290,18 @@ namespace Vsp
 		VspString sErrorText;
 		if (!engine.Initialize(config, sErrorText))
 		{
-			LOG_ERROR(kLogTag, "{}", sErrorText.ToStdString());
+			LOG_ERROR(kLogTag, "{}", sErrorText.GetData());
 
-			if (options.bShowErrorDialog)
-			{
-				MessageBoxW(
-					nullptr,
-					sErrorText.ToWideText().GetData(),
-					L"Vsp Engine - Fatal Error",
-					MB_OK | MB_ICONERROR);
-			}
-			return 1;
+			// Fatal: the Log module collects the recent log history and
+			// prompts the crash dialog with it (details of the failure,
+			// e.g. an unsupported Vulkan device, are part of that history).
+			LOG_FATAL(kLogTag, "Engine initialization failed: {}", sErrorText.GetData());
+			return 1;   // Reached only when crash prompts are disabled.
 		}
 
 		engine.Run();
 		LOG_INFO(kLogTag, "Launch exiting cleanly after {} frames.", engine.GetFrameCount());
+		Log::Flush();
 		return 0;
 	}
 }

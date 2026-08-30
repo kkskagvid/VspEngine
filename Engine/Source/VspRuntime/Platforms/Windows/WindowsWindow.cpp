@@ -5,7 +5,6 @@
 #include "Core/Logging/Log.h"
 #include "Core/Platform.h"
 #include "Core/Window.h"
-#include "Core/String/StringConv.h"
 #include "Core/Events/WindowEvents.h"
 #include "Core/Events/InputEvents.h"
 
@@ -61,7 +60,7 @@ namespace Vsp
         }
 
         LOG_INFO(kLogTag, "Registered window class '{}' (hInstance {:#x}).",
-            className.ToStdString(), reinterpret_cast<uintptr_t>(m_HInstance));
+            className.GetData(), reinterpret_cast<uintptr_t>(m_HInstance));
 
         DWORD windowStyle   = 0;
         DWORD windowExStyle = WS_EX_APPWINDOW | WS_EX_WINDOWEDGE;
@@ -167,7 +166,7 @@ namespace Vsp
         if (!m_HWnd)
         {
             LOG_ERROR(kLogTag, "CreateWindowExW failed (Win32 error {}, class '{}', hInstance {:#x}).",
-                static_cast<int>(::GetLastError()), m_ClassName.ToStdString(),
+                static_cast<int>(::GetLastError()), m_ClassName.GetData(),
                 reinterpret_cast<uintptr_t>(m_HInstance));
             return false;
         }

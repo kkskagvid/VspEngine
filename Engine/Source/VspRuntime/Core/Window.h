@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+
 #include "Core/Core.h"
 #include "Core/String/VspString.h"
 #include "Core/Events/Event.h"

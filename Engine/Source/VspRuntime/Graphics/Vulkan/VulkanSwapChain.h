@@ -3,12 +3,19 @@
 #include <vulkan/vulkan.h>
 
 #include "Core/Core.h"
-#include "Core/String/VspString.h"
 #include "Core/Templates/ArrayList.h"
 #include "Graphics/Vulkan/VulkanRHI.h"
 
 namespace Vsp
 {
+	// Result of acquiring the next presentable image.
+	enum class SwapChainAcquireResult : uint32_t
+	{
+		Success = 0,
+		OutOfDate = 1,   // Surface size changed; the caller should recreate.
+		Failed = 2,      // Hard failure (details already logged).
+	};
+
 	// -------------------------------------------------------------------------
 	// VulkanSwapChain
 	// -------------------------------------------------------------------------
@@ -16,6 +23,7 @@ namespace Vsp
 	// render pass used by the 2D renderer. Recreate() rebuilds everything
 	// (resize / minimize handling). Acquire/SubmitAndPresent implement the
 	// standard semaphore handshake around one submitted command buffer.
+	// All errors are logged through the Log module; nothing throws.
 	// -------------------------------------------------------------------------
 	class VulkanSwapChain
 	{
@@ -25,13 +33,12 @@ namespace Vsp
 		bool Initialize(
 			VulkanContext& context,
 			uint32_t uPreferredWidth,
-			uint32_t uPreferredHeight,
-			VspString& outErrorText);
+			uint32_t uPreferredHeight);
 
 		void Destroy();
 
 		// Rebuilds the swapchain for the new size. Returns false on hard failure.
-		bool Recreate(uint32_t uWidth, uint32_t uHeight, VspString& outErrorText);
+		bool Recreate(uint32_t uWidth, uint32_t uHeight);
 
 		VkSwapchainKHR GetSwapchain() const { return m_VkSwapchain; }
 		VkRenderPass GetRenderPass() const { return m_VkRenderPass; }
@@ -42,8 +49,8 @@ namespace Vsp
 		uint32_t GetImageCount() const { return static_cast<uint32_t>(m_SwapChainImageViews.GetSize()); }
 		uint32_t GetCurrentImageIndex() const { return m_nCurrentImageIndex; }
 
-		// Acquires the next image; false when out-of-date (caller should Recreate).
-		bool AcquireNextImage(VkSemaphore imageAvailableSemaphore, VspString& outErrorText);
+		// Acquires the next image; OutOfDate means the caller should recreate.
+		SwapChainAcquireResult AcquireNextImage(VkSemaphore imageAvailableSemaphore);
 
 		// Submits the command buffer (signaling the caller's in-flight fence)
 		// and presents the acquired image. Returns false for fatal errors;
@@ -54,16 +61,15 @@ namespace Vsp
 			VkSemaphore waitSemaphore,
 			VkSemaphore signalSemaphore,
 			VkFence inFlightFence,
-			bool& outIsOutOfDate,
-			VspString& outErrorText);
+			bool& outIsOutOfDate);
 
 		void WaitIdle() const;
 
 	private:
-		bool CreateSwapChain(VspString& outErrorText);
-		bool CreateImageViews(VspString& outErrorText);
-		bool CreateRenderPass(VspString& outErrorText);
-		bool CreateFramebuffers(VspString& outErrorText);
+		bool CreateSwapChain();
+		bool CreateImageViews();
+		bool CreateRenderPass();
+		bool CreateFramebuffers();
 		void DestroySwapChainObjects();
 
 		static VkSurfaceFormatKHR ChooseSurfaceFormat(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface);

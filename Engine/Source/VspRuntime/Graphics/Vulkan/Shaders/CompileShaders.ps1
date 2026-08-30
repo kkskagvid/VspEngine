@@ -19,11 +19,11 @@ if (-not $glslc) {
 Write-Host "CompileShaders: using $glslc"
 
 $shaderSourceDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+# Bindless (Vulkan 1.3) is the only supported rendering path, so only its
+# shaders are compiled and embedded.
 $shaderNames = @(
     "TriangleBindless.vert",
-    "TriangleBindless.frag",
-    "TriangleFallback.vert",
-    "TriangleFallback.frag"
+    "TriangleBindless.frag"
 )
 
 # ---- Compile each shader to a temporary SPIR-V file --------------------------

@@ -1,9 +1,10 @@
 #include "RuntimePCH.h"
 
-#include <cstdio>
+#include <cstring>
 #include <vector>
 
 #include "Core/Logging/Log.h"
+#include "Core/String/VspStringFormat.h"
 #include "Graphics/Vulkan/VulkanRHI.h"
 
 #if VSP_PLATFORM_WINDOWS
@@ -24,22 +25,6 @@ namespace Vsp
 	};
 	static constexpr uint32_t k_nRequiredInstanceExtensionCount = 2;
 
-	// Formats a Vulkan version pair for error text ("1.2", "1.3", ...).
-	static VspString FormatVersion(uint32_t uMajor, uint32_t uMinor)
-	{
-		char sBuffer[32];
-		snprintf(sBuffer, sizeof(sBuffer), "%u.%u", uMajor, uMinor);
-		return VspString(sBuffer);
-	}
-
-	// Formats a VkResult for error text.
-	static VspString FormatVkResult(VkResult eResult)
-	{
-		char sBuffer[32];
-		snprintf(sBuffer, sizeof(sBuffer), "%d", static_cast<int32_t>(eResult));
-		return VspString(sBuffer);
-	}
-
 	// Validation-layer messages are forwarded into the engine log.
 	static VKAPI_ATTR VkBool32 VKAPI_CALL DebugMessengerCallback(
 		VkDebugUtilsMessageSeverityFlagBitsEXT eMessageSeverity,
@@ -47,20 +32,20 @@ namespace Vsp
 		const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
 		void* pUserData)
 	{
-		LogDetail::LogLevel eLevel = LogDetail::LogLevel::Info;
+		LogLevel eLevel = LogLevel::Info;
 		if ((eMessageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) != 0)
 		{
-			eLevel = LogDetail::LogLevel::Error;
+			eLevel = LogLevel::Error;
 		}
 		else if ((eMessageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) != 0)
 		{
-			eLevel = LogDetail::LogLevel::Warning;
+			eLevel = LogLevel::Warning;
 		}
 
-		LogDetail::WriteLog(eLevel, "VulkanValidation",
-			pCallbackData != nullptr && pCallbackData->pMessage != nullptr
+		Log::Write(eLevel, "VulkanValidation",
+			VspString(pCallbackData != nullptr && pCallbackData->pMessage != nullptr
 				? pCallbackData->pMessage
-				: "<no message>");
+				: "<no message>"));
 		return VK_FALSE;
 	}
 
@@ -73,21 +58,19 @@ namespace Vsp
 		Destroy();
 	}
 
-	bool VulkanContext::Initialize(const VspString& sApplicationName, void* pNativeWindowHandle, VspString& outErrorText)
+	bool VulkanContext::Initialize(const VspString& sApplicationName, void* pNativeWindowHandle)
 	{
-		outErrorText = nullptr;
-
 		if (IsInitialized())
 		{
-			outErrorText = "VulkanContext is already initialized.";
+			LOG_ERROR(kLogTag, "VulkanContext is already initialized.");
 			return false;
 		}
 
-		if (!CreateInstance(sApplicationName, outErrorText)) return false;
-		if (!CreateSurface(pNativeWindowHandle, outErrorText)) return false;
-		if (!SelectPhysicalDevice(outErrorText)) return false;
-		if (!CreateLogicalDevice(outErrorText)) return false;
-		if (!CreateCommandPool(outErrorText)) return false;
+		if (!CreateInstance(sApplicationName)) return false;
+		if (!CreateSurface(pNativeWindowHandle)) return false;
+		if (!SelectPhysicalDevice()) return false;
+		if (!CreateLogicalDevice()) return false;
+		if (!CreateCommandPool()) return false;
 		return true;
 	}
 
@@ -133,7 +116,7 @@ namespace Vsp
 	// Instance
 	// -------------------------------------------------------------------------
 
-	bool VulkanContext::CreateInstance(const VspString& sApplicationName, VspString& outErrorText)
+	bool VulkanContext::CreateInstance(const VspString& sApplicationName)
 	{
 		// Ask the loader how high the instance API may go; clamp to 1.3.
 		uint32_t nInstanceApiVersion = VK_API_VERSION_1_3;
@@ -147,7 +130,7 @@ namespace Vsp
 		}
 		if (nInstanceApiVersion < VK_API_VERSION_1_2)
 		{
-			outErrorText = "Unsupported Vulkan loader: version 1.2 or higher is required.";
+			LOG_ERROR(kLogTag, "Unsupported Vulkan loader: version 1.2 or higher is required.");
 			return false;
 		}
 
@@ -178,14 +161,6 @@ namespace Vsp
 		}
 #endif
 
-		VkApplicationInfo applicationInfo = {};
-		applicationInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-		applicationInfo.pApplicationName = sApplicationName.ToStdString().c_str();
-		applicationInfo.applicationVersion = VK_MAKE_API_VERSION(0, 1, 0, 0);
-		applicationInfo.pEngineName = "VspRuntime";
-		applicationInfo.engineVersion = VK_MAKE_API_VERSION(0, 1, 0, 0);
-		applicationInfo.apiVersion = nInstanceApiVersion;
-
 		// The validation messenger needs VK_EXT_debug_utils on the instance.
 		std::vector<const char*> enabledExtensions(
 			k_sRequiredInstanceExtensions,
@@ -194,6 +169,14 @@ namespace Vsp
 		{
 			enabledExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 		}
+
+		VkApplicationInfo applicationInfo = {};
+		applicationInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+		applicationInfo.pApplicationName = sApplicationName.GetData();
+		applicationInfo.applicationVersion = VK_MAKE_API_VERSION(0, 1, 0, 0);
+		applicationInfo.pEngineName = "VspRuntime";
+		applicationInfo.engineVersion = VK_MAKE_API_VERSION(0, 1, 0, 0);
+		applicationInfo.apiVersion = nInstanceApiVersion;
 
 		VkInstanceCreateInfo createInfo = {};
 		createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -206,7 +189,7 @@ namespace Vsp
 		const VkResult eResult = vkCreateInstance(&createInfo, nullptr, &m_VkInstance);
 		if (eResult != VK_SUCCESS || m_VkInstance == VK_NULL_HANDLE)
 		{
-			outErrorText = "vkCreateInstance failed (VkResult " + FormatVkResult(eResult) + ").";
+			LOG_ERROR(kLogTag, "vkCreateInstance failed (VkResult {}).", static_cast<int32_t>(eResult));
 			return false;
 		}
 
@@ -236,7 +219,7 @@ namespace Vsp
 		return true;
 	}
 
-	bool VulkanContext::CreateSurface(void* pNativeWindowHandle, VspString& outErrorText)
+	bool VulkanContext::CreateSurface(void* pNativeWindowHandle)
 	{
 #if VSP_PLATFORM_WINDOWS
 		VkWin32SurfaceCreateInfoKHR surfaceCreateInfo = {};
@@ -247,12 +230,12 @@ namespace Vsp
 		const VkResult eResult = vkCreateWin32SurfaceKHR(m_VkInstance, &surfaceCreateInfo, nullptr, &m_VkSurface);
 		if (eResult != VK_SUCCESS || m_VkSurface == VK_NULL_HANDLE)
 		{
-			outErrorText = "vkCreateWin32SurfaceKHR failed.";
+			LOG_ERROR(kLogTag, "vkCreateWin32SurfaceKHR failed (VkResult {}).", static_cast<int32_t>(eResult));
 			return false;
 		}
 		return true;
 #else
-		outErrorText = "Unsupported platform: no surface implementation.";
+		LOG_ERROR(kLogTag, "Unsupported platform: no surface implementation.");
 		return false;
 #endif
 	}
@@ -261,13 +244,13 @@ namespace Vsp
 	// Physical device selection + feature path negotiation
 	// -------------------------------------------------------------------------
 
-	bool VulkanContext::SelectPhysicalDevice(VspString& outErrorText)
+	bool VulkanContext::SelectPhysicalDevice()
 	{
 		uint32_t nDeviceCount = 0;
 		vkEnumeratePhysicalDevices(m_VkInstance, &nDeviceCount, nullptr);
 		if (nDeviceCount == 0)
 		{
-			outErrorText = "No Vulkan-capable device was found on this machine.";
+			LOG_ERROR(kLogTag, "No Vulkan-capable device was found on this machine.");
 			return false;
 		}
 
@@ -310,7 +293,7 @@ namespace Vsp
 
 		if (m_VkPhysicalDevice == VK_NULL_HANDLE)
 		{
-			outErrorText = "No Vulkan device with graphics + present support was found.";
+			LOG_ERROR(kLogTag, "No Vulkan device with graphics + present support was found.");
 			return false;
 		}
 
@@ -325,19 +308,9 @@ namespace Vsp
 		m_DeviceProperties.uDeviceId = deviceProperties.deviceID;
 		m_DeviceProperties.sDeviceName = VspString(deviceProperties.deviceName);
 
-		// ---- Acceptance requirement: devices below Vulkan 1.2 are unsupported ----
-		if (deviceProperties.apiVersion < VK_API_VERSION_1_2)
-		{
-			m_DeviceProperties.eFeaturePath = VulkanFeaturePath::Unsupported;
-			outErrorText =
-				"Unsupported device: this engine requires Vulkan 1.2 or higher.\n"
-				"Device '" + m_DeviceProperties.sDeviceName + "' reports Vulkan " +
-				FormatVersion(m_DeviceProperties.uApiMajor, m_DeviceProperties.uApiMinor) + ".";
-			LOG_ERROR(kLogTag, "{}", outErrorText.ToStdString());
-			return false;
-		}
-
-		// ---- Negotiate bindless (Vulkan 1.3 + descriptor indexing) ----
+		// ---- Bindless negotiation: Vulkan 1.3 + descriptor indexing ----
+		// This engine has no Vulkan 1.2 fallback path, so any device that is
+		// below 1.3 or lacks the bindless features is unsupported.
 		VkPhysicalDeviceDescriptorIndexingFeatures indexingFeatures = {};
 		indexingFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
 
@@ -352,38 +325,34 @@ namespace Vsp
 			indexingFeatures.runtimeDescriptorArray == VK_TRUE &&
 			indexingFeatures.shaderSampledImageArrayNonUniformIndexing == VK_TRUE;
 
-		// Debug hook: force the Vulkan 1.2 fallback path (VSP_FORCE_FALLBACK=1).
-		char sForceBuffer[8] = {};
-		const bool bForceFallback =
-			GetEnvironmentVariableA("VSP_FORCE_FALLBACK", sForceBuffer, sizeof(sForceBuffer)) > 0;
-
-		if (bIsVulkan13 && bHasBindlessFeatures && !bForceFallback)
+		if (!bIsVulkan13)
 		{
-			m_DeviceProperties.eFeaturePath = VulkanFeaturePath::Vulkan13Bindless;
-			LOG_INFO(kLogTag, "Device '{}' (Vulkan {}.{}.{}) -> bindless path (Vulkan 1.3).",
-				m_DeviceProperties.sDeviceName.ToStdString(),
-				m_DeviceProperties.uApiMajor, m_DeviceProperties.uApiMinor, m_DeviceProperties.uApiPatch);
-		}
-		else
-		{
-			m_DeviceProperties.eFeaturePath = VulkanFeaturePath::Vulkan12Fallback;
-			if (bIsVulkan13)
-			{
-				LOG_WARNING(kLogTag, "Device '{}' is Vulkan 1.3 but lacks bindless descriptor-indexing features -> fallback path (Vulkan 1.2).",
-					m_DeviceProperties.sDeviceName.ToStdString());
-			}
-			else
-			{
-				LOG_INFO(kLogTag, "Device '{}' (Vulkan {}.{}.{}) -> fallback path (Vulkan 1.2).",
-					m_DeviceProperties.sDeviceName.ToStdString(),
-					m_DeviceProperties.uApiMajor, m_DeviceProperties.uApiMinor, m_DeviceProperties.uApiPatch);
-			}
+			m_DeviceProperties.eFeaturePath = VulkanFeaturePath::Unsupported;
+			LOG_ERROR(kLogTag,
+				"Unsupported device: this engine requires Vulkan 1.3 or higher (bindless only). Device '{}' reports Vulkan {}.{}.",
+				m_DeviceProperties.sDeviceName,
+				m_DeviceProperties.uApiMajor,
+				m_DeviceProperties.uApiMinor);
+			return false;
 		}
 
+		if (!bHasBindlessFeatures)
+		{
+			m_DeviceProperties.eFeaturePath = VulkanFeaturePath::Unsupported;
+			LOG_ERROR(kLogTag,
+				"Unsupported device: device '{}' is Vulkan 1.3 but lacks the bindless descriptor-indexing features (descriptorBindingPartiallyBound / runtimeDescriptorArray / shaderSampledImageArrayNonUniformIndexing).",
+				m_DeviceProperties.sDeviceName);
+			return false;
+		}
+
+		m_DeviceProperties.eFeaturePath = VulkanFeaturePath::Vulkan13Bindless;
+		LOG_INFO(kLogTag, "Device '{}' (Vulkan {}.{}.{}) -> bindless path (Vulkan 1.3).",
+			m_DeviceProperties.sDeviceName,
+			m_DeviceProperties.uApiMajor, m_DeviceProperties.uApiMinor, m_DeviceProperties.uApiPatch);
 		return true;
 	}
 
-	bool VulkanContext::CreateLogicalDevice(VspString& outErrorText)
+	bool VulkanContext::CreateLogicalDevice()
 	{
 		const float k_fQueuePriority = 1.0f;
 
@@ -395,7 +364,9 @@ namespace Vsp
 
 		VkPhysicalDeviceFeatures deviceFeatures = {};
 
-		// Bindless path enables the descriptor-indexing features it relies on.
+		// Bindless is the only supported path: the descriptor-indexing features
+		// it relies on are always enabled (SelectPhysicalDevice already
+		// verified the device provides them).
 		VkPhysicalDeviceDescriptorIndexingFeatures indexingFeatures = {};
 		indexingFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
 		indexingFeatures.descriptorBindingPartiallyBound = VK_TRUE;
@@ -411,15 +382,12 @@ namespace Vsp
 		createInfo.pEnabledFeatures = &deviceFeatures;
 		createInfo.enabledExtensionCount = 1;
 		createInfo.ppEnabledExtensionNames = k_sDeviceExtensions;
-		if (SupportsBindless())
-		{
-			createInfo.pNext = &indexingFeatures;
-		}
+		createInfo.pNext = &indexingFeatures;
 
 		const VkResult eResult = vkCreateDevice(m_VkPhysicalDevice, &createInfo, nullptr, &m_VkDevice);
 		if (eResult != VK_SUCCESS || m_VkDevice == VK_NULL_HANDLE)
 		{
-			outErrorText = "vkCreateDevice failed (VkResult " + FormatVkResult(eResult) + ").";
+			LOG_ERROR(kLogTag, "vkCreateDevice failed (VkResult {}).", static_cast<int32_t>(eResult));
 			return false;
 		}
 
@@ -427,7 +395,7 @@ namespace Vsp
 		return true;
 	}
 
-	bool VulkanContext::CreateCommandPool(VspString& outErrorText)
+	bool VulkanContext::CreateCommandPool()
 	{
 		VkCommandPoolCreateInfo poolCreateInfo = {};
 		poolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -437,7 +405,7 @@ namespace Vsp
 		const VkResult eResult = vkCreateCommandPool(m_VkDevice, &poolCreateInfo, nullptr, &m_VkCommandPool);
 		if (eResult != VK_SUCCESS)
 		{
-			outErrorText = "vkCreateCommandPool failed (VkResult " + FormatVkResult(eResult) + ").";
+			LOG_ERROR(kLogTag, "vkCreateCommandPool failed (VkResult {}).", static_cast<int32_t>(eResult));
 			return false;
 		}
 		return true;
@@ -447,7 +415,7 @@ namespace Vsp
 	// Helpers
 	// -------------------------------------------------------------------------
 
-	VkShaderModule VulkanContext::CreateShaderModule(const uint32_t* pSpirvCode, size_t nByteCount, VspString& outErrorText) const
+	VkShaderModule VulkanContext::CreateShaderModule(const uint32_t* pSpirvCode, size_t nByteCount) const
 	{
 		VkShaderModuleCreateInfo moduleCreateInfo = {};
 		moduleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
@@ -458,7 +426,7 @@ namespace Vsp
 		const VkResult eResult = vkCreateShaderModule(m_VkDevice, &moduleCreateInfo, nullptr, &shaderModule);
 		if (eResult != VK_SUCCESS)
 		{
-			outErrorText = "vkCreateShaderModule failed (VkResult " + FormatVkResult(eResult) + ").";
+			LOG_ERROR(kLogTag, "vkCreateShaderModule failed (VkResult {}).", static_cast<int32_t>(eResult));
 			return VK_NULL_HANDLE;
 		}
 		return shaderModule;
@@ -485,8 +453,7 @@ namespace Vsp
 		VkBufferUsageFlags eUsage,
 		VkMemoryPropertyFlags eProperties,
 		VkBuffer& outBuffer,
-		VkDeviceMemory& outBufferMemory,
-		VspString& outErrorText) const
+		VkDeviceMemory& outBufferMemory) const
 	{
 		outBuffer = VK_NULL_HANDLE;
 		outBufferMemory = VK_NULL_HANDLE;
@@ -499,7 +466,7 @@ namespace Vsp
 
 		if (vkCreateBuffer(m_VkDevice, &bufferCreateInfo, nullptr, &outBuffer) != VK_SUCCESS)
 		{
-			outErrorText = "vkCreateBuffer failed.";
+			LOG_ERROR(kLogTag, "vkCreateBuffer failed (size {} bytes).", static_cast<uint64_t>(nByteSize));
 			return;
 		}
 
@@ -509,7 +476,7 @@ namespace Vsp
 		const uint32_t nMemoryTypeIndex = FindMemoryTypeIndex(memoryRequirements.memoryTypeBits, eProperties);
 		if (nMemoryTypeIndex == UINT32_MAX)
 		{
-			outErrorText = "No suitable memory type for buffer allocation.";
+			LOG_ERROR(kLogTag, "No suitable memory type for buffer allocation.");
 			return;
 		}
 
@@ -520,14 +487,14 @@ namespace Vsp
 
 		if (vkAllocateMemory(m_VkDevice, &allocateInfo, nullptr, &outBufferMemory) != VK_SUCCESS)
 		{
-			outErrorText = "vkAllocateMemory failed.";
+			LOG_ERROR(kLogTag, "vkAllocateMemory failed ({} bytes).", static_cast<uint64_t>(memoryRequirements.size));
 			return;
 		}
 
 		vkBindBufferMemory(m_VkDevice, outBuffer, outBufferMemory, 0);
 	}
 
-	VkCommandBuffer VulkanContext::BeginOneTimeCommandBuffer(VspString& outErrorText) const
+	VkCommandBuffer VulkanContext::BeginOneTimeCommandBuffer() const
 	{
 		VkCommandBufferAllocateInfo allocateInfo = {};
 		allocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -543,13 +510,13 @@ namespace Vsp
 		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 		if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS)
 		{
-			outErrorText = "vkBeginCommandBuffer failed.";
+			LOG_ERROR(kLogTag, "vkBeginCommandBuffer failed.");
 			return VK_NULL_HANDLE;
 		}
 		return commandBuffer;
 	}
 
-	bool VulkanContext::EndOneTimeCommandBuffer(VkCommandBuffer commandBuffer, VspString& outErrorText) const
+	bool VulkanContext::EndOneTimeCommandBuffer(VkCommandBuffer commandBuffer) const
 	{
 		vkEndCommandBuffer(commandBuffer);
 
@@ -564,7 +531,7 @@ namespace Vsp
 
 		if (eSubmitResult != VK_SUCCESS)
 		{
-			outErrorText = "One-time command buffer submit failed (VkResult " + FormatVkResult(eSubmitResult) + ").";
+			LOG_ERROR(kLogTag, "One-time command buffer submit failed (VkResult {}).", static_cast<int32_t>(eSubmitResult));
 			return false;
 		}
 		return true;

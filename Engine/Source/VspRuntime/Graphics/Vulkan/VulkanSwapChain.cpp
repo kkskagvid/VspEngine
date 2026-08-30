@@ -1,6 +1,5 @@
 #include "RuntimePCH.h"
 
-#include <cstdio>
 #include <vector>
 
 #include "Core/Logging/Log.h"
@@ -10,14 +9,6 @@ namespace Vsp
 {
 	static constexpr const char* kLogTag = "VulkanSwapChain";
 
-	// Formats a VkResult for error text.
-	static VspString FormatVkResultNumber(VkResult eResult)
-	{
-		char sBuffer[32];
-		snprintf(sBuffer, sizeof(sBuffer), "%d", static_cast<int32_t>(eResult));
-		return VspString(sBuffer);
-	}
-
 	VulkanSwapChain::~VulkanSwapChain()
 	{
 		Destroy();
@@ -26,17 +17,16 @@ namespace Vsp
 	bool VulkanSwapChain::Initialize(
 		VulkanContext& context,
 		uint32_t uPreferredWidth,
-		uint32_t uPreferredHeight,
-		VspString& outErrorText)
+		uint32_t uPreferredHeight)
 	{
 		m_pContext = &context;
 		m_Extent.width = uPreferredWidth;
 		m_Extent.height = uPreferredHeight;
 
-		if (!CreateSwapChain(outErrorText)) return false;
-		if (!CreateImageViews(outErrorText)) return false;
-		if (!CreateRenderPass(outErrorText)) return false;
-		if (!CreateFramebuffers(outErrorText)) return false;
+		if (!CreateSwapChain()) return false;
+		if (!CreateImageViews()) return false;
+		if (!CreateRenderPass()) return false;
+		if (!CreateFramebuffers()) return false;
 		return true;
 	}
 
@@ -57,11 +47,11 @@ namespace Vsp
 		}
 	}
 
-	bool VulkanSwapChain::Recreate(uint32_t uWidth, uint32_t uHeight, VspString& outErrorText)
+	bool VulkanSwapChain::Recreate(uint32_t uWidth, uint32_t uHeight)
 	{
 		if (m_pContext == nullptr)
 		{
-			outErrorText = "Swapchain is not initialized.";
+			LOG_ERROR(kLogTag, "Cannot recreate the swapchain before initialization.");
 			return false;
 		}
 
@@ -71,9 +61,9 @@ namespace Vsp
 		WaitIdle();
 		DestroySwapChainObjects();
 
-		if (!CreateSwapChain(outErrorText)) return false;
-		if (!CreateImageViews(outErrorText)) return false;
-		if (!CreateFramebuffers(outErrorText)) return false;
+		if (!CreateSwapChain()) return false;
+		if (!CreateImageViews()) return false;
+		if (!CreateFramebuffers()) return false;
 		return true;
 	}
 
@@ -89,7 +79,7 @@ namespace Vsp
 	// Creation
 	// -------------------------------------------------------------------------
 
-	bool VulkanSwapChain::CreateSwapChain(VspString& outErrorText)
+	bool VulkanSwapChain::CreateSwapChain()
 	{
 		const VkPhysicalDevice physicalDevice = m_pContext->GetPhysicalDevice();
 		const VkSurfaceKHR surface = m_pContext->GetSurface();
@@ -135,7 +125,7 @@ namespace Vsp
 		const VkResult eResult = vkCreateSwapchainKHR(device, &createInfo, nullptr, &m_VkSwapchain);
 		if (eResult != VK_SUCCESS || m_VkSwapchain == VK_NULL_HANDLE)
 		{
-			outErrorText = "vkCreateSwapchainKHR failed (VkResult " + FormatVkResultNumber(eResult) + ").";
+			LOG_ERROR(kLogTag, "vkCreateSwapchainKHR failed (VkResult {}).", static_cast<int32_t>(eResult));
 			return false;
 		}
 
@@ -156,7 +146,7 @@ namespace Vsp
 		return true;
 	}
 
-	bool VulkanSwapChain::CreateImageViews(VspString& outErrorText)
+	bool VulkanSwapChain::CreateImageViews()
 	{
 		const VkDevice device = m_pContext->GetDevice();
 		m_SwapChainImageViews.Clear();
@@ -178,7 +168,7 @@ namespace Vsp
 			VkImageView imageView = VK_NULL_HANDLE;
 			if (vkCreateImageView(device, &viewCreateInfo, nullptr, &imageView) != VK_SUCCESS)
 			{
-				outErrorText = "vkCreateImageView failed.";
+				LOG_ERROR(kLogTag, "vkCreateImageView failed for swapchain image {}.", nIndex);
 				return false;
 			}
 			m_SwapChainImageViews.Add(imageView);
@@ -186,7 +176,7 @@ namespace Vsp
 		return true;
 	}
 
-	bool VulkanSwapChain::CreateRenderPass(VspString& outErrorText)
+	bool VulkanSwapChain::CreateRenderPass()
 	{
 		VkAttachmentDescription colorAttachment = {};
 		colorAttachment.format = m_eImageFormat;
@@ -227,13 +217,13 @@ namespace Vsp
 		const VkResult eResult = vkCreateRenderPass(m_pContext->GetDevice(), &renderPassCreateInfo, nullptr, &m_VkRenderPass);
 		if (eResult != VK_SUCCESS)
 		{
-			outErrorText = "vkCreateRenderPass failed (VkResult " + FormatVkResultNumber(eResult) + ").";
+			LOG_ERROR(kLogTag, "vkCreateRenderPass failed (VkResult {}).", static_cast<int32_t>(eResult));
 			return false;
 		}
 		return true;
 	}
 
-	bool VulkanSwapChain::CreateFramebuffers(VspString& outErrorText)
+	bool VulkanSwapChain::CreateFramebuffers()
 	{
 		const VkDevice device = m_pContext->GetDevice();
 		m_Framebuffers.Clear();
@@ -255,7 +245,7 @@ namespace Vsp
 			VkFramebuffer framebuffer = VK_NULL_HANDLE;
 			if (vkCreateFramebuffer(device, &framebufferCreateInfo, nullptr, &framebuffer) != VK_SUCCESS)
 			{
-				outErrorText = "vkCreateFramebuffer failed.";
+				LOG_ERROR(kLogTag, "vkCreateFramebuffer failed for image {}.", nIndex);
 				return false;
 			}
 			m_Framebuffers.Add(framebuffer);
@@ -291,7 +281,7 @@ namespace Vsp
 	// Presentation
 	// -------------------------------------------------------------------------
 
-	bool VulkanSwapChain::AcquireNextImage(VkSemaphore imageAvailableSemaphore, VspString& outErrorText)
+	SwapChainAcquireResult VulkanSwapChain::AcquireNextImage(VkSemaphore imageAvailableSemaphore)
 	{
 		const VkResult eResult = vkAcquireNextImageKHR(
 			m_pContext->GetDevice(),
@@ -303,15 +293,15 @@ namespace Vsp
 
 		if (eResult == VK_ERROR_OUT_OF_DATE_KHR || eResult == VK_SUBOPTIMAL_KHR)
 		{
-			return false;   // Caller recreates the swapchain.
+			return SwapChainAcquireResult::OutOfDate;
 		}
 
 		if (eResult != VK_SUCCESS)
 		{
-			outErrorText = "vkAcquireNextImageKHR failed (VkResult " + FormatVkResultNumber(eResult) + ").";
-			return false;
+			LOG_ERROR(kLogTag, "vkAcquireNextImageKHR failed (VkResult {}).", static_cast<int32_t>(eResult));
+			return SwapChainAcquireResult::Failed;
 		}
-		return true;
+		return SwapChainAcquireResult::Success;
 	}
 
 	bool VulkanSwapChain::SubmitAndPresent(
@@ -319,8 +309,7 @@ namespace Vsp
 		VkSemaphore waitSemaphore,
 		VkSemaphore signalSemaphore,
 		VkFence inFlightFence,
-		bool& outIsOutOfDate,
-		VspString& outErrorText)
+		bool& outIsOutOfDate)
 	{
 		outIsOutOfDate = false;
 
@@ -341,7 +330,7 @@ namespace Vsp
 		const VkResult eSubmitResult = vkQueueSubmit(m_pContext->GetGraphicsQueue(), 1, &submitInfo, inFlightFence);
 		if (eSubmitResult != VK_SUCCESS)
 		{
-			outErrorText = "vkQueueSubmit failed (VkResult " + FormatVkResultNumber(eSubmitResult) + ").";
+			LOG_ERROR(kLogTag, "vkQueueSubmit failed (VkResult {}).", static_cast<int32_t>(eSubmitResult));
 			return false;
 		}
 
@@ -362,7 +351,7 @@ namespace Vsp
 
 		if (ePresentResult != VK_SUCCESS)
 		{
-			outErrorText = "vkQueuePresentKHR failed (VkResult " + FormatVkResultNumber(ePresentResult) + ").";
+			LOG_ERROR(kLogTag, "vkQueuePresentKHR failed (VkResult {}).", static_cast<int32_t>(ePresentResult));
 			return false;
 		}
 		return true;

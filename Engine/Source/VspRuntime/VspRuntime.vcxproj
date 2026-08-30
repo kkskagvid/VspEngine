@@ -25,6 +25,8 @@
     <ClInclude Include="Core\Defines.h" />
     <ClInclude Include="Core\Engine.h" />
     <ClInclude Include="Core\Logging\Log.h" />
+    <ClInclude Include="Core\Logging\LogBackend.h" />
+    <ClInclude Include="Core\Output\OutputDevice.h" />
     <ClInclude Include="Core\Platform.h" />
     <ClInclude Include="Core\String\I18N.h" />
     <ClInclude Include="Core\String\StringConv.h" />
@@ -73,6 +75,8 @@
     </ClCompile>
     <ClCompile Include="Core\Input\InputManager.cpp" />
     <ClCompile Include="Core\Logging\Log.cpp" />
+    <ClCompile Include="Core\Logging\LogBackend.cpp" />
+    <ClCompile Include="Core\Output\OutputDevice.cpp" />
     <ClCompile Include="Graphics\Vulkan\VulkanRHI.cpp" />
     <ClCompile Include="Graphics\Vulkan\VulkanSwapChain.cpp" />
     <ClCompile Include="Graphics\Vulkan\VulkanRenderer2D.cpp" />

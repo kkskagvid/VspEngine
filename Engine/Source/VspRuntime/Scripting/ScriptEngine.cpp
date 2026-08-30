@@ -72,18 +72,18 @@ namespace Vsp
 			return false;
 		}
 
-		LOG_INFO(kLogTag, "CoreCLR host initialized (assembly: {})", sAssemblyPath.ToStdString());
+		LOG_INFO(kLogTag, "CoreCLR host initialized (assembly: {})", sAssemblyPath.GetData());
 		return true;
 	}
 
 	void ScriptEngine::Shutdown()
 	{
 		// Destroy managed instances first: the runtime must still be usable.
-		for (size_t nInstanceIndex = 0; nInstanceIndex < m_ScriptInstanceIds.GetSize(); ++nInstanceIndex)
+		for (size_t nInstanceIndex = 0; nInstanceIndex < m_ScriptInstances.GetSize(); ++nInstanceIndex)
 		{
-			DestroyScriptInstance(m_ScriptInstanceIds[nInstanceIndex]);
+			DestroyScriptInstance(m_ScriptInstances[nInstanceIndex].uInstanceId);
 		}
-		m_ScriptInstanceIds.Clear();
+		m_ScriptInstances.Clear();
 
 		// Close the hostfxr context (CoreCLR itself stays loaded per-process).
 		if (m_hHostFxrLibrary != nullptr && m_RuntimeContext != nullptr)
@@ -217,12 +217,12 @@ namespace Vsp
 		m_BridgeFunctions.CreateInstance = reinterpret_cast<ManagedBridgeDetail::CreateInstanceFn>(pFunction);
 
 		pFunction = nullptr;
-		if (!FetchEntryPoint(L"CreateAllScripts", pFunction)) return false;
-		m_BridgeFunctions.CreateAllScripts = reinterpret_cast<ManagedBridgeDetail::CreateAllScriptsFn>(pFunction);
+		if (!FetchEntryPoint(L"GetScriptTypeCount", pFunction)) return false;
+		m_BridgeFunctions.GetScriptTypeCount = reinterpret_cast<ManagedBridgeDetail::GetScriptTypeCountFn>(pFunction);
 
 		pFunction = nullptr;
-		if (!FetchEntryPoint(L"FreeIntArray", pFunction)) return false;
-		m_BridgeFunctions.FreeIntArray = reinterpret_cast<ManagedBridgeDetail::FreeIntArrayFn>(pFunction);
+		if (!FetchEntryPoint(L"GetScriptTypeName", pFunction)) return false;
+		m_BridgeFunctions.GetScriptTypeName = reinterpret_cast<ManagedBridgeDetail::GetScriptTypeNameFn>(pFunction);
 
 		pFunction = nullptr;
 		if (!FetchEntryPoint(L"CallOnInit", pFunction)) return false;
@@ -272,30 +272,61 @@ namespace Vsp
 	// Script instance management (C++ host is the caller)
 	// -------------------------------------------------------------------------
 
+	ScriptEngine::ScriptInstanceEntry* ScriptEngine::FindInstanceEntry(ScriptInstanceId uInstanceId)
+	{
+		for (size_t nIndex = 0; nIndex < m_ScriptInstances.GetSize(); ++nIndex)
+		{
+			if (m_ScriptInstances[nIndex].uInstanceId == uInstanceId)
+			{
+				return &m_ScriptInstances[nIndex];
+			}
+		}
+		return nullptr;
+	}
+
+	const ScriptEngine::ScriptInstanceEntry* ScriptEngine::FindInstanceEntry(ScriptInstanceId uInstanceId) const
+	{
+		for (size_t nIndex = 0; nIndex < m_ScriptInstances.GetSize(); ++nIndex)
+		{
+			if (m_ScriptInstances[nIndex].uInstanceId == uInstanceId)
+			{
+				return &m_ScriptInstances[nIndex];
+			}
+		}
+		return nullptr;
+	}
+
 	bool ScriptEngine::CreateAllScriptInstances(VspString& outErrorText)
 	{
-		if (!IsInitialized() || m_BridgeFunctions.CreateAllScripts == nullptr)
+		if (!IsInitialized() ||
+			m_BridgeFunctions.GetScriptTypeCount == nullptr ||
+			m_BridgeFunctions.GetScriptTypeName == nullptr)
 		{
 			outErrorText = "ScriptEngine is not initialized.";
 			return false;
 		}
 
-		int32_t nInstanceCount = 0;
-		int32_t* pInstanceIds = m_BridgeFunctions.CreateAllScripts(&nInstanceCount);
-		if (pInstanceIds == nullptr || nInstanceCount <= 0)
+		// Ask the managed bridge for every concrete ScriptBehaviour type, then
+		// create one instance of each. The InstanceID is generated here.
+		const int32_t nScriptTypeCount = m_BridgeFunctions.GetScriptTypeCount();
+		if (nScriptTypeCount <= 0)
 		{
 			outErrorText = "No ScriptBehaviour types found in the game assembly.";
 			return false;
 		}
 
-		for (int32_t nIndex = 0; nIndex < nInstanceCount; ++nIndex)
+		wchar_t sTypeNameBuffer[512];
+		for (int32_t nTypeIndex = 0; nTypeIndex < nScriptTypeCount; ++nTypeIndex)
 		{
-			m_ScriptInstanceIds.Add(static_cast<ScriptInstanceId>(pInstanceIds[nIndex]));
-			LOG_INFO(kLogTag, "Created script instance with InstanceID {}", pInstanceIds[nIndex]);
+			m_BridgeFunctions.GetScriptTypeName(nTypeIndex, sTypeNameBuffer, 512);
+			const ScriptInstanceId uInstanceId = CreateScriptInstance(VspString(sTypeNameBuffer));
+			if (uInstanceId == 0)
+			{
+				LOG_WARNING(kLogTag, "Failed to create script instance for type '{}'.", VspString(sTypeNameBuffer).GetData());
+			}
 		}
 
-		m_BridgeFunctions.FreeIntArray(pInstanceIds);
-		return true;
+		return GetScriptInstanceCount() > 0;
 	}
 
 	ScriptInstanceId ScriptEngine::CreateScriptInstance(const VspString& sTypeName)
@@ -305,54 +336,68 @@ namespace Vsp
 			return 0;
 		}
 
-		const int32_t nInstanceId = m_BridgeFunctions.CreateInstance(sTypeName.ToWideText().GetData());
-		if (nInstanceId <= 0)
+		// The C++ host owns InstanceID generation (non-negative, 1-based).
+		const ScriptInstanceId uInstanceId = m_nNextInstanceId++;
+
+		void* pManagedHandle = m_BridgeFunctions.CreateInstance(
+			static_cast<int32_t>(uInstanceId),
+			sTypeName.ToWideText().GetData());
+		if (pManagedHandle == nullptr)
 		{
 			return 0;
 		}
 
-		m_ScriptInstanceIds.Add(static_cast<ScriptInstanceId>(nInstanceId));
-		return static_cast<ScriptInstanceId>(nInstanceId);
+		ScriptInstanceEntry entry;
+		entry.uInstanceId = uInstanceId;
+		entry.pManagedHandle = pManagedHandle;
+		m_ScriptInstances.Add(entry);
+
+		LOG_INFO(kLogTag, "Created script instance with InstanceID {}", uInstanceId);
+		return uInstanceId;
 	}
 
 	void ScriptEngine::CallScriptInit(ScriptInstanceId uInstanceId)
 	{
-		if (uInstanceId != 0 && m_BridgeFunctions.CallOnInit != nullptr)
+		const ScriptInstanceEntry* pEntry = FindInstanceEntry(uInstanceId);
+		if (pEntry != nullptr && pEntry->pManagedHandle != nullptr && m_BridgeFunctions.CallOnInit != nullptr)
 		{
-			m_BridgeFunctions.CallOnInit(static_cast<int32_t>(uInstanceId));
+			m_BridgeFunctions.CallOnInit(pEntry->pManagedHandle);
 		}
 	}
 
 	void ScriptEngine::CallScriptStart(ScriptInstanceId uInstanceId)
 	{
-		if (uInstanceId != 0 && m_BridgeFunctions.CallOnStart != nullptr)
+		const ScriptInstanceEntry* pEntry = FindInstanceEntry(uInstanceId);
+		if (pEntry != nullptr && pEntry->pManagedHandle != nullptr && m_BridgeFunctions.CallOnStart != nullptr)
 		{
-			m_BridgeFunctions.CallOnStart(static_cast<int32_t>(uInstanceId));
+			m_BridgeFunctions.CallOnStart(pEntry->pManagedHandle);
 		}
 	}
 
 	void ScriptEngine::CallScriptUpdate(ScriptInstanceId uInstanceId)
 	{
-		if (uInstanceId != 0 && m_BridgeFunctions.CallOnUpdate != nullptr)
+		const ScriptInstanceEntry* pEntry = FindInstanceEntry(uInstanceId);
+		if (pEntry != nullptr && pEntry->pManagedHandle != nullptr && m_BridgeFunctions.CallOnUpdate != nullptr)
 		{
-			m_BridgeFunctions.CallOnUpdate(static_cast<int32_t>(uInstanceId));
+			m_BridgeFunctions.CallOnUpdate(pEntry->pManagedHandle);
 		}
 	}
 
 	void ScriptEngine::DestroyScriptInstance(ScriptInstanceId uInstanceId)
 	{
-		if (uInstanceId == 0 || m_BridgeFunctions.DestroyInstance == nullptr)
+		const ScriptInstanceEntry* pEntry = FindInstanceEntry(uInstanceId);
+		if (pEntry == nullptr || m_BridgeFunctions.DestroyInstance == nullptr)
 		{
 			return;
 		}
 
-		m_BridgeFunctions.DestroyInstance(static_cast<int32_t>(uInstanceId));
+		m_BridgeFunctions.DestroyInstance(pEntry->pManagedHandle);
 
-		for (size_t nIndex = 0; nIndex < m_ScriptInstanceIds.GetSize(); ++nIndex)
+		for (size_t nIndex = 0; nIndex < m_ScriptInstances.GetSize(); ++nIndex)
 		{
-			if (m_ScriptInstanceIds[nIndex] == uInstanceId)
+			if (m_ScriptInstances[nIndex].uInstanceId == uInstanceId)
 			{
-				m_ScriptInstanceIds.RemoveAt(nIndex);
+				m_ScriptInstances.RemoveAt(nIndex);
 				break;
 			}
 		}
@@ -365,9 +410,9 @@ namespace Vsp
 			return;
 		}
 
-		for (size_t nIndex = 0; nIndex < m_ScriptInstanceIds.GetSize(); ++nIndex)
+		for (size_t nIndex = 0; nIndex < m_ScriptInstances.GetSize(); ++nIndex)
 		{
-			CallScriptUpdate(m_ScriptInstanceIds[nIndex]);
+			CallScriptUpdate(m_ScriptInstances[nIndex].uInstanceId);
 		}
 	}
 }

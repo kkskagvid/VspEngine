@@ -521,7 +521,7 @@ namespace Vsp
 		SizeType GetByteLength() const;        // Number of UTF-8 bytes, excluding the terminator.
 		SizeType GetCodePointCount() const;    // Number of Unicode code points.
 		bool IsEmpty() const;
-		const char* GetData() const;           // Null-terminated UTF-8 byte buffer (never writes into it).
+		const char* GetData() const;           // Null-terminated UTF-8 byte buffer.
 
 		// -------- Code point access (indices count code points, not bytes) --------
 		CodePointType GetCodePointAt(SizeType nCodePointIndex) const;   // Out-of-range: DEBUG_BREAK, then clamped to the last code point.
