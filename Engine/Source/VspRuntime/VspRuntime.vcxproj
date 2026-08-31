@@ -198,7 +198,7 @@
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
-      <AdditionalLibraryDirectories>$(SolutionDir)Engine\Binaries\ICU\Debug;$(SolutionDir)Engine\Binaries\mimalloc\Debug;$(SolutionDir)Engine\Binaries\freetype;$(SolutionDir)Engine\Binaries\harfbuzz\Debug;$(SolutionDir)Engine\Binaries\Vulkun</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(SolutionDir)Engine\Binaries\ICU\;$(SolutionDir)Engine\Binaries\mimalloc\;$(SolutionDir)Engine\Binaries\freetype;$(SolutionDir)Engine\Binaries\harfbuzz\;$(SolutionDir)Engine\Binaries\Vulkun</AdditionalLibraryDirectories>
       <AdditionalDependencies>icu.lib;mimalloc.lib;freetype.lib;harfbuzz.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
@@ -224,7 +224,7 @@
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
-      <AdditionalLibraryDirectories>$(SolutionDir)Engine\Binaries\ICU\Release;$(SolutionDir)Engine\Binaries\mimalloc\Release;$(SolutionDir)Engine\Binaries\Vulkun;$(SolutionDir)Engine\Binaries\freetype;$(SolutionDir)Engine\Binaries\harfbuzz\Release</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(SolutionDir)Engine\Binaries\ICU\;$(SolutionDir)Engine\Binaries\mimalloc\;$(SolutionDir)Engine\Binaries\freetype;$(SolutionDir)Engine\Binaries\harfbuzz\;$(SolutionDir)Engine\Binaries\Vulkun</AdditionalLibraryDirectories>
       <AdditionalDependencies>icu.lib;mimalloc.lib;freetype.lib;harfbuzz.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
