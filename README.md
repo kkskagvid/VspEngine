@@ -65,17 +65,21 @@ through the CoreCLR Hosting API (nethost + hostfxr).
 
 ## Building
 
-Requirements: Visual Studio 2026 (v145 toolset), .NET SDK 10, the Vulkan SDK
-(`VULKAN_SDK` environment variable). Shaders are compiled to SPIR-V and embedded
-automatically by `Graphics/Vulkan/Shaders/CompileShaders.ps1` (PreBuildEvent).
+Requirements: Visual Studio 2026 (v145 toolset), .NET SDK 10 and a Vulkan SDK
+(the project looks for `Engine/Source/Thirdparty/Vulkan` first, then the
+`VULKAN_SDK` environment variable). Shaders are compiled to SPIR-V and embedded
+automatically by `Graphics/Vulkan/Shaders/CompileShaders.ps1` (PreBuildEvent) into
+`Graphics/Vulkan/Shaders/ShaderBinary.h` (a generated, git-ignored header).
 
 ```
 msbuild VspEngine.slnx /restore /p:Configuration=Debug /p:Platform=x64
 ```
 
-All binaries land in `Engine/Intermediate/Binaries/<Config>_x64/`; the shipped .NET
-runtime lives in `Engine/Binaries/dotnet/runtime10.0.10` and is located automatically
-relative to the executable.
+Standard layout: every build artifact (binaries, obj/, NuGet restore caches,
+generated headers) lives under `Engine/Intermediate` (or `Engine/Binaries` for
+third-party libraries) - nothing is ever written into `Engine/Source`. The shipped
+.NET runtime lives in `Engine/Binaries/dotnet/runtime10.0.10` and is located
+automatically relative to the executable.
 
 ## Running
 
@@ -105,7 +109,9 @@ Launch.exe --silent --frames=445 ^
 
 ## Layout
 
-- `Engine/Source/VspRuntime` - the engine DLL: windowing, events, input, Vulkan renderer, script host.
+- `Engine/Source/VspRuntime`  - the engine DLL sources: windowing, events, input, Vulkan renderer, script host.
 - `Engine/Source/VspPlayer`   - the managed game assembly: ScriptBehaviour, Input/Time/Transform facades, demo script.
 - `Engine/Source/Launch`      - the host executable: parses the command line, runs `GameEngine`.
+- `Engine/Source/Thirdparty`  - imported third-party SDKs (Vulkan, dxc, glm, fmt, ...). Read-only: never modified.
 - `Engine/Binaries`           - third-party binaries (dotnet runtime, Vulkan import lib, ...).
+- `Engine/Intermediate`       - all build outputs: binaries, obj/, NuGet restore caches, generated shader header.

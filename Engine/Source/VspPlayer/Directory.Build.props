@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+    <!--
+      Standard layout: obj/, NuGet restore caches and all other intermediate
+      files live under Engine\Intermediate - the Source tree stays clean.
+      This file is imported before Microsoft.Common.props (Directory.Build.props),
+      which is the only point where BaseIntermediateOutputPath may be set.
+    -->
+    <PropertyGroup>
+        <BaseIntermediateOutputPath>$(MSBuildProjectDirectory)\..\..\Intermediate\Object\$(Configuration)_$(Platform)\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
+        <IntermediateOutputPath>$(BaseIntermediateOutputPath)</IntermediateOutputPath>
+    </PropertyGroup>
+</Project>

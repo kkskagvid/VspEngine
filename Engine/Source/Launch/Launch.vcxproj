@@ -70,6 +70,7 @@
     </Link>
     <PostBuildEvent>
       <Command>xcopy /Y /D &quot;$(ProjectDir)Config\Launch.runtimeconfig.json&quot; &quot;$(OutDir)&quot; &gt;nul
+if exist &quot;$(SolutionDir)Engine\Source\Thirdparty\Vulkan\Bin\vulkan-1.dll&quot; copy /Y &quot;$(SolutionDir)Engine\Source\Thirdparty\Vulkan\Bin\vulkan-1.dll&quot; &quot;$(OutDir)&quot; &gt;nul
 if exist &quot;$(VULKAN_SDK)\Bin\vulkan-1.dll&quot; copy /Y &quot;$(VULKAN_SDK)\Bin\vulkan-1.dll&quot; &quot;$(OutDir)&quot; &gt;nul</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
@@ -94,6 +95,7 @@ if exist &quot;$(VULKAN_SDK)\Bin\vulkan-1.dll&quot; copy /Y &quot;$(VULKAN_SDK)\
     </Link>
     <PostBuildEvent>
       <Command>xcopy /Y /D &quot;$(ProjectDir)Config\Launch.runtimeconfig.json&quot; &quot;$(OutDir)&quot; &gt;nul
+if exist &quot;$(SolutionDir)Engine\Source\Thirdparty\Vulkan\Bin\vulkan-1.dll&quot; copy /Y &quot;$(SolutionDir)Engine\Source\Thirdparty\Vulkan\Bin\vulkan-1.dll&quot; &quot;$(OutDir)&quot; &gt;nul
 if exist &quot;$(VULKAN_SDK)\Bin\vulkan-1.dll&quot; copy /Y &quot;$(VULKAN_SDK)\Bin\vulkan-1.dll&quot; &quot;$(OutDir)&quot; &gt;nul</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
@@ -102,7 +104,18 @@ if exist &quot;$(VULKAN_SDK)\Bin\vulkan-1.dll&quot; copy /Y &quot;$(VULKAN_SDK)\
     <ClCompile Include="Windows\LaunchWindows.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Resource\resource.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="Resource\DefaultEngine.ico" />
+    <Image Include="Resource\EngineIcon.ico" />
+  </ItemGroup>
+  <ItemGroup>
     <None Include="Config\Launch.runtimeconfig.json" />
+    <None Include="Resource\Launch.aps" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="Resource\Launch.rc" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\VspRuntime\VspRuntime.vcxproj">

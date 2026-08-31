@@ -8,7 +8,7 @@
 
 #include "Core/Logging/Log.h"
 #include "Graphics/Vulkan/VulkanRenderer2D.h"
-#include "ShaderBinary.h"
+#include "Graphics/Vulkan/Shaders/ShaderBinary.h"
 
 namespace Vsp
 {

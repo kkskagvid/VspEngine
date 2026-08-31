@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
@@ -6,7 +7,14 @@
         <!-- The C++ host supplies its own runtimeconfig.json (Launch.runtimeconfig.json). -->
         <GenerateRuntimeConfigurationFiles>false</GenerateRuntimeConfigurationFiles>
 
-        <OutputPath>$(SolutionDir)Engine\Intermediate\Binaries\$(Configuration)_$(Platform)\</OutputPath>
+        <!--
+          Standard layout: binaries land under Engine\Intermediate - nothing
+          is written into the Source tree. (obj/ and the NuGet restore caches
+          are redirected by Directory.Build.props, which is imported early
+          enough for MSBuild/NuGet to honor it.)
+        -->
+        <EngineIntermediateRoot>$(MSBuildProjectDirectory)\..\..\Intermediate</EngineIntermediateRoot>
+        <OutputPath>$(EngineIntermediateRoot)\Binaries\$(Configuration)_$(Platform)\</OutputPath>
         <OutDir>$(OutputPath)</OutDir>
 
         <!-- 禁用所有自动添加的子目录 -->
@@ -20,13 +28,7 @@
         <Platforms>x64</Platforms>
         <PackageOutputPath>$(OutputPath)</PackageOutputPath>
 
-        <IntermediateOutputPath>$(SolutionDir)Engine\Intermediate\Object\$(Configuration)_$(Platform)\$(MSBuildProjectName)\</IntermediateOutputPath>
-
         <RootNamespace>VspEngine</RootNamespace>
     </PropertyGroup>
-
-    <Target Name="PostBuild" AfterTargets="PostBuildEvent">
-        <Exec Command="rd &quot;$(ProjectDir)obj&quot; /s /q" />
-    </Target>
 
 </Project>

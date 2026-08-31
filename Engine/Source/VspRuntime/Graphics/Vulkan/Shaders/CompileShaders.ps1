@@ -3,10 +3,24 @@ param(
     [string]$OutputPath
 )
 
+# MSBuild's Exec task pipes the parent's stdin into this script; consume it so
+# PowerShell never tries to bind that stream to the script parameters.
+$input | Out-Null
+
 $ErrorActionPreference = "Stop"
 
+$shaderSourceDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+
 # ---- Locate glslc.exe ---------------------------------------------------------
+# Search order (nothing is ever written into Thirdparty - it is only read):
+#   1. the project's own Thirdparty Vulkan SDK copy
+#   2. the VULKAN_SDK environment variable
+#   3. a machine-wide C:\VulkanSDK install
+$thirdPartyGlslc = Join-Path $shaderSourceDir "..\..\..\..\Thirdparty\Vulkan\Bin\glslc.exe"
 $candidates = @()
+if (Test-Path $thirdPartyGlslc) {
+    $candidates += $thirdPartyGlslc
+}
 if ($env:VULKAN_SDK) {
     $candidates += Join-Path $env:VULKAN_SDK "Bin\glslc.exe"
 }
@@ -14,17 +28,34 @@ $candidates += @(Get-ChildItem "C:\VulkanSDK\*\Bin\glslc.exe" -ErrorAction Silen
 
 $glslc = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
 if (-not $glslc) {
-    throw "glslc.exe not found - install the Vulkan SDK or set VULKAN_SDK."
+    throw "glslc.exe not found - place the Vulkan SDK in Engine\Source\Thirdparty\Vulkan, install it, or set VULKAN_SDK."
 }
-Write-Host "CompileShaders: using $glslc"
 
-$shaderSourceDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 # Bindless (Vulkan 1.3) is the only supported rendering path, so only its
 # shaders are compiled and embedded.
 $shaderNames = @(
     "TriangleBindless.vert",
     "TriangleBindless.frag"
 )
+
+# ---- Incremental check: skip when the header is newer than every input --------
+$inputs = @($MyInvocation.MyCommand.Path) + ($shaderNames | ForEach-Object { Join-Path $shaderSourceDir $_ })
+if ((Test-Path $OutputPath) -and (Test-Path $glslc)) {
+    $outputTime = (Get-Item $OutputPath).LastWriteTimeUtc
+    $upToDate = $true
+    foreach ($input in $inputs) {
+        if ((Get-Item $input).LastWriteTimeUtc -gt $outputTime) {
+            $upToDate = $false
+            break
+        }
+    }
+    if ($upToDate) {
+        Write-Host "CompileShaders: $OutputPath is up to date."
+        exit 0
+    }
+}
+
+Write-Host "CompileShaders: using $glslc"
 
 # ---- Compile each shader to a temporary SPIR-V file --------------------------
 $lines = New-Object System.Collections.Generic.List[string]
