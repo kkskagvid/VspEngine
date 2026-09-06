@@ -3,12 +3,15 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
-  <Project Path="Engine/Source/Launch/Launch.vcxproj" Id="7d9ae143-94ef-4137-9659-d25c0652c16e">
-    <BuildDependency Project="Engine/Source/VspPlayer/VspPlayer.csproj" />
-    <Platform Project="x64" />
-  </Project>
-  <Project Path="Engine/Source/VspPlayer/VspPlayer.csproj">
-    <Platform Project="x64" />
-  </Project>
-  <Project Path="Engine/Source/VspRuntime/VspRuntime.vcxproj" Id="b5752592-6d1c-4ca0-8ac5-45881dbfaffa" />
+  <Folder Name="/Programs/" />
+  <Folder Name="/Runtime/">
+    <Project Path="Engine/Source/Runtime/Launch/Launch.vcxproj" Id="7d9ae143-94ef-4137-9659-d25c0652c16e">
+      <BuildDependency Project="Engine/Source/Runtime/VspPlayer/VspPlayer.csproj" />
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="Engine/Source/Runtime/VspPlayer/VspPlayer.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="Engine/Source/Runtime/VspCore/VspCore.vcxproj" Id="b5752592-6d1c-4ca0-8ac5-45881dbfaffa" />
+  </Folder>
 </Solution>

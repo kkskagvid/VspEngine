@@ -7,7 +7,7 @@
       which is the only point where BaseIntermediateOutputPath may be set.
     -->
     <PropertyGroup>
-        <BaseIntermediateOutputPath>$(MSBuildProjectDirectory)\..\..\Intermediate\Object\$(Configuration)_$(Platform)\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
+        <BaseIntermediateOutputPath>$(MSBuildProjectDirectory)\..\..\..\Intermediate\Object\$(Configuration)_$(Platform)\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
         <IntermediateOutputPath>$(BaseIntermediateOutputPath)</IntermediateOutputPath>
     </PropertyGroup>
 </Project>

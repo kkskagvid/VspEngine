@@ -59,7 +59,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <ExceptionHandling>false</ExceptionHandling>
-      <AdditionalIncludeDirectories>$(SolutionDir)Engine\Source\VspRuntime;$(SolutionDir)Engine\Source\Thirdparty\fmt\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)Engine\Source\Runtime\VspCore;$(SolutionDir)Engine\Source\Thirdparty\fmt\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard_C>stdc11</LanguageStandard_C>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
@@ -84,7 +84,7 @@ if exist &quot;$(VULKAN_SDK)\Bin\vulkan-1.dll&quot; copy /Y &quot;$(VULKAN_SDK)\
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <ExceptionHandling>false</ExceptionHandling>
-      <AdditionalIncludeDirectories>$(SolutionDir)Engine\Source\VspRuntime;$(SolutionDir)Engine\Source\Thirdparty\fmt\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)Engine\Source\Runtime\VspCore;$(SolutionDir)Engine\Source\Thirdparty\fmt\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard_C>stdc11</LanguageStandard_C>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
@@ -118,7 +118,7 @@ if exist &quot;$(VULKAN_SDK)\Bin\vulkan-1.dll&quot; copy /Y &quot;$(VULKAN_SDK)\
     <ResourceCompile Include="Resource\Launch.rc" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\VspRuntime\VspRuntime.vcxproj">
+    <ProjectReference Include="..\VspCore\VspCore.vcxproj">
       <Project>{b5752592-6d1c-4ca0-8ac5-45881dbfaffa}</Project>
     </ProjectReference>
   </ItemGroup>

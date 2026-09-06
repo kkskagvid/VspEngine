@@ -13,7 +13,7 @@
           are redirected by Directory.Build.props, which is imported early
           enough for MSBuild/NuGet to honor it.)
         -->
-        <EngineIntermediateRoot>$(MSBuildProjectDirectory)\..\..\Intermediate</EngineIntermediateRoot>
+        <EngineIntermediateRoot>$(MSBuildProjectDirectory)\..\..\..\Intermediate</EngineIntermediateRoot>
         <OutputPath>$(EngineIntermediateRoot)\Binaries\$(Configuration)_$(Platform)\</OutputPath>
         <OutDir>$(OutputPath)</OutDir>
 

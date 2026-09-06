@@ -1,6 +1,6 @@
 #pragma once
 
-// Precompiled header for VspRuntime.
+// Precompiled header for VspCore.
 //
 // Deliberately kept free of standard-library includes: every translation unit
 // and header declares the headers it actually uses. This keeps include

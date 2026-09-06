@@ -40,7 +40,7 @@ through the CoreCLR Hosting API (nethost + hostfxr).
   - Every managed `GameObject` holds its own `IntPtr` (`NativePtr`, the object's
     GCHandle); the host passes that pointer back on every lifecycle call, so
     `NativeBridge` keeps **no instances Dictionary**.
-  - Managed code calls back into the native runtime through `DllImport("VspRuntime")`
+  - Managed code calls back into the native core through `DllImport("VspCore")`
     (`Input`, `Time`, `Transform`, `Renderer`), so interop is fully bidirectional.
 - **Unity-style scripting model** (`VspPlayer`): `GameObject` / `Component` / `ScriptBehaviour`
   with `OnInit / OnStart / OnUpdate / OnDestroy`, `Input.GetKey(...)`, `Time.DeltaTime`,
@@ -52,7 +52,7 @@ through the CoreCLR Hosting API (nethost + hostfxr).
 
 ## Demo (acceptance test)
 
-`VspPlayer/TriangleController.cs` drives a multicolor triangle:
+`Engine/Source/Runtime/VspPlayer/TriangleController.cs` drives a multicolor triangle:
 
 | Key | Action                                             |
 | --- | -------------------------------------------------- |
@@ -109,9 +109,9 @@ Launch.exe --silent --frames=445 ^
 
 ## Layout
 
-- `Engine/Source/VspRuntime`  - the engine DLL sources: windowing, events, input, Vulkan renderer, script host.
-- `Engine/Source/VspPlayer`   - the managed game assembly: ScriptBehaviour, Input/Time/Transform facades, demo script.
-- `Engine/Source/Launch`      - the host executable: parses the command line, runs `GameEngine`.
+- `Engine/Source/Runtime/VspCore`    - the engine DLL sources: windowing, events, input, Vulkan renderer, script host.
+- `Engine/Source/Runtime/VspPlayer`  - the managed game assembly: ScriptBehaviour, Input/Time/Transform facades, demo script.
+- `Engine/Source/Runtime/Launch`     - the host executable: parses the command line, runs `GameEngine`.
 - `Engine/Source/Thirdparty`  - imported third-party SDKs (Vulkan, dxc, glm, fmt, ...). Read-only: never modified.
 - `Engine/Binaries`           - third-party binaries (dotnet runtime, Vulkan import lib, ...).
 - `Engine/Intermediate`       - all build outputs: binaries, obj/, NuGet restore caches, generated shader header.

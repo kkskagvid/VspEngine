@@ -366,4 +366,4 @@ FodyWeavers.xsd
 Engine/Intermediate/
 
 # VspEngine - generated shader header (CompileShaders.ps1)
-Engine/Source/VspRuntime/Graphics/Vulkan/Shaders/ShaderBinary.h
+Engine/Source/Runtime/VspCore/Graphics/Vulkan/Shaders/ShaderBinary.h

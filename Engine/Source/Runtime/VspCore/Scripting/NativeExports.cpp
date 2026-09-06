@@ -7,7 +7,7 @@
 
 // -------------------------------------------------------------------------
 // Native exports consumed by managed code (C# -> C++ direction).
-// VspPlayer's NativeApi.cs P/Invokes these exact names from VspRuntime.dll.
+// VspPlayer's NativeApi.cs P/Invokes these exact names from VspCore.dll.
 // Everything is plain data in/out — no exceptions cross the boundary.
 // -------------------------------------------------------------------------
 

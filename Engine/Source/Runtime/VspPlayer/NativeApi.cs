@@ -4,13 +4,13 @@ using System.Runtime.InteropServices;
 namespace VspEngine
 {
 	/// <summary>
-	/// Raw P/Invoke bindings against the native engine runtime (VspRuntime.dll).
+	/// Raw P/Invoke bindings against the native engine core (VspCore.dll).
 	/// These functions form the C# -> C++ direction of the interop bridge.
 	/// The C++ host calls back into managed code through NativeBridge.
 	/// </summary>
 	internal static class NativeApi
 	{
-		private const string LibraryName = "VspRuntime";
+		private const string LibraryName = "VspCore";
 
 		// ---- Input (keyboard) ----
 		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]

@@ -174,7 +174,7 @@ namespace Vsp
 		applicationInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
 		applicationInfo.pApplicationName = sApplicationName.GetData();
 		applicationInfo.applicationVersion = VK_MAKE_API_VERSION(0, 1, 0, 0);
-		applicationInfo.pEngineName = "VspRuntime";
+		applicationInfo.pEngineName = "VspCore";
 		applicationInfo.engineVersion = VK_MAKE_API_VERSION(0, 1, 0, 0);
 		applicationInfo.apiVersion = nInstanceApiVersion;
 
