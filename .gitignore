@@ -363,7 +363,7 @@ MigrationBackup/
 FodyWeavers.xsd
 
 # VspEngine
-Engine/Intermediate/
+Intermediate/
 
 # VspEngine - generated shader header (CompileShaders.ps1)
 Engine/Source/Runtime/VspCore/Graphics/Vulkan/Shaders/ShaderBinary.h
