@@ -21,17 +21,17 @@ namespace Vsp
         /**
          * @brief 窗口宽度。
          */
-        uint32_t Width;
+        uint32 Width;
 
         /**
          * @brief 窗口宽度。
          */
-        uint32_t Height;
+        uint32 Height;
 
         /**
          * @brief 窗口状态。
          */
-        enum class WindowState : uint32_t
+        enum class WindowState : uint32
         {
             Normal,
             Minimized,
@@ -40,7 +40,7 @@ namespace Vsp
         };
         WindowState State;
 
-        enum class WindowDisplayMode : uint32_t
+        enum class WindowDisplayMode : uint32
         {
             Windowed,
             WindowedBorderless,
@@ -50,8 +50,8 @@ namespace Vsp
 
         WindowProperties(
             VspString title = "Vesper Engine",
-            uint32_t width = 1280,
-            uint32_t height = 720,
+            uint32 width = 1280,
+            uint32 height = 720,
             WindowState state = WindowState::Normal,
             WindowDisplayMode mode = WindowDisplayMode::Windowed
         ) : Title(title), Width(width), Height(height), State(state), DisplayMode(mode)
@@ -92,9 +92,9 @@ namespace Vsp
          */
         virtual void SetDisplayMode(
             WindowProperties::WindowDisplayMode mode,
-            uint32_t fullscreenWidth  = 0,
-            uint32_t fullscreenHeight = 0,
-            uint32_t refreshRate      = 0) = 0;
+            uint32 fullscreenWidth  = 0,
+            uint32 fullscreenHeight = 0,
+            uint32 refreshRate      = 0) = 0;
 
         /** @brief Return the current display mode. */
         virtual WindowProperties::WindowDisplayMode GetDisplayMode() const = 0;

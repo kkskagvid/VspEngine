@@ -16,8 +16,8 @@ namespace Vsp
 
 	bool VulkanSwapChain::Initialize(
 		VulkanContext& context,
-		uint32_t uPreferredWidth,
-		uint32_t uPreferredHeight)
+		uint32 uPreferredWidth,
+		uint32 uPreferredHeight)
 	{
 		m_pContext = &context;
 		m_Extent.width = uPreferredWidth;
@@ -47,7 +47,7 @@ namespace Vsp
 		}
 	}
 
-	bool VulkanSwapChain::Recreate(uint32_t uWidth, uint32_t uHeight)
+	bool VulkanSwapChain::Recreate(uint32 uWidth, uint32 uHeight)
 	{
 		if (m_pContext == nullptr)
 		{
@@ -84,13 +84,13 @@ namespace Vsp
 		const VkPhysicalDevice physicalDevice = m_pContext->GetPhysicalDevice();
 		const VkSurfaceKHR surface = m_pContext->GetSurface();
 		const VkDevice device = m_pContext->GetDevice();
-		const uint32_t nQueueFamilyIndex = m_pContext->GetGraphicsQueueFamilyIndex();
+		const uint32 nQueueFamilyIndex = m_pContext->GetGraphicsQueueFamilyIndex();
 
 		VkSurfaceCapabilitiesKHR capabilities = {};
 		vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &capabilities);
 
 		LOG_INFO(kLogTag, "Surface: currentTransform={}, currentExtent={}x{}, minImageCount={}.",
-			static_cast<uint32_t>(capabilities.currentTransform),
+			static_cast<uint32>(capabilities.currentTransform),
 			capabilities.currentExtent.width, capabilities.currentExtent.height,
 			capabilities.minImageCount);
 
@@ -98,7 +98,7 @@ namespace Vsp
 		VkPresentModeKHR presentMode = ChoosePresentMode(physicalDevice, surface);
 		VkExtent2D extent = ChooseExtent(capabilities, m_Extent.width, m_Extent.height);
 
-		uint32_t nImageCount = capabilities.minImageCount + 1;
+		uint32 nImageCount = capabilities.minImageCount + 1;
 		if (capabilities.maxImageCount > 0 && nImageCount > capabilities.maxImageCount)
 		{
 			nImageCount = capabilities.maxImageCount;
@@ -125,14 +125,14 @@ namespace Vsp
 		const VkResult eResult = vkCreateSwapchainKHR(device, &createInfo, nullptr, &m_VkSwapchain);
 		if (eResult != VK_SUCCESS || m_VkSwapchain == VK_NULL_HANDLE)
 		{
-			LOG_ERROR(kLogTag, "vkCreateSwapchainKHR failed (VkResult {}).", static_cast<int32_t>(eResult));
+			LOG_ERROR(kLogTag, "vkCreateSwapchainKHR failed (VkResult {}).", static_cast<int32>(eResult));
 			return false;
 		}
 
 		m_eImageFormat = surfaceFormat.format;
 		m_Extent = extent;
 
-		uint32_t nActualImageCount = 0;
+		uint32 nActualImageCount = 0;
 		vkGetSwapchainImagesKHR(device, m_VkSwapchain, &nActualImageCount, nullptr);
 		std::vector<VkImage> images(nActualImageCount);
 		vkGetSwapchainImagesKHR(device, m_VkSwapchain, &nActualImageCount, images.data());
@@ -217,7 +217,7 @@ namespace Vsp
 		const VkResult eResult = vkCreateRenderPass(m_pContext->GetDevice(), &renderPassCreateInfo, nullptr, &m_VkRenderPass);
 		if (eResult != VK_SUCCESS)
 		{
-			LOG_ERROR(kLogTag, "vkCreateRenderPass failed (VkResult {}).", static_cast<int32_t>(eResult));
+			LOG_ERROR(kLogTag, "vkCreateRenderPass failed (VkResult {}).", static_cast<int32>(eResult));
 			return false;
 		}
 		return true;
@@ -298,7 +298,7 @@ namespace Vsp
 
 		if (eResult != VK_SUCCESS)
 		{
-			LOG_ERROR(kLogTag, "vkAcquireNextImageKHR failed (VkResult {}).", static_cast<int32_t>(eResult));
+			LOG_ERROR(kLogTag, "vkAcquireNextImageKHR failed (VkResult {}).", static_cast<int32>(eResult));
 			return SwapChainAcquireResult::Failed;
 		}
 		return SwapChainAcquireResult::Success;
@@ -330,7 +330,7 @@ namespace Vsp
 		const VkResult eSubmitResult = vkQueueSubmit(m_pContext->GetGraphicsQueue(), 1, &submitInfo, inFlightFence);
 		if (eSubmitResult != VK_SUCCESS)
 		{
-			LOG_ERROR(kLogTag, "vkQueueSubmit failed (VkResult {}).", static_cast<int32_t>(eSubmitResult));
+			LOG_ERROR(kLogTag, "vkQueueSubmit failed (VkResult {}).", static_cast<int32>(eSubmitResult));
 			return false;
 		}
 
@@ -351,7 +351,7 @@ namespace Vsp
 
 		if (ePresentResult != VK_SUCCESS)
 		{
-			LOG_ERROR(kLogTag, "vkQueuePresentKHR failed (VkResult {}).", static_cast<int32_t>(ePresentResult));
+			LOG_ERROR(kLogTag, "vkQueuePresentKHR failed (VkResult {}).", static_cast<int32>(ePresentResult));
 			return false;
 		}
 		return true;
@@ -363,7 +363,7 @@ namespace Vsp
 
 	VkSurfaceFormatKHR VulkanSwapChain::ChooseSurfaceFormat(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface)
 	{
-		uint32_t nFormatCount = 0;
+		uint32 nFormatCount = 0;
 		vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &nFormatCount, nullptr);
 		std::vector<VkSurfaceFormatKHR> formats(nFormatCount);
 		vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &nFormatCount, formats.data());
@@ -383,7 +383,7 @@ namespace Vsp
 
 	VkPresentModeKHR VulkanSwapChain::ChoosePresentMode(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface)
 	{
-		uint32_t nModeCount = 0;
+		uint32 nModeCount = 0;
 		vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &nModeCount, nullptr);
 		std::vector<VkPresentModeKHR> modes(nModeCount);
 		vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &nModeCount, modes.data());
@@ -400,8 +400,8 @@ namespace Vsp
 
 	VkExtent2D VulkanSwapChain::ChooseExtent(
 		const VkSurfaceCapabilitiesKHR& capabilities,
-		uint32_t uPreferredWidth,
-		uint32_t uPreferredHeight)
+		uint32 uPreferredWidth,
+		uint32 uPreferredHeight)
 	{
 		if (capabilities.currentExtent.width != UINT32_MAX)
 		{

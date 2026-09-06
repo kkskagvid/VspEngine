@@ -23,7 +23,7 @@ namespace Vsp
 		VK_KHR_SURFACE_EXTENSION_NAME,
 		VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
 	};
-	static constexpr uint32_t k_nRequiredInstanceExtensionCount = 2;
+	static constexpr uint32 k_nRequiredInstanceExtensionCount = 2;
 
 	// Validation-layer messages are forwarded into the engine log.
 	static VKAPI_ATTR VkBool32 VKAPI_CALL DebugMessengerCallback(
@@ -119,8 +119,8 @@ namespace Vsp
 	bool VulkanContext::CreateInstance(const VspString& sApplicationName)
 	{
 		// Ask the loader how high the instance API may go; clamp to 1.3.
-		uint32_t nInstanceApiVersion = VK_API_VERSION_1_3;
-		uint32_t nSupportedApiVersion = 0;
+		uint32 nInstanceApiVersion = VK_API_VERSION_1_3;
+		uint32 nSupportedApiVersion = 0;
 		if (vkEnumerateInstanceVersion(&nSupportedApiVersion) == VK_SUCCESS)
 		{
 			if (nSupportedApiVersion < VK_API_VERSION_1_3)
@@ -144,7 +144,7 @@ namespace Vsp
 				GetEnvironmentVariableA("VSP_NO_VALIDATION", sDisableBuffer, sizeof(sDisableBuffer)) > 0;
 			if (!bValidationDisabled)
 			{
-				uint32_t nLayerCount = 0;
+				uint32 nLayerCount = 0;
 				vkEnumerateInstanceLayerProperties(&nLayerCount, nullptr);
 				std::vector<VkLayerProperties> availableLayers(nLayerCount);
 				vkEnumerateInstanceLayerProperties(&nLayerCount, availableLayers.data());
@@ -181,15 +181,15 @@ namespace Vsp
 		VkInstanceCreateInfo createInfo = {};
 		createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
 		createInfo.pApplicationInfo = &applicationInfo;
-		createInfo.enabledExtensionCount = static_cast<uint32_t>(enabledExtensions.size());
+		createInfo.enabledExtensionCount = static_cast<uint32>(enabledExtensions.size());
 		createInfo.ppEnabledExtensionNames = enabledExtensions.data();
-		createInfo.enabledLayerCount = static_cast<uint32_t>(enabledLayers.size());
+		createInfo.enabledLayerCount = static_cast<uint32>(enabledLayers.size());
 		createInfo.ppEnabledLayerNames = enabledLayers.empty() ? nullptr : enabledLayers.data();
 
 		const VkResult eResult = vkCreateInstance(&createInfo, nullptr, &m_VkInstance);
 		if (eResult != VK_SUCCESS || m_VkInstance == VK_NULL_HANDLE)
 		{
-			LOG_ERROR(kLogTag, "vkCreateInstance failed (VkResult {}).", static_cast<int32_t>(eResult));
+			LOG_ERROR(kLogTag, "vkCreateInstance failed (VkResult {}).", static_cast<int32>(eResult));
 			return false;
 		}
 
@@ -230,7 +230,7 @@ namespace Vsp
 		const VkResult eResult = vkCreateWin32SurfaceKHR(m_VkInstance, &surfaceCreateInfo, nullptr, &m_VkSurface);
 		if (eResult != VK_SUCCESS || m_VkSurface == VK_NULL_HANDLE)
 		{
-			LOG_ERROR(kLogTag, "vkCreateWin32SurfaceKHR failed (VkResult {}).", static_cast<int32_t>(eResult));
+			LOG_ERROR(kLogTag, "vkCreateWin32SurfaceKHR failed (VkResult {}).", static_cast<int32>(eResult));
 			return false;
 		}
 		return true;
@@ -246,7 +246,7 @@ namespace Vsp
 
 	bool VulkanContext::SelectPhysicalDevice()
 	{
-		uint32_t nDeviceCount = 0;
+		uint32 nDeviceCount = 0;
 		vkEnumeratePhysicalDevices(m_VkInstance, &nDeviceCount, nullptr);
 		if (nDeviceCount == 0)
 		{
@@ -261,12 +261,12 @@ namespace Vsp
 		// the surface; prefer discrete GPUs.
 		for (VkPhysicalDevice device : devices)
 		{
-			uint32_t nQueueFamilyCount = 0;
+			uint32 nQueueFamilyCount = 0;
 			vkGetPhysicalDeviceQueueFamilyProperties(device, &nQueueFamilyCount, nullptr);
 			std::vector<VkQueueFamilyProperties> queueFamilies(nQueueFamilyCount);
 			vkGetPhysicalDeviceQueueFamilyProperties(device, &nQueueFamilyCount, queueFamilies.data());
 
-			for (uint32_t nFamilyIndex = 0; nFamilyIndex < nQueueFamilyCount; ++nFamilyIndex)
+			for (uint32 nFamilyIndex = 0; nFamilyIndex < nQueueFamilyCount; ++nFamilyIndex)
 			{
 				if ((queueFamilies[nFamilyIndex].queueFlags & VK_QUEUE_GRAPHICS_BIT) == 0)
 				{
@@ -387,7 +387,7 @@ namespace Vsp
 		const VkResult eResult = vkCreateDevice(m_VkPhysicalDevice, &createInfo, nullptr, &m_VkDevice);
 		if (eResult != VK_SUCCESS || m_VkDevice == VK_NULL_HANDLE)
 		{
-			LOG_ERROR(kLogTag, "vkCreateDevice failed (VkResult {}).", static_cast<int32_t>(eResult));
+			LOG_ERROR(kLogTag, "vkCreateDevice failed (VkResult {}).", static_cast<int32>(eResult));
 			return false;
 		}
 
@@ -405,7 +405,7 @@ namespace Vsp
 		const VkResult eResult = vkCreateCommandPool(m_VkDevice, &poolCreateInfo, nullptr, &m_VkCommandPool);
 		if (eResult != VK_SUCCESS)
 		{
-			LOG_ERROR(kLogTag, "vkCreateCommandPool failed (VkResult {}).", static_cast<int32_t>(eResult));
+			LOG_ERROR(kLogTag, "vkCreateCommandPool failed (VkResult {}).", static_cast<int32>(eResult));
 			return false;
 		}
 		return true;
@@ -415,7 +415,7 @@ namespace Vsp
 	// Helpers
 	// -------------------------------------------------------------------------
 
-	VkShaderModule VulkanContext::CreateShaderModule(const uint32_t* pSpirvCode, size_t nByteCount) const
+	VkShaderModule VulkanContext::CreateShaderModule(const uint32* pSpirvCode, size_t nByteCount) const
 	{
 		VkShaderModuleCreateInfo moduleCreateInfo = {};
 		moduleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
@@ -426,18 +426,18 @@ namespace Vsp
 		const VkResult eResult = vkCreateShaderModule(m_VkDevice, &moduleCreateInfo, nullptr, &shaderModule);
 		if (eResult != VK_SUCCESS)
 		{
-			LOG_ERROR(kLogTag, "vkCreateShaderModule failed (VkResult {}).", static_cast<int32_t>(eResult));
+			LOG_ERROR(kLogTag, "vkCreateShaderModule failed (VkResult {}).", static_cast<int32>(eResult));
 			return VK_NULL_HANDLE;
 		}
 		return shaderModule;
 	}
 
-	uint32_t VulkanContext::FindMemoryTypeIndex(uint32_t uTypeFilter, VkMemoryPropertyFlags eProperties) const
+	uint32 VulkanContext::FindMemoryTypeIndex(uint32 uTypeFilter, VkMemoryPropertyFlags eProperties) const
 	{
 		VkPhysicalDeviceMemoryProperties memoryProperties = {};
 		vkGetPhysicalDeviceMemoryProperties(m_VkPhysicalDevice, &memoryProperties);
 
-		for (uint32_t nTypeIndex = 0; nTypeIndex < memoryProperties.memoryTypeCount; ++nTypeIndex)
+		for (uint32 nTypeIndex = 0; nTypeIndex < memoryProperties.memoryTypeCount; ++nTypeIndex)
 		{
 			if ((uTypeFilter & (1u << nTypeIndex)) != 0 &&
 				(memoryProperties.memoryTypes[nTypeIndex].propertyFlags & eProperties) == eProperties)
@@ -473,7 +473,7 @@ namespace Vsp
 		VkMemoryRequirements memoryRequirements = {};
 		vkGetBufferMemoryRequirements(m_VkDevice, outBuffer, &memoryRequirements);
 
-		const uint32_t nMemoryTypeIndex = FindMemoryTypeIndex(memoryRequirements.memoryTypeBits, eProperties);
+		const uint32 nMemoryTypeIndex = FindMemoryTypeIndex(memoryRequirements.memoryTypeBits, eProperties);
 		if (nMemoryTypeIndex == UINT32_MAX)
 		{
 			LOG_ERROR(kLogTag, "No suitable memory type for buffer allocation.");
@@ -531,7 +531,7 @@ namespace Vsp
 
 		if (eSubmitResult != VK_SUCCESS)
 		{
-			LOG_ERROR(kLogTag, "One-time command buffer submit failed (VkResult {}).", static_cast<int32_t>(eSubmitResult));
+			LOG_ERROR(kLogTag, "One-time command buffer submit failed (VkResult {}).", static_cast<int32>(eSubmitResult));
 			return false;
 		}
 		return true;

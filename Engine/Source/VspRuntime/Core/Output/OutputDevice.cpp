@@ -104,12 +104,12 @@ namespace Vsp
 		m_Devices.Add(pDevice);
 	}
 
-	uint32_t OutputDeviceRegistry::GetDeviceCount() const
+	uint32 OutputDeviceRegistry::GetDeviceCount() const
 	{
-		return static_cast<uint32_t>(m_Devices.GetSize());
+		return static_cast<uint32>(m_Devices.GetSize());
 	}
 
-	OutputDevice* OutputDeviceRegistry::GetDeviceAt(uint32_t uIndex) const
+	OutputDevice* OutputDeviceRegistry::GetDeviceAt(uint32 uIndex) const
 	{
 		if (uIndex >= m_Devices.GetSize())
 		{

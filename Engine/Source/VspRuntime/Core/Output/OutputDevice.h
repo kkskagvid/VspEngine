@@ -93,8 +93,8 @@ namespace Vsp
 		static OutputDeviceRegistry& Get();
 
 		void RegisterDevice(OutputDevice* pDevice);
-		uint32_t GetDeviceCount() const;
-		OutputDevice* GetDeviceAt(uint32_t uIndex) const;
+		uint32 GetDeviceCount() const;
+		OutputDevice* GetDeviceAt(uint32 uIndex) const;
 		OutputDevice* FindDeviceByName(const VspString& sDeviceName) const;
 
 	private:

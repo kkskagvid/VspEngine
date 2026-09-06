@@ -19,7 +19,7 @@ namespace Vsp
 		// Bounded history of the most recent log entries (the information
 		// collected for the fatal crash report).
 		static ArrayList<VspString> s_History;
-		static uint32_t s_nHistoryLimit = Log::k_nDefaultHistoryLimit;
+		static uint32 s_nHistoryLimit = Log::k_nDefaultHistoryLimit;
 
 		// Registered backends. The list is replaceable at runtime; entries are
 		// borrowed pointers that must outlive the log module.
@@ -44,7 +44,7 @@ namespace Vsp
 
 		const char* GetLevelPrefix(LogLevel eLevel)
 		{
-			const uint32_t nLevelIndex = static_cast<uint32_t>(eLevel);
+			const uint32 nLevelIndex = static_cast<uint32>(eLevel);
 			if (nLevelIndex >= 5)
 			{
 				return "???";
@@ -106,7 +106,7 @@ namespace Vsp
 	// History
 	// =========================================================================
 
-	void Log::SetHistoryLimit(uint32_t uMaxEntryCount)
+	void Log::SetHistoryLimit(uint32 uMaxEntryCount)
 	{
 		s_nHistoryLimit = uMaxEntryCount;
 
@@ -117,14 +117,14 @@ namespace Vsp
 		}
 	}
 
-	uint32_t Log::GetHistoryLimit()
+	uint32 Log::GetHistoryLimit()
 	{
 		return s_nHistoryLimit;
 	}
 
-	uint32_t Log::GetHistoryCount()
+	uint32 Log::GetHistoryCount()
 	{
-		return static_cast<uint32_t>(s_History.GetSize());
+		return static_cast<uint32>(s_History.GetSize());
 	}
 
 	void Log::CollectHistory(VspString& outHistoryText)

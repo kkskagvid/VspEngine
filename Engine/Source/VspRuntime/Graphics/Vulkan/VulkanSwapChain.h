@@ -9,7 +9,7 @@
 namespace Vsp
 {
 	// Result of acquiring the next presentable image.
-	enum class SwapChainAcquireResult : uint32_t
+	enum class SwapChainAcquireResult : uint32
 	{
 		Success = 0,
 		OutOfDate = 1,   // Surface size changed; the caller should recreate.
@@ -32,22 +32,22 @@ namespace Vsp
 
 		bool Initialize(
 			VulkanContext& context,
-			uint32_t uPreferredWidth,
-			uint32_t uPreferredHeight);
+			uint32 uPreferredWidth,
+			uint32 uPreferredHeight);
 
 		void Destroy();
 
 		// Rebuilds the swapchain for the new size. Returns false on hard failure.
-		bool Recreate(uint32_t uWidth, uint32_t uHeight);
+		bool Recreate(uint32 uWidth, uint32 uHeight);
 
 		VkSwapchainKHR GetSwapchain() const { return m_VkSwapchain; }
 		VkRenderPass GetRenderPass() const { return m_VkRenderPass; }
-		VkFramebuffer GetFramebuffer(uint32_t uImageIndex) const { return m_Framebuffers.At(uImageIndex); }
-		VkImage GetImage(uint32_t uImageIndex) const { return m_SwapChainImages.At(uImageIndex); }
+		VkFramebuffer GetFramebuffer(uint32 uImageIndex) const { return m_Framebuffers.At(uImageIndex); }
+		VkImage GetImage(uint32 uImageIndex) const { return m_SwapChainImages.At(uImageIndex); }
 		VkFormat GetImageFormat() const { return m_eImageFormat; }
 		VkExtent2D GetExtent() const { return m_Extent; }
-		uint32_t GetImageCount() const { return static_cast<uint32_t>(m_SwapChainImageViews.GetSize()); }
-		uint32_t GetCurrentImageIndex() const { return m_nCurrentImageIndex; }
+		uint32 GetImageCount() const { return static_cast<uint32>(m_SwapChainImageViews.GetSize()); }
+		uint32 GetCurrentImageIndex() const { return m_nCurrentImageIndex; }
 
 		// Acquires the next image; OutOfDate means the caller should recreate.
 		SwapChainAcquireResult AcquireNextImage(VkSemaphore imageAvailableSemaphore);
@@ -76,8 +76,8 @@ namespace Vsp
 		static VkPresentModeKHR ChoosePresentMode(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface);
 		static VkExtent2D ChooseExtent(
 			const VkSurfaceCapabilitiesKHR& capabilities,
-			uint32_t uPreferredWidth,
-			uint32_t uPreferredHeight);
+			uint32 uPreferredWidth,
+			uint32 uPreferredHeight);
 
 		VulkanContext* m_pContext = nullptr;
 
@@ -90,6 +90,6 @@ namespace Vsp
 		ArrayList<VkImageView> m_SwapChainImageViews;
 		ArrayList<VkFramebuffer> m_Framebuffers;
 
-		uint32_t m_nCurrentImageIndex = 0;
+		uint32 m_nCurrentImageIndex = 0;
 	};
 }

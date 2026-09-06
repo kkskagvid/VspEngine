@@ -76,7 +76,7 @@ namespace Vsp
 		m_bIsInitialized = false;
 	}
 
-	void VulkanRenderer2D::OnWindowResize(uint32_t uWidth, uint32_t uHeight)
+	void VulkanRenderer2D::OnWindowResize(uint32 uWidth, uint32 uHeight)
 	{
 		if (!m_bIsInitialized)
 		{
@@ -101,7 +101,7 @@ namespace Vsp
 		m_fTrianglePositionY = fPositionY;
 	}
 
-	void VulkanRenderer2D::SetColorMode(int32_t nColorMode)
+	void VulkanRenderer2D::SetColorMode(int32 nColorMode)
 	{
 		m_nColorMode = nColorMode;
 	}
@@ -134,7 +134,7 @@ namespace Vsp
 		fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 		fenceCreateInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;   // First frame passes the wait.
 
-		for (uint32_t uFrameIndex = 0; uFrameIndex < k_nMaxFramesInFlight; ++uFrameIndex)
+		for (uint32 uFrameIndex = 0; uFrameIndex < k_nMaxFramesInFlight; ++uFrameIndex)
 		{
 			FrameResources& frame = m_Frames[uFrameIndex];
 			frame.commandBuffer = commandBuffers[uFrameIndex];
@@ -171,7 +171,7 @@ namespace Vsp
 
 		const VkDevice device = m_Context.GetDevice();
 
-		for (uint32_t uFrameIndex = 0; uFrameIndex < k_nMaxFramesInFlight; ++uFrameIndex)
+		for (uint32 uFrameIndex = 0; uFrameIndex < k_nMaxFramesInFlight; ++uFrameIndex)
 		{
 			FrameResources& frame = m_Frames[uFrameIndex];
 
@@ -182,7 +182,7 @@ namespace Vsp
 		}
 
 		VkCommandBuffer commandBuffers[k_nMaxFramesInFlight] = {};
-		for (uint32_t uFrameIndex = 0; uFrameIndex < k_nMaxFramesInFlight; ++uFrameIndex)
+		for (uint32 uFrameIndex = 0; uFrameIndex < k_nMaxFramesInFlight; ++uFrameIndex)
 		{
 			commandBuffers[uFrameIndex] = m_Frames[uFrameIndex].commandBuffer;
 		}
@@ -269,11 +269,11 @@ namespace Vsp
 
 	bool VulkanRenderer2D::CreateDemoTexture()
 	{
-		constexpr uint32_t k_nTextureWidth = 8;
-		constexpr uint32_t k_nTextureHeight = 8;
+		constexpr uint32 k_nTextureWidth = 8;
+		constexpr uint32 k_nTextureHeight = 8;
 
 		uint8_t texturePixels[k_nTextureWidth * k_nTextureHeight * 4];
-		for (uint32_t nPixelIndex = 0; nPixelIndex < k_nTextureWidth * k_nTextureHeight; ++nPixelIndex)
+		for (uint32 nPixelIndex = 0; nPixelIndex < k_nTextureWidth * k_nTextureHeight; ++nPixelIndex)
 		{
 			texturePixels[nPixelIndex * 4 + 0] = 255;
 			texturePixels[nPixelIndex * 4 + 1] = 255;
@@ -328,7 +328,7 @@ namespace Vsp
 		VkMemoryRequirements memoryRequirements = {};
 		vkGetImageMemoryRequirements(device, m_VkTextureImage, &memoryRequirements);
 
-		const uint32_t nMemoryTypeIndex = m_Context.FindMemoryTypeIndex(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		const uint32 nMemoryTypeIndex = m_Context.FindMemoryTypeIndex(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 		if (nMemoryTypeIndex == UINT32_MAX)
 		{
 			LOG_ERROR(kLogTag, "No DEVICE_LOCAL memory type for the demo texture.");
@@ -609,7 +609,7 @@ namespace Vsp
 		imageInfo.imageView = m_VkTextureView;
 		imageInfo.sampler = m_VkTextureSampler;
 
-		for (uint32_t uFrameIndex = 0; uFrameIndex < k_nMaxFramesInFlight; ++uFrameIndex)
+		for (uint32 uFrameIndex = 0; uFrameIndex < k_nMaxFramesInFlight; ++uFrameIndex)
 		{
 			VkDescriptorBufferInfo bufferInfo = {};
 			bufferInfo.buffer = m_Frames[uFrameIndex].uniformBuffer;
@@ -666,10 +666,10 @@ namespace Vsp
 		// vkCreateShaderModule expects bytes.
 		VkShaderModule vertexShader = m_Context.CreateShaderModule(
 			Shaders::k_TriangleBindless_vertSpv,
-			Shaders::k_nTriangleBindless_vertSpvSize * sizeof(uint32_t));
+			Shaders::k_nTriangleBindless_vertSpvSize * sizeof(uint32));
 		VkShaderModule fragmentShader = m_Context.CreateShaderModule(
 			Shaders::k_TriangleBindless_fragSpv,
-			Shaders::k_nTriangleBindless_fragSpvSize * sizeof(uint32_t));
+			Shaders::k_nTriangleBindless_fragSpvSize * sizeof(uint32));
 
 		if (vertexShader == VK_NULL_HANDLE || fragmentShader == VK_NULL_HANDLE)
 		{
@@ -829,7 +829,7 @@ namespace Vsp
 		const VkResult eResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr, &outPipeline);
 		if (eResult != VK_SUCCESS)
 		{
-			LOG_ERROR(kLogTag, "vkCreateGraphicsPipelines failed (VkResult {}).", static_cast<int32_t>(eResult));
+			LOG_ERROR(kLogTag, "vkCreateGraphicsPipelines failed (VkResult {}).", static_cast<int32>(eResult));
 			return false;
 		}
 		return true;
@@ -852,7 +852,7 @@ namespace Vsp
 	// Frame rendering
 	// -------------------------------------------------------------------------
 
-	void VulkanRenderer2D::UpdateCameraUniform(uint32_t uFrameIndex)
+	void VulkanRenderer2D::UpdateCameraUniform(uint32 uFrameIndex)
 	{
 		// Orthographic projection preserving the window aspect ratio; the
 		// triangle lives in [-1, 1] on the shorter axis. Vulkan's viewport
@@ -913,7 +913,7 @@ namespace Vsp
 		}
 	}
 
-	void VulkanRenderer2D::RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t uImageIndex)
+	void VulkanRenderer2D::RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32 uImageIndex)
 	{
 		VkCommandBufferBeginInfo beginInfo = {};
 		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -974,7 +974,7 @@ namespace Vsp
 
 		const VkDeviceSize k_nVertexBufferOffset = 0;
 		vkCmdBindVertexBuffers(commandBuffer, 0, 1, &m_VkVertexBuffer, &k_nVertexBufferOffset);
-		vkCmdDraw(commandBuffer, static_cast<uint32_t>(k_nTriangleVertexCount), 1, 0, 0);
+		vkCmdDraw(commandBuffer, static_cast<uint32>(k_nTriangleVertexCount), 1, 0, 0);
 
 		vkCmdEndRenderPass(commandBuffer);
 		vkEndCommandBuffer(commandBuffer);
@@ -1051,25 +1051,25 @@ namespace Vsp
 	struct BmpFileHeader
 	{
 		uint16_t uType = 0x4D42;
-		uint32_t uFileByteSize = 0;
+		uint32 uFileByteSize = 0;
 		uint16_t uReserved1 = 0;
 		uint16_t uReserved2 = 0;
-		uint32_t uPixelDataOffset = 54;
+		uint32 uPixelDataOffset = 54;
 	};
 
 	struct BmpInfoHeader
 	{
-		uint32_t uHeaderByteSize = 40;
-		int32_t nWidth = 0;
-		int32_t nHeight = 0;
+		uint32 uHeaderByteSize = 40;
+		int32 nWidth = 0;
+		int32 nHeight = 0;
 		uint16_t uPlaneCount = 1;
 		uint16_t uBitCount = 32;
-		uint32_t uCompression = 0;
-		uint32_t uImageByteSize = 0;
-		int32_t nPixelsPerMeterX = 0;
-		int32_t nPixelsPerMeterY = 0;
-		uint32_t uColorCount = 0;
-		uint32_t uImportantColorCount = 0;
+		uint32 uCompression = 0;
+		uint32 uImageByteSize = 0;
+		int32 nPixelsPerMeterX = 0;
+		int32 nPixelsPerMeterY = 0;
+		uint32 uColorCount = 0;
+		uint32 uImportantColorCount = 0;
 	};
 	#pragma pack(pop)
 
@@ -1094,7 +1094,7 @@ namespace Vsp
 			vkCreateFence(device, &fenceCreateInfo, nullptr, &acquireFence);
 		}
 
-		uint32_t uImageIndex = 0;
+		uint32 uImageIndex = 0;
 		const VkResult eAcquireResult = vkAcquireNextImageKHR(
 			device,
 			m_SwapChain.GetSwapchain(),
@@ -1213,14 +1213,14 @@ namespace Vsp
 			void* pMappedData = nullptr;
 			vkMapMemory(device, stagingMemory, 0, k_nImageByteSize, 0, &pMappedData);
 
-			const uint32_t uRowByteSize = extent.width * 4;
-			const uint32_t uImageByteSize = uRowByteSize * extent.height;
+			const uint32 uRowByteSize = extent.width * 4;
+			const uint32 uImageByteSize = uRowByteSize * extent.height;
 
 			BmpFileHeader fileHeader;
 			BmpInfoHeader infoHeader;
 			fileHeader.uFileByteSize = sizeof(BmpFileHeader) + sizeof(BmpInfoHeader) + uImageByteSize;
-			infoHeader.nWidth = static_cast<int32_t>(extent.width);
-			infoHeader.nHeight = static_cast<int32_t>(extent.height);
+			infoHeader.nWidth = static_cast<int32>(extent.width);
+			infoHeader.nHeight = static_cast<int32>(extent.height);
 			infoHeader.uImageByteSize = uImageByteSize;
 
 			FILE* pFile = nullptr;
@@ -1237,7 +1237,7 @@ namespace Vsp
 
 				// BMP rows are bottom-up: write them in reverse order.
 				const uint8_t* pImageBytes = static_cast<const uint8_t*>(pMappedData);
-				for (int32_t nRowIndex = static_cast<int32_t>(extent.height) - 1; nRowIndex >= 0; --nRowIndex)
+				for (int32 nRowIndex = static_cast<int32>(extent.height) - 1; nRowIndex >= 0; --nRowIndex)
 				{
 					fwrite(pImageBytes + static_cast<size_t>(nRowIndex) * uRowByteSize, uRowByteSize, 1, pFile);
 				}

@@ -22,7 +22,7 @@ namespace Vsp
 	class RUNTIME_API Log
 	{
 	public:
-		static constexpr uint32_t k_nDefaultHistoryLimit = 64;
+		static constexpr uint32 k_nDefaultHistoryLimit = 64;
 
 		// -------- Backends (pluggable) --------
 		static void AddBackend(LogBackend* pBackend);
@@ -30,9 +30,9 @@ namespace Vsp
 		static void ClearBackends();
 
 		// -------- Collected log history (used by the fatal crash report) --------
-		static void SetHistoryLimit(uint32_t uMaxEntryCount);
-		static uint32_t GetHistoryLimit();
-		static uint32_t GetHistoryCount();
+		static void SetHistoryLimit(uint32 uMaxEntryCount);
+		static uint32 GetHistoryLimit();
+		static uint32 GetHistoryCount();
 		static void CollectHistory(VspString& outHistoryText);
 
 		// -------- Crash prompt --------

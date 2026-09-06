@@ -27,16 +27,16 @@ namespace Vsp
 
 		bool bInitialized = false;
 		bool bExitRequested = false;
-		uint32_t uFrameCount = 0;
-		uint32_t uPrimaryScriptInstanceId = 0;
-		int32_t nWindowWidth = 0;
-		int32_t nWindowHeight = 0;
+		uint32 uFrameCount = 0;
+		uint32 uPrimaryScriptInstanceId = 0;
+		int32 nWindowWidth = 0;
+		int32 nWindowHeight = 0;
 		float fElapsedSeconds = 0.0f;
 
 		// Key-simulation bookkeeping (acceptance tests).
 		size_t nNextKeyStepIndex = 0;
-		uint32_t uPendingKeyUpCode = 0;
-		uint32_t uKeyUpDueMilliseconds = 0;
+		uint32 uPendingKeyUpCode = 0;
+		uint32 uKeyUpDueMilliseconds = 0;
 
 		// High-resolution frame timer.
 		LARGE_INTEGER nTimerFrequency = {};
@@ -204,7 +204,7 @@ namespace Vsp
 		}
 
 		m_pImpl->uPrimaryScriptInstanceId = scriptEngine.GetPrimaryScriptInstanceId();
-		for (uint32_t uIndex = 0; uIndex < scriptEngine.GetScriptInstanceCount(); ++uIndex)
+		for (uint32 uIndex = 0; uIndex < scriptEngine.GetScriptInstanceCount(); ++uIndex)
 		{
 			// Simple sequential walk: init + start every instance.
 			if (uIndex == 0)
@@ -259,8 +259,8 @@ namespace Vsp
 			{
 				HWND windowHandle = static_cast<HWND>(
 					m_pImpl->pApplication->GetWindow()->GetNativeWindowHandle());
-				const uint32_t uElapsedMilliseconds =
-					static_cast<uint32_t>(m_pImpl->fElapsedSeconds * 1000.0f);
+				const uint32 uElapsedMilliseconds =
+					static_cast<uint32>(m_pImpl->fElapsedSeconds * 1000.0f);
 
 				ArrayList<GameEngineConfig::KeySimulationStep>& steps =
 					m_pImpl->Config.KeySimulationSteps;
@@ -313,7 +313,7 @@ namespace Vsp
 					LOG_INFO(kLogTag, "Capture at frame {}: script position={:p}, deltaTime={}, elapsed={} ms.",
 						m_pImpl->uFrameCount, Position2D{ fPositionX, fPositionY },
 						ScriptCore::Get().GetDeltaTime(),
-						static_cast<uint32_t>(m_pImpl->fElapsedSeconds * 1000.0f));
+						static_cast<uint32>(m_pImpl->fElapsedSeconds * 1000.0f));
 
 					if (!m_pImpl->pRenderer->CaptureFramebuffer(capture.sFilePath))
 					{
@@ -332,8 +332,8 @@ namespace Vsp
 			{
 				m_pImpl->RefreshWindowSize();
 				m_pImpl->pRenderer->OnWindowResize(
-					static_cast<uint32_t>(m_pImpl->nWindowWidth),
-					static_cast<uint32_t>(m_pImpl->nWindowHeight));
+					static_cast<uint32>(m_pImpl->nWindowWidth),
+					static_cast<uint32>(m_pImpl->nWindowHeight));
 			}
 
 			// 5. Frame bookkeeping.
@@ -356,7 +356,7 @@ namespace Vsp
 			m_pImpl->pApplication->IsRunning();
 	}
 
-	uint32_t GameEngine::GetFrameCount() const
+	uint32 GameEngine::GetFrameCount() const
 	{
 		return m_pImpl->uFrameCount;
 	}

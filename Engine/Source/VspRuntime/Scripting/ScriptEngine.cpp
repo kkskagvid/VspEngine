@@ -15,10 +15,10 @@ namespace Vsp
 	static constexpr const wchar_t* k_sManagedBridgeTypeName = L"VspEngine.NativeBridge, VspPlayer";
 
 	// Formats a 32-bit value as an 8-digit hexadecimal string for error text.
-	static VspString FormatHex(int32_t nValue)
+	static VspString FormatHex(int32 nValue)
 	{
 		char sBuffer[32];
-		snprintf(sBuffer, sizeof(sBuffer), "%08X", static_cast<uint32_t>(nValue));
+		snprintf(sBuffer, sizeof(sBuffer), "%08X", static_cast<uint32>(nValue));
 		return VspString(sBuffer);
 	}
 
@@ -147,7 +147,7 @@ namespace Vsp
 
 		// DOTNET_ROOT is set by the game engine before this call, so hostfxr
 		// is located next to the shipped runtime.
-		const int32_t nResult = pGetHostFxrPathFn(sHostFxrPathBuffer, &nBufferSize, nullptr);
+		const int32 nResult = pGetHostFxrPathFn(sHostFxrPathBuffer, &nBufferSize, nullptr);
 		if (nResult != 0)
 		{
 			outErrorText = "get_hostfxr_path failed with error code 0x" + FormatHex(nResult);
@@ -175,7 +175,7 @@ namespace Vsp
 			return false;
 		}
 
-		int32_t nResult = pInitializeForRuntimeConfigFn(
+		int32 nResult = pInitializeForRuntimeConfigFn(
 			sRuntimeConfigPath.ToWideText().GetData(), nullptr, &m_RuntimeContext);
 		if (nResult != 0 || m_RuntimeContext == nullptr)
 		{
@@ -251,7 +251,7 @@ namespace Vsp
 		void** ppOutFunction,
 		VspString& outErrorText)
 	{
-		const int32_t nResult = pLoadAssemblyFunction(
+		const int32 nResult = pLoadAssemblyFunction(
 			pAssemblyPathUtf16,
 			pTypeNameUtf16,
 			pMethodNameUtf16,
@@ -308,7 +308,7 @@ namespace Vsp
 
 		// Ask the managed bridge for every concrete ScriptBehaviour type, then
 		// create one instance of each. The InstanceID is generated here.
-		const int32_t nScriptTypeCount = m_BridgeFunctions.GetScriptTypeCount();
+		const int32 nScriptTypeCount = m_BridgeFunctions.GetScriptTypeCount();
 		if (nScriptTypeCount <= 0)
 		{
 			outErrorText = "No ScriptBehaviour types found in the game assembly.";
@@ -316,7 +316,7 @@ namespace Vsp
 		}
 
 		wchar_t sTypeNameBuffer[512];
-		for (int32_t nTypeIndex = 0; nTypeIndex < nScriptTypeCount; ++nTypeIndex)
+		for (int32 nTypeIndex = 0; nTypeIndex < nScriptTypeCount; ++nTypeIndex)
 		{
 			m_BridgeFunctions.GetScriptTypeName(nTypeIndex, sTypeNameBuffer, 512);
 			const ScriptInstanceId uInstanceId = CreateScriptInstance(VspString(sTypeNameBuffer));
@@ -340,7 +340,7 @@ namespace Vsp
 		const ScriptInstanceId uInstanceId = m_nNextInstanceId++;
 
 		void* pManagedHandle = m_BridgeFunctions.CreateInstance(
-			static_cast<int32_t>(uInstanceId),
+			static_cast<int32>(uInstanceId),
 			sTypeName.ToWideText().GetData());
 		if (pManagedHandle == nullptr)
 		{

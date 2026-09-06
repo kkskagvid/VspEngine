@@ -17,8 +17,8 @@ namespace Vsp
 	struct GameEngineConfig
 	{
 		VspString sWindowTitle = "Vsp Engine";
-		uint32_t uWindowWidth = 1280;
-		uint32_t uWindowHeight = 720;
+		uint32 uWindowWidth = 1280;
+		uint32 uWindowHeight = 720;
 
 		// Managed game assembly (VspPlayer.dll).
 		VspString sAssemblyPath;
@@ -30,7 +30,7 @@ namespace Vsp
 		VspString sDotNetRootPath;
 
 		// 0 = run until the window closes; > 0 = exit after N frames (smoke tests).
-		uint32_t uMaxFrameCount = 0;
+		uint32 uMaxFrameCount = 0;
 
 		// Automated acceptance-test hooks --------------------------------------
 		// Posts synthetic WM_KEYDOWN/WM_KEYUP messages into the engine's own
@@ -38,16 +38,16 @@ namespace Vsp
 		// InputManager -> C# script).
 		struct KeySimulationStep
 		{
-			uint32_t uVirtualKeyCode = 0;      // Win32 VK_* value
-			uint32_t uHoldMilliseconds = 0;    // 0 = tap (down immediately followed by up)
-			uint32_t uStartMilliseconds = 0;   // Elapsed-time offset from loop start.
+			uint32 uVirtualKeyCode = 0;      // Win32 VK_* value
+			uint32 uHoldMilliseconds = 0;    // 0 = tap (down immediately followed by up)
+			uint32 uStartMilliseconds = 0;   // Elapsed-time offset from loop start.
 		};
 		ArrayList<KeySimulationStep> KeySimulationSteps;
 
 		// Saves the presented framebuffer (BMP) after the given frame index.
 		struct FrameCapture
 		{
-			uint32_t uFrameIndex = UINT32_MAX;
+			uint32 uFrameIndex = UINT32_MAX;
 			VspString sFilePath;
 		};
 		ArrayList<FrameCapture> FrameCaptures;
@@ -75,7 +75,7 @@ namespace Vsp
 		void Run();
 		void RequestExit();
 		bool IsRunning() const;
-		uint32_t GetFrameCount() const;
+		uint32 GetFrameCount() const;
 
 	private:
 		struct Impl;

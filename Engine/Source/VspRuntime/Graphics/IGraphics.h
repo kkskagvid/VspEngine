@@ -18,7 +18,7 @@ namespace Vsp
 
 		virtual bool Initialize(void* pNativeWindowHandle) = 0;
 		virtual void Shutdown() = 0;
-		virtual void OnWindowResize(uint32_t uWidth, uint32_t uHeight) = 0;
+		virtual void OnWindowResize(uint32 uWidth, uint32 uHeight) = 0;
 		virtual bool RenderFrame() = 0;
 	};
 }

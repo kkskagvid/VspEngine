@@ -18,7 +18,7 @@ namespace Vsp
 	// There is no Vulkan 1.2 fallback path: this engine only supports the
 	// Vulkan 1.3 bindless implementation.
 	// -------------------------------------------------------------------------
-	enum class VulkanFeaturePath : uint32_t
+	enum class VulkanFeaturePath : uint32
 	{
 		Unsupported = 0,
 		Vulkan13Bindless = 1,
@@ -26,12 +26,12 @@ namespace Vsp
 
 	struct VulkanDeviceProperties
 	{
-		uint32_t uApiVariant = 0;
-		uint32_t uApiMajor = 0;
-		uint32_t uApiMinor = 0;
-		uint32_t uApiPatch = 0;
-		uint32_t uVendorId = 0;
-		uint32_t uDeviceId = 0;
+		uint32 uApiVariant = 0;
+		uint32 uApiMajor = 0;
+		uint32 uApiMinor = 0;
+		uint32 uApiPatch = 0;
+		uint32 uVendorId = 0;
+		uint32 uDeviceId = 0;
 		VulkanFeaturePath eFeaturePath = VulkanFeaturePath::Unsupported;
 		VspString sDeviceName;
 	};
@@ -65,15 +65,15 @@ namespace Vsp
 		VkPhysicalDevice GetPhysicalDevice() const { return m_VkPhysicalDevice; }
 		VkDevice GetDevice() const { return m_VkDevice; }
 		VkQueue GetGraphicsQueue() const { return m_VkGraphicsQueue; }
-		uint32_t GetGraphicsQueueFamilyIndex() const { return m_nGraphicsQueueFamilyIndex; }
+		uint32 GetGraphicsQueueFamilyIndex() const { return m_nGraphicsQueueFamilyIndex; }
 		VkCommandPool GetCommandPool() const { return m_VkCommandPool; }
 		VkSurfaceKHR GetSurface() const { return m_VkSurface; }
 		const VulkanDeviceProperties& GetDeviceProperties() const { return m_DeviceProperties; }
 		bool SupportsBindless() const { return m_DeviceProperties.eFeaturePath == VulkanFeaturePath::Vulkan13Bindless; }
 
 		// -------- Small helpers shared by the renderer -----------------------
-		VkShaderModule CreateShaderModule(const uint32_t* pSpirvCode, size_t nByteCount) const;
-		uint32_t FindMemoryTypeIndex(uint32_t uTypeFilter, VkMemoryPropertyFlags eProperties) const;
+		VkShaderModule CreateShaderModule(const uint32* pSpirvCode, size_t nByteCount) const;
+		uint32 FindMemoryTypeIndex(uint32 uTypeFilter, VkMemoryPropertyFlags eProperties) const;
 		void AllocateBuffer(
 			VkDeviceSize nByteSize,
 			VkBufferUsageFlags eUsage,
@@ -98,7 +98,7 @@ namespace Vsp
 		VkPhysicalDevice m_VkPhysicalDevice = VK_NULL_HANDLE;
 		VkDevice m_VkDevice = VK_NULL_HANDLE;
 		VkQueue m_VkGraphicsQueue = VK_NULL_HANDLE;
-		uint32_t m_nGraphicsQueueFamilyIndex = 0;
+		uint32 m_nGraphicsQueueFamilyIndex = 0;
 		VkCommandPool m_VkCommandPool = VK_NULL_HANDLE;
 		VulkanDeviceProperties m_DeviceProperties;
 	};

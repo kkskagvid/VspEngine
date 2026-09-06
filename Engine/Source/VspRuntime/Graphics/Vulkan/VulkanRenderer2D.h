@@ -25,8 +25,8 @@ namespace Vsp
 	class RUNTIME_API VulkanRenderer2D : public IGraphics
 	{
 	public:
-		static constexpr uint32_t k_nMaxFramesInFlight = 2;
-		static constexpr uint32_t k_nMaxBindlessTextureCount = 4096;
+		static constexpr uint32 k_nMaxFramesInFlight = 2;
+		static constexpr uint32 k_nMaxBindlessTextureCount = 4096;
 
 		// One triangle vertex: position, RGBA color, UV.
 		struct Vertex2D
@@ -48,19 +48,19 @@ namespace Vsp
 			float fOverrideColorG;
 			float fOverrideColorB;
 			float fOverrideColorA;
-			int32_t nColorMode;
-			uint32_t uTextureIndex;
+			int32 nColorMode;
+			uint32 uTextureIndex;
 		};
 
 		~VulkanRenderer2D() override;
 
 		bool Initialize(void* pNativeWindowHandle) override;
 		void Shutdown() override;
-		void OnWindowResize(uint32_t uWidth, uint32_t uHeight) override;
+		void OnWindowResize(uint32 uWidth, uint32 uHeight) override;
 		bool RenderFrame() override;
 
 		void SetTrianglePosition(float fPositionX, float fPositionY);
-		void SetColorMode(int32_t nColorMode);
+		void SetColorMode(int32 nColorMode);
 
 		// Reads the most recently presented swapchain image back to the CPU and
 		// writes it as a 32-bit BMP (used by automated acceptance tests).
@@ -89,7 +89,7 @@ namespace Vsp
 		VulkanContext m_Context;
 		VulkanSwapChain m_SwapChain;
 		FrameResources m_Frames[k_nMaxFramesInFlight];
-		uint32_t m_nCurrentFrameIndex = 0;
+		uint32 m_nCurrentFrameIndex = 0;
 
 		// -------- Triangle geometry --------
 		VkBuffer m_VkVertexBuffer = VK_NULL_HANDLE;
@@ -113,7 +113,7 @@ namespace Vsp
 		// -------- Script-driven state --------
 		float m_fTrianglePositionX = 0.0f;
 		float m_fTrianglePositionY = 0.0f;
-		int32_t m_nColorMode = 3;   // MultiColor
+		int32 m_nColorMode = 3;   // MultiColor
 		bool m_bIsMinimized = false;
 		bool m_bIsInitialized = false;
 
@@ -136,9 +136,9 @@ namespace Vsp
 		void DestroyDescriptors();
 		void DestroyPipelines();
 
-		void UpdateCameraUniform(uint32_t uFrameIndex);
+		void UpdateCameraUniform(uint32 uFrameIndex);
 		void BuildPushConstants(PushConstants& outPushConstants) const;
-		void RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t uImageIndex);
+		void RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32 uImageIndex);
 
 		static bool TransitionImageLayout(
 			const VulkanContext& context,

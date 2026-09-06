@@ -14,7 +14,7 @@ namespace Vsp
 {
 	// Non-negative integer handle addressing one managed script instance.
 	// 0 means invalid (managed ids start at 1).
-	using ScriptInstanceId = uint32_t;
+	using ScriptInstanceId = uint32;
 
 	// -------------------------------------------------------------------------
 	// ScriptEngine
@@ -76,7 +76,7 @@ namespace Vsp
 		// Invokes OnUpdate for every registered instance.
 		void UpdateAllScripts();
 
-		uint32_t GetScriptInstanceCount() const { return static_cast<uint32_t>(m_ScriptInstances.GetSize()); }
+		uint32 GetScriptInstanceCount() const { return static_cast<uint32>(m_ScriptInstances.GetSize()); }
 		ScriptInstanceId GetPrimaryScriptInstanceId() const
 		{
 			return m_ScriptInstances.IsEmpty() ? 0 : m_ScriptInstances[0].uInstanceId;

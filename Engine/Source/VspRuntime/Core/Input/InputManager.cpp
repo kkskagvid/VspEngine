@@ -19,13 +19,13 @@ namespace Vsp
 	void InputManager::EndFrame()
 	{
 		// Clear per-frame edge state so the next frame starts fresh.
-		for (int32_t nKeyIndex = 0; nKeyIndex < k_nKeyStateCount; ++nKeyIndex)
+		for (int32 nKeyIndex = 0; nKeyIndex < k_nKeyStateCount; ++nKeyIndex)
 		{
 			m_bKeyPressedEdges[nKeyIndex] = false;
 			m_bKeyReleasedEdges[nKeyIndex] = false;
 		}
 
-		for (int32_t nButtonIndex = 0; nButtonIndex < k_nMouseButtonCount; ++nButtonIndex)
+		for (int32 nButtonIndex = 0; nButtonIndex < k_nMouseButtonCount; ++nButtonIndex)
 		{
 			m_bMouseButtonPressedEdges[nButtonIndex] = false;
 			m_bMouseButtonReleasedEdges[nButtonIndex] = false;
@@ -105,23 +105,23 @@ namespace Vsp
 
 	bool InputManager::IsKeyDown(KeyCode eKey) const
 	{
-		const int32_t nKeyCode = static_cast<int32_t>(eKey);
+		const int32 nKeyCode = static_cast<int32>(eKey);
 		return IsValidKeyIndex(nKeyCode) && m_bKeyDownStates[nKeyCode];
 	}
 
 	bool InputManager::WasKeyPressed(KeyCode eKey) const
 	{
-		const int32_t nKeyCode = static_cast<int32_t>(eKey);
+		const int32 nKeyCode = static_cast<int32>(eKey);
 		return IsValidKeyIndex(nKeyCode) && m_bKeyPressedEdges[nKeyCode];
 	}
 
 	bool InputManager::WasKeyReleased(KeyCode eKey) const
 	{
-		const int32_t nKeyCode = static_cast<int32_t>(eKey);
+		const int32 nKeyCode = static_cast<int32>(eKey);
 		return IsValidKeyIndex(nKeyCode) && m_bKeyReleasedEdges[nKeyCode];
 	}
 
-	void InputManager::HandleKeyPressed(int32_t nKeyCode, int32_t nRepeatCount)
+	void InputManager::HandleKeyPressed(int32 nKeyCode, int32 nRepeatCount)
 	{
 		if (!IsValidKeyIndex(nKeyCode))
 		{
@@ -136,7 +136,7 @@ namespace Vsp
 		}
 	}
 
-	void InputManager::HandleKeyReleased(int32_t nKeyCode)
+	void InputManager::HandleKeyReleased(int32 nKeyCode)
 	{
 		if (!IsValidKeyIndex(nKeyCode))
 		{
@@ -154,17 +154,17 @@ namespace Vsp
 	// Mouse
 	// =========================================================================
 
-	bool InputManager::IsMouseButtonDown(int32_t nButton) const
+	bool InputManager::IsMouseButtonDown(int32 nButton) const
 	{
 		return IsValidButtonIndex(nButton) && m_bMouseButtonDownStates[nButton];
 	}
 
-	bool InputManager::WasMouseButtonPressed(int32_t nButton) const
+	bool InputManager::WasMouseButtonPressed(int32 nButton) const
 	{
 		return IsValidButtonIndex(nButton) && m_bMouseButtonPressedEdges[nButton];
 	}
 
-	bool InputManager::WasMouseButtonReleased(int32_t nButton) const
+	bool InputManager::WasMouseButtonReleased(int32 nButton) const
 	{
 		return IsValidButtonIndex(nButton) && m_bMouseButtonReleasedEdges[nButton];
 	}
@@ -185,7 +185,7 @@ namespace Vsp
 		m_fMousePositionY = fPositionY;
 	}
 
-	void InputManager::HandleMouseButtonPressed(int32_t nButton)
+	void InputManager::HandleMouseButtonPressed(int32 nButton)
 	{
 		if (!IsValidButtonIndex(nButton))
 		{
@@ -199,7 +199,7 @@ namespace Vsp
 		}
 	}
 
-	void InputManager::HandleMouseButtonReleased(int32_t nButton)
+	void InputManager::HandleMouseButtonReleased(int32 nButton)
 	{
 		if (!IsValidButtonIndex(nButton))
 		{
@@ -223,19 +223,19 @@ namespace Vsp
 	// Typed characters
 	// =========================================================================
 
-	void InputManager::HandleCharacterTyped(uint32_t uCodePoint)
+	void InputManager::HandleCharacterTyped(uint32 uCodePoint)
 	{
 		if (m_nTypedCharacterCount >= k_nTypedCharacterQueueCapacity)
 		{
 			return;   // Queue full: drop the oldest-style behaviour would lose input, keep simple.
 		}
 
-		const uint32_t nWriteIndex = (m_nTypedCharacterReadIndex + m_nTypedCharacterCount) % k_nTypedCharacterQueueCapacity;
+		const uint32 nWriteIndex = (m_nTypedCharacterReadIndex + m_nTypedCharacterCount) % k_nTypedCharacterQueueCapacity;
 		m_TypedCharacterQueue[nWriteIndex] = uCodePoint;
 		++m_nTypedCharacterCount;
 	}
 
-	bool InputManager::PopTypedCharacter(uint32_t& outCodePoint)
+	bool InputManager::PopTypedCharacter(uint32& outCodePoint)
 	{
 		if (m_nTypedCharacterCount == 0)
 		{

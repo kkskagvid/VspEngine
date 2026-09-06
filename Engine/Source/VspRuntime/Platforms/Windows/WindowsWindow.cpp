@@ -117,8 +117,8 @@ namespace Vsp
             windowStyle = WS_POPUP | WS_VISIBLE;
 
             // Try to switch to the requested display mode first
-            uint32_t fsW = m_Properties.Width;
-            uint32_t fsH = m_Properties.Height;
+            uint32 fsW = m_Properties.Width;
+            uint32 fsH = m_Properties.Height;
             if (ChangeToFullscreenDisplayMode(fsW, fsH, 0))
             {
                 windowRect.right  = static_cast<LONG>(fsW);
@@ -243,9 +243,9 @@ namespace Vsp
 
     void WindowsWindow::SetDisplayMode(
         WindowProperties::WindowDisplayMode mode,
-        uint32_t fullscreenWidth,
-        uint32_t fullscreenHeight,
-        uint32_t refreshRate)
+        uint32 fullscreenWidth,
+        uint32 fullscreenHeight,
+        uint32 refreshRate)
     {
         if (!m_HWnd)
             return;
@@ -388,9 +388,9 @@ namespace Vsp
         }
 
         // ── 2.  Determine target resolution ────────────────────────────
-        uint32_t targetWidth  = m_FullscreenConfig.Width;
-        uint32_t targetHeight = m_FullscreenConfig.Height;
-        uint32_t targetRate   = m_FullscreenConfig.RefreshRate;
+        uint32 targetWidth  = m_FullscreenConfig.Width;
+        uint32 targetHeight = m_FullscreenConfig.Height;
+        uint32 targetRate   = m_FullscreenConfig.RefreshRate;
 
         // If no explicit resolution was provided, query the monitor's
         // current (desktop) resolution so we match it 1:1.
@@ -412,8 +412,8 @@ namespace Vsp
                 }
                 else
                 {
-                    targetWidth  = static_cast<uint32_t>(mi.rcMonitor.right  - mi.rcMonitor.left);
-                    targetHeight = static_cast<uint32_t>(mi.rcMonitor.bottom - mi.rcMonitor.top);
+                    targetWidth  = static_cast<uint32>(mi.rcMonitor.right  - mi.rcMonitor.left);
+                    targetHeight = static_cast<uint32>(mi.rcMonitor.bottom - mi.rcMonitor.top);
                 }
             }
         }
@@ -480,7 +480,7 @@ namespace Vsp
     }
 
     bool WindowsWindow::ChangeToFullscreenDisplayMode(
-        uint32_t width, uint32_t height, uint32_t refreshRate)
+        uint32 width, uint32 height, uint32 refreshRate)
     {
         HMONITOR monitor = GetTargetMonitor();
 

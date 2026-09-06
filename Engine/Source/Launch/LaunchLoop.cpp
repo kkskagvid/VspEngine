@@ -1,5 +1,7 @@
 #include <Windows.h>
 
+#pragma warning(disable : 4996)
+#include <chrono>
 #include <cstdlib>
 
 #include "Core/Core.h"
@@ -20,15 +22,15 @@ namespace Vsp
 	struct LaunchOptions
 	{
 		VspString sWindowTitle = "Vsp Engine - Triangle Demo";
-		uint32_t uWindowWidth = 1280;
-		uint32_t uWindowHeight = 720;
-		uint32_t uMaxFrameCount = 0;             // 0 = unlimited
+		uint32 uWindowWidth = 1280;
+		uint32 uWindowHeight = 720;
+		uint32 uMaxFrameCount = 0;             // 0 = unlimited
 		bool bShowErrorDialog = true;            // false = write errors to the log only (automation)
 		VspString sAssemblyPath;                 // defaults to <exe dir>\VspPlayer.dll
 		VspString sRuntimeConfigPath;            // defaults to <exe dir>\Launch.runtimeconfig.json
 		VspString sDotNetRootPath;               // defaults to <exe dir>\..\..\..\Binaries\dotnet\runtime10.0.10
 		ArrayList<GameEngineConfig::KeySimulationStep> KeySimulationSteps;
-		uint32_t uKeyScriptCursorMilliseconds = 800;   // First synthetic key fires 800 ms in.
+		uint32 uKeyScriptCursorMilliseconds = 800;   // First synthetic key fires 800 ms in.
 		ArrayList<GameEngineConfig::FrameCapture> FrameCaptures;
 	};
 
@@ -50,8 +52,8 @@ namespace Vsp
 		VspString sKeyPart = sValue.GetSubString(0, nColonIndex);
 		VspString sDurationPart = sValue.GetSubString(nColonIndex + 1, sValue.GetByteLength() - nColonIndex - 1);
 
-		outStep.uVirtualKeyCode = static_cast<uint32_t>(wcstoul(sKeyPart.ToWideText().GetData(), nullptr, 0));
-		outStep.uHoldMilliseconds = static_cast<uint32_t>(wcstoul(sDurationPart.ToWideText().GetData(), nullptr, 10));
+		outStep.uVirtualKeyCode = static_cast<uint32>(wcstoul(sKeyPart.ToWideText().GetData(), nullptr, 0));
+		outStep.uHoldMilliseconds = static_cast<uint32>(wcstoul(sDurationPart.ToWideText().GetData(), nullptr, 10));
 		return true;
 	}
 
@@ -71,7 +73,7 @@ namespace Vsp
 		}
 
 		VspString sFramePart = sValue.GetSubString(0, nColonIndex);
-		outCapture.uFrameIndex = static_cast<uint32_t>(wcstoul(sFramePart.ToWideText().GetData(), nullptr, 10));
+		outCapture.uFrameIndex = static_cast<uint32>(wcstoul(sFramePart.ToWideText().GetData(), nullptr, 10));
 		outCapture.sFilePath = sValue.GetSubString(nColonIndex + 1, sValue.GetByteLength() - nColonIndex - 1);
 		return true;
 	}
@@ -125,15 +127,15 @@ namespace Vsp
 
 		if ((pValue = ReadValueAfter(pArgument, L"--frames=")) != nullptr)
 		{
-			options.uMaxFrameCount = static_cast<uint32_t>(wcstoul(pValue, nullptr, 10));
+			options.uMaxFrameCount = static_cast<uint32>(wcstoul(pValue, nullptr, 10));
 		}
 		else if ((pValue = ReadValueAfter(pArgument, L"--width=")) != nullptr)
 		{
-			options.uWindowWidth = static_cast<uint32_t>(wcstoul(pValue, nullptr, 10));
+			options.uWindowWidth = static_cast<uint32>(wcstoul(pValue, nullptr, 10));
 		}
 		else if ((pValue = ReadValueAfter(pArgument, L"--height=")) != nullptr)
 		{
-			options.uWindowHeight = static_cast<uint32_t>(wcstoul(pValue, nullptr, 10));
+			options.uWindowHeight = static_cast<uint32>(wcstoul(pValue, nullptr, 10));
 		}
 		else if ((pValue = ReadValueAfter(pArgument, L"--title=")) != nullptr)
 		{
@@ -166,7 +168,7 @@ namespace Vsp
 	// Main loop
 	// -------------------------------------------------------------------------
 
-	int32_t RunLaunchLoop(int32_t nArgumentCount, wchar_t** pArguments)
+	int32 RunLaunchLoop(int32 nArgumentCount, wchar_t** pArguments)
 	{
 		LaunchOptions options;
 
@@ -176,7 +178,7 @@ namespace Vsp
 		options.sRuntimeConfigPath = sExecutableDirectory + "\\Launch.runtimeconfig.json";
 		options.sDotNetRootPath = sExecutableDirectory + "\\..\\..\\..\\Binaries\\dotnet\\runtime10.0.10";
 
-		for (int32_t nIndex = 1; nIndex < nArgumentCount; ++nIndex)
+		for (int32 nIndex = 1; nIndex < nArgumentCount; ++nIndex)
 		{
 			ApplyCommandLineOption(options, pArguments[nIndex]);
 
@@ -192,15 +194,15 @@ namespace Vsp
 				const wchar_t* pValue = pArguments[nIndex + 1];
 				if (sArgument.Equals("--frames"))
 				{
-					options.uMaxFrameCount = static_cast<uint32_t>(wcstoul(pValue, nullptr, 10));
+					options.uMaxFrameCount = static_cast<uint32>(wcstoul(pValue, nullptr, 10));
 				}
 				else if (sArgument.Equals("--width"))
 				{
-					options.uWindowWidth = static_cast<uint32_t>(wcstoul(pValue, nullptr, 10));
+					options.uWindowWidth = static_cast<uint32>(wcstoul(pValue, nullptr, 10));
 				}
 				else if (sArgument.Equals("--height"))
 				{
-					options.uWindowHeight = static_cast<uint32_t>(wcstoul(pValue, nullptr, 10));
+					options.uWindowHeight = static_cast<uint32>(wcstoul(pValue, nullptr, 10));
 				}
 				else if (sArgument.Equals("--title"))
 				{
@@ -253,7 +255,12 @@ namespace Vsp
 		Log::AddBackend(&s_DebugLogBackend);
 		Log::AddBackend(&s_ConsoleLogBackend);
 
-		const VspString sLogFilePath = sExecutableDirectory + "\\Launch.log";
+		time_t nowtime;
+		time(&nowtime);
+		tm* p = localtime(&nowtime);
+		VspString timeS = VspFormat::Format("{:04}-{:02}-{:02}-{:02}-{:02}-{:02}", p->tm_year + 1900, p->tm_mon + 1, p->tm_mday, p->tm_hour, p->tm_min, p->tm_sec);
+
+		const VspString sLogFilePath = sExecutableDirectory + "\\" + timeS + ".log";
 		if (s_FileOutputDevice.Open(sLogFilePath))
 		{
 			Log::AddBackend(&s_FileLogBackend);
@@ -267,7 +274,7 @@ namespace Vsp
 		Log::SetCrashPromptEnabled(options.bShowErrorDialog);
 
 		// Enumerate ("get") the available output devices and report them.
-		for (uint32_t uIndex = 0; uIndex < deviceRegistry.GetDeviceCount(); ++uIndex)
+		for (uint32 uIndex = 0; uIndex < deviceRegistry.GetDeviceCount(); ++uIndex)
 		{
 			LOG_INFO(kLogTag, "Available output device [{}]: {}", uIndex, deviceRegistry.GetDeviceAt(uIndex)->GetDeviceName());
 		}

@@ -36,12 +36,12 @@ namespace Vsp
 	public:
 		struct TransformEntry
 		{
-			uint32_t uInstanceId = 0;
+			uint32 uInstanceId = 0;
 			float fPositionX = 0.0f;
 			float fPositionY = 0.0f;
 		};
 
-		static constexpr int32_t k_nDefaultColorMode = 3;   // MultiColor
+		static constexpr int32 k_nDefaultColorMode = 3;   // MultiColor
 
 		static ScriptCore& Get();
 
@@ -53,23 +53,23 @@ namespace Vsp
 		float GetElapsedTime() const { return m_fElapsedTime; }
 
 		// -------- Transforms --------
-		void SetTransformPosition(uint32_t uInstanceId, float fPositionX, float fPositionY);
-		bool GetTransformPosition(uint32_t uInstanceId, float& outPositionX, float& outPositionY) const;
+		void SetTransformPosition(uint32 uInstanceId, float fPositionX, float fPositionY);
+		bool GetTransformPosition(uint32 uInstanceId, float& outPositionX, float& outPositionY) const;
 
 		// -------- Renderer commands --------
-		void SetColorMode(uint32_t uInstanceId, int32_t nColorMode);
-		int32_t GetColorMode(uint32_t uInstanceId) const;
+		void SetColorMode(uint32 uInstanceId, int32 nColorMode);
+		int32 GetColorMode(uint32 uInstanceId) const;
 
 	private:
 		ScriptCore() = default;
 
-		TransformEntry* FindTransformEntry(uint32_t uInstanceId);
-		const TransformEntry* FindTransformEntry(uint32_t uInstanceId) const;
+		TransformEntry* FindTransformEntry(uint32 uInstanceId);
+		const TransformEntry* FindTransformEntry(uint32 uInstanceId) const;
 
 		ArrayList<TransformEntry> m_TransformEntries;
 		float m_fDeltaTime = 0.0f;
 		float m_fElapsedTime = 0.0f;
-		int32_t m_nColorMode = k_nDefaultColorMode;
+		int32 m_nColorMode = k_nDefaultColorMode;
 	};
 #pragma warning(pop)
 }

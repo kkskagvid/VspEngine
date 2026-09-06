@@ -21,9 +21,9 @@ namespace Vsp
 	class RUNTIME_API InputManager
 	{
 	public:
-		static constexpr int32_t k_nKeyStateCount = 256;
-		static constexpr int32_t k_nMouseButtonCount = 8;
-		static constexpr int32_t k_nTypedCharacterQueueCapacity = 64;
+		static constexpr int32 k_nKeyStateCount = 256;
+		static constexpr int32 k_nMouseButtonCount = 8;
+		static constexpr int32 k_nTypedCharacterQueueCapacity = 64;
 
 		static InputManager& Get();
 
@@ -41,9 +41,9 @@ namespace Vsp
 		bool WasKeyReleased(KeyCode eKey) const;
 
 		// -------- Mouse --------
-		bool IsMouseButtonDown(int32_t nButton) const;
-		bool WasMouseButtonPressed(int32_t nButton) const;
-		bool WasMouseButtonReleased(int32_t nButton) const;
+		bool IsMouseButtonDown(int32 nButton) const;
+		bool WasMouseButtonPressed(int32 nButton) const;
+		bool WasMouseButtonReleased(int32 nButton) const;
 
 		float GetMousePositionX() const { return m_fMousePositionX; }
 		float GetMousePositionY() const { return m_fMousePositionY; }
@@ -54,21 +54,21 @@ namespace Vsp
 
 		// -------- Typed characters --------
 		// Pops the oldest typed code point; returns false when the queue is empty.
-		bool PopTypedCharacter(uint32_t& outCodePoint);
+		bool PopTypedCharacter(uint32& outCodePoint);
 
 	private:
 		InputManager() = default;
 
-		void HandleKeyPressed(int32_t nKeyCode, int32_t nRepeatCount);
-		void HandleKeyReleased(int32_t nKeyCode);
+		void HandleKeyPressed(int32 nKeyCode, int32 nRepeatCount);
+		void HandleKeyReleased(int32 nKeyCode);
 		void HandleMouseMoved(float fPositionX, float fPositionY);
-		void HandleMouseButtonPressed(int32_t nButton);
-		void HandleMouseButtonReleased(int32_t nButton);
+		void HandleMouseButtonPressed(int32 nButton);
+		void HandleMouseButtonReleased(int32 nButton);
 		void HandleMouseScrolled(float fOffsetX, float fOffsetY);
-		void HandleCharacterTyped(uint32_t uCodePoint);
+		void HandleCharacterTyped(uint32 uCodePoint);
 
-		static bool IsValidKeyIndex(int32_t nKeyCode) { return nKeyCode >= 0 && nKeyCode < k_nKeyStateCount; }
-		static bool IsValidButtonIndex(int32_t nButton) { return nButton >= 0 && nButton < k_nMouseButtonCount; }
+		static bool IsValidKeyIndex(int32 nKeyCode) { return nKeyCode >= 0 && nKeyCode < k_nKeyStateCount; }
+		static bool IsValidButtonIndex(int32 nButton) { return nButton >= 0 && nButton < k_nMouseButtonCount; }
 
 		// Keyboard state: held / pressed-this-frame / released-this-frame.
 		bool m_bKeyDownStates[k_nKeyStateCount] = {};
@@ -89,8 +89,8 @@ namespace Vsp
 		bool m_bHasMousePosition = false;
 
 		// Ring buffer of typed Unicode code points.
-		uint32_t m_TypedCharacterQueue[k_nTypedCharacterQueueCapacity] = {};
-		uint32_t m_nTypedCharacterCount = 0;
-		uint32_t m_nTypedCharacterReadIndex = 0;
+		uint32 m_TypedCharacterQueue[k_nTypedCharacterQueueCapacity] = {};
+		uint32 m_nTypedCharacterCount = 0;
+		uint32 m_nTypedCharacterReadIndex = 0;
 	};
 }

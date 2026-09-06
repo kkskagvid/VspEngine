@@ -46,9 +46,9 @@ namespace Vsp
          */
         void SetDisplayMode(
             WindowProperties::WindowDisplayMode mode,
-            uint32_t fullscreenWidth  = 0,
-            uint32_t fullscreenHeight = 0,
-            uint32_t refreshRate      = 0) override;
+            uint32 fullscreenWidth  = 0,
+            uint32 fullscreenHeight = 0,
+            uint32 refreshRate      = 0) override;
 
         /** @brief Return the current display mode. */
         WindowProperties::WindowDisplayMode GetDisplayMode() const override { return m_Properties.DisplayMode; }
@@ -80,9 +80,9 @@ namespace Vsp
         // ── Exclusive fullscreen configuration ──────────────────────────
         struct FullscreenConfig
         {
-            uint32_t Width       = 0;
-            uint32_t Height      = 0;
-            uint32_t RefreshRate = 0;
+            uint32 Width       = 0;
+            uint32 Height      = 0;
+            uint32 RefreshRate = 0;
         };
         FullscreenConfig m_FullscreenConfig;
 
@@ -115,7 +115,7 @@ namespace Vsp
          * @brief Change the display mode for exclusive fullscreen.
          * @return true on success.
          */
-        bool ChangeToFullscreenDisplayMode(uint32_t width, uint32_t height, uint32_t refreshRate);
+        bool ChangeToFullscreenDisplayMode(uint32 width, uint32 height, uint32 refreshRate);
 
         /** @brief Restore the desktop display mode if we changed it. */
         void RestoreDisplaySettings();

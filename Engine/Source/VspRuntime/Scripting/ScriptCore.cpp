@@ -10,7 +10,7 @@ namespace Vsp
 		return s_Instance;
 	}
 
-	ScriptCore::TransformEntry* ScriptCore::FindTransformEntry(uint32_t uInstanceId)
+	ScriptCore::TransformEntry* ScriptCore::FindTransformEntry(uint32 uInstanceId)
 	{
 		for (size_t nEntryIndex = 0; nEntryIndex < m_TransformEntries.GetSize(); ++nEntryIndex)
 		{
@@ -22,7 +22,7 @@ namespace Vsp
 		return nullptr;
 	}
 
-	const ScriptCore::TransformEntry* ScriptCore::FindTransformEntry(uint32_t uInstanceId) const
+	const ScriptCore::TransformEntry* ScriptCore::FindTransformEntry(uint32 uInstanceId) const
 	{
 		for (size_t nEntryIndex = 0; nEntryIndex < m_TransformEntries.GetSize(); ++nEntryIndex)
 		{
@@ -34,7 +34,7 @@ namespace Vsp
 		return nullptr;
 	}
 
-	void ScriptCore::SetTransformPosition(uint32_t uInstanceId, float fPositionX, float fPositionY)
+	void ScriptCore::SetTransformPosition(uint32 uInstanceId, float fPositionX, float fPositionY)
 	{
 		TransformEntry* pEntry = FindTransformEntry(uInstanceId);
 		if (pEntry == nullptr)
@@ -51,7 +51,7 @@ namespace Vsp
 		pEntry->fPositionY = fPositionY;
 	}
 
-	bool ScriptCore::GetTransformPosition(uint32_t uInstanceId, float& outPositionX, float& outPositionY) const
+	bool ScriptCore::GetTransformPosition(uint32 uInstanceId, float& outPositionX, float& outPositionY) const
 	{
 		const TransformEntry* pEntry = FindTransformEntry(uInstanceId);
 		if (pEntry == nullptr)
@@ -64,14 +64,14 @@ namespace Vsp
 		return true;
 	}
 
-	void ScriptCore::SetColorMode(uint32_t uInstanceId, int32_t nColorMode)
+	void ScriptCore::SetColorMode(uint32 uInstanceId, int32 nColorMode)
 	{
 		// A single triangle is rendered in this prototype; the color mode is
 		// global. The instance id is accepted for API symmetry with Transform.
 		m_nColorMode = nColorMode;
 	}
 
-	int32_t ScriptCore::GetColorMode(uint32_t uInstanceId) const
+	int32 ScriptCore::GetColorMode(uint32 uInstanceId) const
 	{
 		return m_nColorMode;
 	}

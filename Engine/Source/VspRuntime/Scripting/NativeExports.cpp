@@ -13,34 +13,34 @@
 
 // -------- Input (keyboard) --------
 
-CSHARP_EXPORT int32_t VspInput_IsKeyDown(int32_t nKeyCode)
+CSHARP_EXPORT int32 VspInput_IsKeyDown(int32 nKeyCode)
 {
 	return Vsp::InputManager::Get().IsKeyDown(static_cast<Vsp::KeyCode>(nKeyCode)) ? 1 : 0;
 }
 
-CSHARP_EXPORT int32_t VspInput_WasKeyPressed(int32_t nKeyCode)
+CSHARP_EXPORT int32 VspInput_WasKeyPressed(int32 nKeyCode)
 {
 	return Vsp::InputManager::Get().WasKeyPressed(static_cast<Vsp::KeyCode>(nKeyCode)) ? 1 : 0;
 }
 
-CSHARP_EXPORT int32_t VspInput_WasKeyReleased(int32_t nKeyCode)
+CSHARP_EXPORT int32 VspInput_WasKeyReleased(int32 nKeyCode)
 {
 	return Vsp::InputManager::Get().WasKeyReleased(static_cast<Vsp::KeyCode>(nKeyCode)) ? 1 : 0;
 }
 
 // -------- Input (mouse) --------
 
-CSHARP_EXPORT int32_t VspInput_IsMouseButtonDown(int32_t nButton)
+CSHARP_EXPORT int32 VspInput_IsMouseButtonDown(int32 nButton)
 {
 	return Vsp::InputManager::Get().IsMouseButtonDown(nButton) ? 1 : 0;
 }
 
-CSHARP_EXPORT int32_t VspInput_WasMouseButtonPressed(int32_t nButton)
+CSHARP_EXPORT int32 VspInput_WasMouseButtonPressed(int32 nButton)
 {
 	return Vsp::InputManager::Get().WasMouseButtonPressed(nButton) ? 1 : 0;
 }
 
-CSHARP_EXPORT int32_t VspInput_WasMouseButtonReleased(int32_t nButton)
+CSHARP_EXPORT int32 VspInput_WasMouseButtonReleased(int32 nButton)
 {
 	return Vsp::InputManager::Get().WasMouseButtonReleased(nButton) ? 1 : 0;
 }
@@ -89,12 +89,12 @@ CSHARP_EXPORT float VspTime_GetElapsedTime()
 
 // -------- Transform --------
 
-CSHARP_EXPORT void VspTransform_SetPosition(uint32_t uInstanceId, float fPositionX, float fPositionY)
+CSHARP_EXPORT void VspTransform_SetPosition(uint32 uInstanceId, float fPositionX, float fPositionY)
 {
 	Vsp::ScriptCore::Get().SetTransformPosition(uInstanceId, fPositionX, fPositionY);
 }
 
-CSHARP_EXPORT float VspTransform_GetPositionX(uint32_t uInstanceId)
+CSHARP_EXPORT float VspTransform_GetPositionX(uint32 uInstanceId)
 {
 	float fPositionX = 0.0f;
 	float fPositionY = 0.0f;
@@ -102,7 +102,7 @@ CSHARP_EXPORT float VspTransform_GetPositionX(uint32_t uInstanceId)
 	return fPositionX;
 }
 
-CSHARP_EXPORT float VspTransform_GetPositionY(uint32_t uInstanceId)
+CSHARP_EXPORT float VspTransform_GetPositionY(uint32 uInstanceId)
 {
 	float fPositionX = 0.0f;
 	float fPositionY = 0.0f;
@@ -112,12 +112,12 @@ CSHARP_EXPORT float VspTransform_GetPositionY(uint32_t uInstanceId)
 
 // -------- Renderer --------
 
-CSHARP_EXPORT void VspRenderer_SetColorMode(uint32_t uInstanceId, int32_t nColorMode)
+CSHARP_EXPORT void VspRenderer_SetColorMode(uint32 uInstanceId, int32 nColorMode)
 {
 	Vsp::ScriptCore::Get().SetColorMode(uInstanceId, nColorMode);
 }
 
-CSHARP_EXPORT int32_t VspRenderer_GetColorMode(uint32_t uInstanceId)
+CSHARP_EXPORT int32 VspRenderer_GetColorMode(uint32 uInstanceId)
 {
 	return Vsp::ScriptCore::Get().GetColorMode(uInstanceId);
 }
