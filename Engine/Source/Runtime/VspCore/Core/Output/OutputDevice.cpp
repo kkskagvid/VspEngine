@@ -2,8 +2,7 @@
 
 #include <cstdio>
 
-#include <Windows.h>
-
+#include "Common/PlatformMisc.h"
 #include "Core/Output/OutputDevice.h"
 
 namespace Vsp
@@ -14,7 +13,7 @@ namespace Vsp
 
 	void DebugOutputDevice::Write(const VspString& sContent)
 	{
-		OutputDebugStringA(sContent.GetData());
+		PlatformMisc::WriteToDebugOutput(sContent.GetData());
 	}
 
 	// =========================================================================

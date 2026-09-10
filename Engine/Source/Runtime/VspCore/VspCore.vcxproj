@@ -20,6 +20,8 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Common\NativeApi.h" />
+    <ClInclude Include="Common\PlatformMisc.h" />
+    <ClInclude Include="Platforms\Windows\WindowsWindow.h" />
     <ClInclude Include="Core\Application.h" />
     <ClInclude Include="Core\Core.h" />
     <ClInclude Include="Core\Defines.h" />
@@ -41,19 +43,24 @@
     <ClInclude Include="Core\Type.h" />
     <ClInclude Include="Core\Input\KeyCode.h" />
     <ClInclude Include="Core\Input\InputManager.h" />
+    <ClInclude Include="Graphics\RenderCore.h" />
+    <ClInclude Include="Graphics\Vulkan\VulkanInstance.h" />
+    <ClInclude Include="Graphics\Vulkan\VulkanDevice.h" />
+    <ClInclude Include="Graphics\Vulkan\VulkanBuffer.h" />
+    <ClInclude Include="Graphics\Vulkan\VulkanImage.h" />
+    <ClInclude Include="Graphics\Vulkan\VulkanPipeline.h" />
+    <ClInclude Include="Graphics\Vulkan\VulkanDescriptors.h" />
     <ClInclude Include="Graphics\Vulkan\VulkanRHI.h" />
     <ClInclude Include="Graphics\Vulkan\VulkanSwapChain.h" />
     <ClInclude Include="Graphics\Vulkan\VulkanRenderer2D.h" />
     <ClInclude Include="Scripting\ScriptCore.h" />
     <ClInclude Include="Scripting\ScriptEngine.h" />
-    <ClInclude Include="Engine\Core\Utils\ArrayList.h" />
     <ClInclude Include="Core\Window.h" />
     <ClInclude Include="Core\Events\Event.h" />
     <ClInclude Include="Core\Events\EventDispatcher.h" />
     <ClInclude Include="Core\Events\InputEvents.h" />
     <ClInclude Include="Core\Events\WindowEvents.h" />
     <ClInclude Include="Graphics\IGraphics.h" />
-    <ClInclude Include="Platforms\Windows\WindowsWindow.h" />
     <ClInclude Include="Common\RuntimePCH.h" />
     <ClInclude Include="Scripting\BridgeFunctions.h" />
     <ClInclude Include="Scripting\ManagedScript.h" />
@@ -68,6 +75,7 @@
     <ClCompile Include="Core\Window.cpp" />
     <ClCompile Include="Core\Events\EventDispatcher.cpp" />
     <ClCompile Include="Platforms\Windows\DllMain.cpp" />
+    <ClCompile Include="Common\PlatformMisc.cpp" />
     <ClCompile Include="Platforms\Windows\WindowsWindow.cpp" />
     <ClCompile Include="Common\RuntimePCH.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
@@ -77,6 +85,13 @@
     <ClCompile Include="Core\Logging\Log.cpp" />
     <ClCompile Include="Core\Logging\LogBackend.cpp" />
     <ClCompile Include="Core\Output\OutputDevice.cpp" />
+    <ClCompile Include="Graphics\RenderCore.cpp" />
+    <ClCompile Include="Graphics\Vulkan\VulkanInstance.cpp" />
+    <ClCompile Include="Graphics\Vulkan\VulkanDevice.cpp" />
+    <ClCompile Include="Graphics\Vulkan\VulkanBuffer.cpp" />
+    <ClCompile Include="Graphics\Vulkan\VulkanImage.cpp" />
+    <ClCompile Include="Graphics\Vulkan\VulkanPipeline.cpp" />
+    <ClCompile Include="Graphics\Vulkan\VulkanDescriptors.cpp" />
     <ClCompile Include="Graphics\Vulkan\VulkanRHI.cpp" />
     <ClCompile Include="Graphics\Vulkan\VulkanSwapChain.cpp" />
     <ClCompile Include="Graphics\Vulkan\VulkanRenderer2D.cpp" />

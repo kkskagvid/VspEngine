@@ -4,6 +4,11 @@ A small experimental game engine: a Vulkan 2D renderer and a Unity-style C# scri
 system, hosted by a native C++20 application that embeds the .NET CoreCLR runtime
 through the CoreCLR Hosting API (nethost + hostfxr).
 
+The managed side is split into two assemblies: **VspEngine.dll** (the engine's
+managed runtime: script base types, input/time/transform facades, the interop
+bridge and the managed render flow) and **Assembly.dll** (the game Assembly that
+holds the user scripts and is loaded by the engine at startup).
+
 ## Features
 
 - **Vulkan 1.3 bindless renderer (no 1.2 fallback)**
@@ -32,6 +37,10 @@ through the CoreCLR Hosting API (nethost + hostfxr).
   `OutputDeviceLogBackend`). `Log` also keeps a bounded history of recent entries;
   a **Fatal** entry collects that history into a crash report, shows a crash prompt
   (unless disabled) and aborts the process.
+- **Assembly loading** (`Scripting/ScriptEngine`): the engine resolves the interop
+  bridge (`VspEngine.NativeBridge`) from **VspEngine.dll** and then loads the game
+  **Assembly.dll** - the assembly that stores the user scripts - through the bridge.
+  Script type enumeration and instantiation operate on the loaded game Assembly.
 - **C# scripting via CoreCLR Hosting API** (`Scripting/ScriptEngine`):
   - `nethost.dll` -> `get_hostfxr_path` -> `hostfxr_initialize_for_runtime_config` ->
     `load_assembly_and_get_function_pointer`.
@@ -42,7 +51,30 @@ through the CoreCLR Hosting API (nethost + hostfxr).
     `NativeBridge` keeps **no instances Dictionary**.
   - Managed code calls back into the native core through `DllImport("VspCore")`
     (`Input`, `Time`, `Transform`, `Renderer`), so interop is fully bidirectional.
-- **Unity-style scripting model** (`VspPlayer`): `GameObject` / `Component` / `ScriptBehaviour`
+- **Managed render flow** (`VspEngine.Rendering.RenderFlow`): every frame the native
+  host invokes the managed render flow, which builds the frame (BeginFrame -> clear
+  color -> triangle draws -> EndFrame) through the native render-command API
+  (`Graphics/RenderCore`). The Vulkan renderer consumes the submitted commands when
+  it records the frame's command buffer.
+- **Split Vulkan module** (`Graphics/Vulkan`): the renderer is decomposed into
+  functional units - `VulkanInstance` (instance + surface), `VulkanDevice` (device +
+  queues + helpers), `VulkanBuffer`, `VulkanImage`, `VulkanPipeline`,
+  `VulkanDescriptors` (bindless), `VulkanSwapChain` and `VulkanRenderer2D`
+  (the orchestrator) behind a thin `VulkanContext` RHI facade.
+- **Windows-only code encapsulated in Common** (`Common/PlatformMisc`,
+  `Common/PlatformWindow`, `Common/PlatformDllMain`): every platform-specific
+  call (window creation, dynamic library loading, environment variables, the
+  high-resolution timer, window message injection, the debug output and the crash
+  prompt) lives in Common behind `#if VSP_PLATFORM_WINDOWS`; the rest of the
+  engine never includes a platform header. Only the executable entry point
+  (`wWinMain` + the GPU-selection exports) stays in Launch, because Windows
+  requires those in the .exe module.
+- **Lightweight build system** (`VspBuildTool`): stages the built executables
+  (Launch.exe, VspCore.dll, VspEngine.dll, Assembly.dll) and the necessary
+  companion files (runtimeconfig, Vulkan loader, debug symbols) into the run
+  directory - following the `Intermediate\Binaries\Debug_x64` layout - and
+  makes the C# runtime reachable from it. It can also invoke MSBuild first.
+- **Unity-style scripting model** (`VspEngine`): `GameObject` / `Component` / `ScriptBehaviour`
   with `OnInit / OnStart / OnUpdate / OnDestroy`, `Input.GetKey(...)`, `Time.DeltaTime`,
   `Transform.Position`.
 - C++20, MSVC, **no C++ exceptions** (`/EHs-c-`, `_HAS_EXCEPTIONS=0`). Function names are
@@ -52,7 +84,8 @@ through the CoreCLR Hosting API (nethost + hostfxr).
 
 ## Demo (acceptance test)
 
-`Engine/Source/Runtime/VspPlayer/TriangleController.cs` drives a multicolor triangle:
+`Assembly/TriangleController.cs` (the game Assembly loaded by the engine) drives a
+multicolor triangle:
 
 | Key | Action                                             |
 | --- | -------------------------------------------------- |
@@ -74,6 +107,28 @@ automatically by `Graphics/Vulkan/Shaders/CompileShaders.ps1` (PreBuildEvent) in
 ```
 msbuild VspEngine.slnx /restore /p:Configuration=Debug /p:Platform=x64
 ```
+
+### VspBuildTool (lightweight build system / stager)
+
+`Engine\Intermediate\Binaries\Debug_x64\VspBuildTool.exe` builds (optionally)
+and stages everything the host needs into the run directory, which follows the
+`Intermediate\Binaries\Debug_x64` layout (everything flat next to Launch.exe):
+
+```
+VspBuildTool.exe --build                 # msbuild the solution, then stage
+VspBuildTool.exe --list                  # print the staging plan (no writes)
+VspBuildTool.exe --config Release        # stage the Release binaries
+VspBuildTool.exe --output Run\Debug_x64  # stage into a custom run directory
+VspBuildTool.exe --clean                 # delete the run directory first
+```
+
+The stager copies Launch.exe/.pdb, VspCore.dll/.pdb, VspEngine.dll/.pdb,
+Assembly.dll/.pdb, the .deps.json files, Launch.runtimeconfig.json and
+vulkan-1.dll (from `%VULKAN_SDK%\Bin`), and ensures the C# runtime is
+reachable through the engine's relative lookup
+(`<exeDir>\..\..\..\Binaries\dotnet\runtime10.0.10`) - copying the whole
+runtime tree there when it is missing. MSBuild is located automatically
+(--msbuild override, MSBUILD environment variable, vswhere, known install paths).
 
 Standard layout: every build artifact (binaries, obj/, NuGet restore caches,
 generated headers) lives under `Engine/Intermediate` (or `Engine/Binaries` for
@@ -104,14 +159,20 @@ Example acceptance run (see `Engine/Tools/Acceptance/AnalyzeShots.ps1` for analy
 Launch.exe --silent --frames=445 ^
   --key 0x44:1500 --key 0x57:800 --key 0x41:800 --key 0x53:800 --key 0x52:0 ^
   --key 0x54:0 --key 0x54:0 --key 0x54:0 --key 0x54:0 ^
-  --capture 40:shot0.bmp ... --capture 432:shot9.bmp
+  --capture 40:shot0_initial.bmp --capture 148:shot1_after_D.bmp ^
+  --capture 210:shot2_after_W.bmp --capture 276:shot3_after_A.bmp ^
+  --capture 342:shot4_after_S.bmp --capture 358:shot5_after_R.bmp ^
+  --capture 376:shot6_T_red.bmp --capture 394:shot7_T_blue.bmp ^
+  --capture 412:shot8_T_green.bmp --capture 430:shot9_T_multi.bmp
 ```
 
 ## Layout
 
-- `Engine/Source/Runtime/VspCore`    - the engine DLL sources: windowing, events, input, Vulkan renderer, script host.
-- `Engine/Source/Runtime/VspPlayer`  - the managed game assembly: ScriptBehaviour, Input/Time/Transform facades, demo script.
+- `Engine/Source/Runtime/VspCore`    - the native engine DLL: windowing, events, input, the split Vulkan renderer, the script host and the render-command hub. All Windows-only code is encapsulated in its `Common/` folder behind `#if VSP_PLATFORM_WINDOWS`.
+- `Engine/Source/Runtime/VspEngine`  - the engine's managed runtime assembly (VspEngine.dll): ScriptBehaviour, the Input/Time/Transform/Renderer facades, the interop bridge and the managed render flow.
+- `Assembly`                          - the game Assembly (Assembly.dll) holding the user scripts (the demo TriangleController); loaded by the engine at startup.
 - `Engine/Source/Runtime/Launch`     - the host executable: parses the command line, runs `GameEngine`.
+- `Engine/Source/Programs/VspBuildTool` - the lightweight build system / stager described above.
 - `Engine/Source/Thirdparty`  - imported third-party SDKs (Vulkan, dxc, glm, fmt, ...). Read-only: never modified.
 - `Engine/Binaries`           - third-party binaries (dotnet runtime, Vulkan import lib, ...).
 - `Engine/Intermediate`       - all build outputs: binaries, obj/, NuGet restore caches, generated shader header.

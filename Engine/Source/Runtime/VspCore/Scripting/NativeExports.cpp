@@ -2,12 +2,13 @@
 
 #include "Core/Input/InputManager.h"
 #include "Core/Logging/Log.h"
+#include "Graphics/RenderCore.h"
 #include "Scripting/ScriptCore.h"
 #include "Scripting/ScriptExport.h"
 
 // -------------------------------------------------------------------------
 // Native exports consumed by managed code (C# -> C++ direction).
-// VspPlayer's NativeApi.cs P/Invokes these exact names from VspCore.dll.
+// VspEngine's NativeApi.cs P/Invokes these exact names from VspCore.dll.
 // Everything is plain data in/out — no exceptions cross the boundary.
 // -------------------------------------------------------------------------
 
@@ -120,6 +121,31 @@ CSHARP_EXPORT void VspRenderer_SetColorMode(uint32 uInstanceId, int32 nColorMode
 CSHARP_EXPORT int32 VspRenderer_GetColorMode(uint32 uInstanceId)
 {
 	return Vsp::ScriptCore::Get().GetColorMode(uInstanceId);
+}
+
+// -------- Render flow (driven by VspEngine.Rendering.RenderFlow) --------
+// The managed render flow implements the frame (BeginFrame -> clear ->
+// draws -> EndFrame) on top of these commands; the native Vulkan renderer
+// consumes the collected commands when it records the command buffer.
+
+CSHARP_EXPORT void VspRenderer_BeginFrame()
+{
+	Vsp::RenderCore::Get().BeginFrame();
+}
+
+CSHARP_EXPORT void VspRenderer_SetClearColor(float fColorR, float fColorG, float fColorB, float fColorA)
+{
+	Vsp::RenderCore::Get().SetClearColor(fColorR, fColorG, fColorB, fColorA);
+}
+
+CSHARP_EXPORT void VspRenderer_DrawTriangle(float fPositionX, float fPositionY, int32 nColorMode)
+{
+	Vsp::RenderCore::Get().DrawTriangle(fPositionX, fPositionY, nColorMode);
+}
+
+CSHARP_EXPORT void VspRenderer_EndFrame()
+{
+	Vsp::RenderCore::Get().EndFrame();
 }
 
 // -------- Logging --------

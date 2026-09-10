@@ -15,13 +15,37 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="Graphics\RenderCore.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Graphics\Vulkan\VulkanInstance.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Graphics\Vulkan\VulkanDevice.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Graphics\Vulkan\VulkanBuffer.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Graphics\Vulkan\VulkanImage.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Graphics\Vulkan\VulkanPipeline.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Graphics\Vulkan\VulkanDescriptors.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="Engine\Core\String\StringConv.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="Platforms\Windows\DllMain.cpp">
+    <ClCompile Include="Common\PlatformDllMain.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="Platforms\Windows\WindowsWindow.cpp">
+    <ClCompile Include="Common\PlatformMisc.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Common\PlatformWindow.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="RuntimePCH.cpp">
@@ -92,6 +116,27 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Graphics\RenderCore.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Graphics\Vulkan\VulkanInstance.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Graphics\Vulkan\VulkanDevice.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Graphics\Vulkan\VulkanBuffer.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Graphics\Vulkan\VulkanImage.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Graphics\Vulkan\VulkanPipeline.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Graphics\Vulkan\VulkanDescriptors.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="Engine\Core\String\StringConv.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -104,7 +149,10 @@
     <ClInclude Include="Engine\Core\Platform.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="Platforms\Windows\WindowsWindow.h">
+    <ClInclude Include="Common\PlatformMisc.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Common\PlatformWindow.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="RuntimePCH.h">

@@ -2,8 +2,7 @@
 
 #include <cstdlib>
 
-#include <Windows.h>
-
+#include "Common/PlatformMisc.h"
 #include "Core/Logging/Log.h"
 #include "Core/Templates/ArrayList.h"
 
@@ -177,11 +176,7 @@ namespace Vsp
 		sReport.Append("========================================\n");
 
 		// Prompt the user with the collected information, then crash.
-		MessageBoxA(
-			nullptr,
-			sReport.GetData(),
-			"Vsp Engine - Fatal Error",
-			MB_OK | MB_ICONERROR);
+		PlatformMisc::ShowErrorPrompt("Vsp Engine - Fatal Error", sReport.GetData());
 
 		std::abort();
 	}
@@ -192,7 +187,7 @@ namespace Vsp
 
 	void Log::Write(LogLevel eLevel, const char* pTag, const VspString& sMessage)
 	{
-		const uint64_t uElapsedMilliseconds = GetTickCount64();
+		const uint64_t uElapsedMilliseconds = PlatformMisc::GetElapsedMilliseconds();
 		const char* pLevelPrefix = GetLevelPrefix(eLevel);
 
 		VspString sLine;

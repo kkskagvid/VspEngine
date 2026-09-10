@@ -3,6 +3,11 @@
 #include <vulkan/vulkan.h>
 
 #include "Graphics/IGraphics.h"
+#include "Graphics/RenderCore.h"
+#include "Graphics/Vulkan/VulkanBuffer.h"
+#include "Graphics/Vulkan/VulkanDescriptors.h"
+#include "Graphics/Vulkan/VulkanImage.h"
+#include "Graphics/Vulkan/VulkanPipeline.h"
 #include "Graphics/Vulkan/VulkanRHI.h"
 #include "Graphics/Vulkan/VulkanSwapChain.h"
 
@@ -11,13 +16,21 @@ namespace Vsp
 	// -------------------------------------------------------------------------
 	// VulkanRenderer2D
 	// -------------------------------------------------------------------------
-	// Minimal 2D renderer drawing one colored triangle, used to validate the
-	// engine. It only runs the Vulkan 1.3 bindless implementation: the texture
-	// is sampled out of a large bindless array through nonuniformEXT. Devices
-	// below Vulkan 1.3 (or without bindless descriptor indexing) are rejected
+	// Minimal 2D renderer drawing triangles submitted by the managed render
+	// flow. The Vulkan module is split into functional units - the renderer
+	// is the orchestrator that owns and wires them together:
+	//   - VulkanContext (instance + surface + device facade)
+	//   - VulkanSwapChain (swapchain, image views, framebuffers, render pass)
+	//   - VulkanBuffer   (vertex geometry, per-frame camera uniforms)
+	//   - VulkanImage    (the demo texture: image + view + sampler)
+	//   - VulkanDescriptors (bindless layout/pool/sets - the only supported path)
+	//   - VulkanPipeline (pipeline layout + graphics pipeline)
+	// RenderFrame() consumes the frame commands collected by RenderCore (the
+	// managed VspEngine render flow submits them through NativeExports) and
+	// records the swapchain command buffer from them.
+	// It only runs the Vulkan 1.3 bindless implementation: devices below
+	// Vulkan 1.3 (or without bindless descriptor indexing) are rejected
 	// during device negotiation - there is no Vulkan 1.2 fallback path.
-	// The triangle position and color mode are set every frame by the game
-	// engine based on what the managed scripts reported.
 	// All errors are logged through the Log module; nothing throws.
 	// -------------------------------------------------------------------------
 #pragma warning(push)
@@ -26,31 +39,6 @@ namespace Vsp
 	{
 	public:
 		static constexpr uint32 k_nMaxFramesInFlight = 2;
-		static constexpr uint32 k_nMaxBindlessTextureCount = 4096;
-
-		// One triangle vertex: position, RGBA color, UV.
-		struct Vertex2D
-		{
-			float fPositionX;
-			float fPositionY;
-			float fColorR;
-			float fColorG;
-			float fColorB;
-			float fColorA;
-			float fUvU;
-			float fUvV;
-		};
-
-		// Pushed every draw: color override + mode + bindless texture slot.
-		struct PushConstants
-		{
-			float fOverrideColorR;
-			float fOverrideColorG;
-			float fOverrideColorB;
-			float fOverrideColorA;
-			int32 nColorMode;
-			uint32 uTextureIndex;
-		};
 
 		~VulkanRenderer2D() override;
 
@@ -58,9 +46,6 @@ namespace Vsp
 		void Shutdown() override;
 		void OnWindowResize(uint32 uWidth, uint32 uHeight) override;
 		bool RenderFrame() override;
-
-		void SetTrianglePosition(float fPositionX, float fPositionY);
-		void SetColorMode(int32 nColorMode);
 
 		// Reads the most recently presented swapchain image back to the CPU and
 		// writes it as a 32-bit BMP (used by automated acceptance tests).
@@ -73,8 +58,7 @@ namespace Vsp
 		struct FrameResources
 		{
 			VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
-			VkBuffer uniformBuffer = VK_NULL_HANDLE;
-			VkDeviceMemory uniformBufferMemory = VK_NULL_HANDLE;
+			VulkanBuffer CameraUniformBuffer;
 			VkSemaphore imageAvailableSemaphore = VK_NULL_HANDLE;
 			VkSemaphore renderFinishedSemaphore = VK_NULL_HANDLE;
 			VkFence inFlightFence = VK_NULL_HANDLE;
@@ -82,8 +66,21 @@ namespace Vsp
 
 		struct CameraUniformData
 		{
-			float m4ViewProjection[16];   // std140 mat4
+			float m4ViewProjection[16];   // std140 mat4 (projection only: positions arrive as push constants)
 		};
+
+		// -------- Creation / destruction helpers --------
+		bool CreateFrameResources();
+		bool CreateTriangleGeometry();
+		void DestroyFrameResources();
+		void DestroyTriangleGeometry();
+
+		// -------- Frame helpers --------
+		void UpdateCameraUniform(uint32 uFrameIndex);
+		void BuildPushConstants(
+			const RenderCore::TriangleDrawCommand& drawCommand,
+			PushConstants& outPushConstants) const;
+		void RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32 uImageIndex);
 
 		// -------- Device / swapchain --------
 		VulkanContext m_Context;
@@ -92,60 +89,20 @@ namespace Vsp
 		uint32 m_nCurrentFrameIndex = 0;
 
 		// -------- Triangle geometry --------
-		VkBuffer m_VkVertexBuffer = VK_NULL_HANDLE;
-		VkDeviceMemory m_VkVertexBufferMemory = VK_NULL_HANDLE;
+		VulkanBuffer m_TriangleVertexBuffer;
 
-		// -------- Demo texture (white) --------
-		VkImage m_VkTextureImage = VK_NULL_HANDLE;
-		VkDeviceMemory m_VkTextureMemory = VK_NULL_HANDLE;
-		VkImageView m_VkTextureView = VK_NULL_HANDLE;
-		VkSampler m_VkTextureSampler = VK_NULL_HANDLE;
+		// -------- Demo texture (white, used by the bindless path) --------
+		VulkanImage m_DemoTexture;
 
 		// -------- Bindless descriptors (the only supported path) --------
-		VkDescriptorSetLayout m_VkDescriptorSetLayout = VK_NULL_HANDLE;
-		VkDescriptorPool m_VkDescriptorPool = VK_NULL_HANDLE;
-		VkDescriptorSet m_VkDescriptorSets[k_nMaxFramesInFlight] = {};
+		VulkanDescriptors m_BindlessDescriptors;
 
 		// -------- Pipeline --------
-		VkPipelineLayout m_VkPipelineLayout = VK_NULL_HANDLE;
-		VkPipeline m_VkPipeline = VK_NULL_HANDLE;
+		VulkanPipeline m_TrianglePipeline;
 
-		// -------- Script-driven state --------
-		float m_fTrianglePositionX = 0.0f;
-		float m_fTrianglePositionY = 0.0f;
-		int32 m_nColorMode = 3;   // MultiColor
+		// -------- State --------
 		bool m_bIsMinimized = false;
 		bool m_bIsInitialized = false;
-
-		// -------- Creation helpers --------
-		bool CreateFrameResources();
-		bool CreateTriangleGeometry();
-		bool CreateDemoTexture();
-		bool CreateBindlessDescriptors();
-		bool CreatePipelines();
-		bool CreateGraphicsPipeline(
-			VkShaderModule vertexShader,
-			VkShaderModule fragmentShader,
-			VkPipelineLayout pipelineLayout,
-			VkPipeline& outPipeline) const;
-
-		// -------- Frame helpers --------
-		void DestroyFrameResources();
-		void DestroyTriangleGeometry();
-		void DestroyDemoTexture();
-		void DestroyDescriptors();
-		void DestroyPipelines();
-
-		void UpdateCameraUniform(uint32 uFrameIndex);
-		void BuildPushConstants(PushConstants& outPushConstants) const;
-		void RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32 uImageIndex);
-
-		static bool TransitionImageLayout(
-			const VulkanContext& context,
-			VkImage image,
-			VkFormat format,
-			VkImageLayout oldLayout,
-			VkImageLayout newLayout);
 	};
 #pragma warning(pop)
 }

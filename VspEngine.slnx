@@ -8,11 +8,17 @@
   </Folder>
   <Folder Name="/Runtime/">
     <Project Path="Engine/Source/Runtime/Launch/Launch.vcxproj" Id="7d9ae143-94ef-4137-9659-d25c0652c16e">
-      <BuildDependency Project="Engine/Source/Runtime/VspPlayer/VspPlayer.csproj" />
+      <BuildDependency Project="Assembly/Assembly.csproj" />
+      <BuildDependency Project="Engine/Source/Runtime/VspEngine/VspEngine.csproj" />
       <Platform Project="x64" />
     </Project>
     <Project Path="Engine/Source/Runtime/VspCore/VspCore.vcxproj" Id="b5752592-6d1c-4ca0-8ac5-45881dbfaffa" />
-    <Project Path="Engine/Source/Runtime/VspPlayer/VspPlayer.csproj">
+    <Project Path="Engine/Source/Runtime/VspEngine/VspEngine.csproj">
+      <Platform Project="x64" />
+    </Project>
+  </Folder>
+  <Folder Name="/Game/">
+    <Project Path="Assembly/Assembly.csproj">
       <Platform Project="x64" />
     </Project>
   </Folder>

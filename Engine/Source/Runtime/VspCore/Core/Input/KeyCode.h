@@ -6,7 +6,7 @@ namespace Vsp
 {
 	// Keyboard key identifiers. The numeric values mirror the Win32 virtual-key
 	// codes, so the key events produced by the window map onto this enum 1:1.
-	// The C# side (VspPlayer/KeyCode.cs) mirrors these exact values.
+	// The C# side (VspEngine/KeyCode.cs) mirrors these exact values.
 	enum class KeyCode : int32
 	{
 		None = 0x00,

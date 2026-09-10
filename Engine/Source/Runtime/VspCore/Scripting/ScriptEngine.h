@@ -5,11 +5,6 @@
 #include "Core/Templates/ArrayList.h"
 #include "Scripting/BridgeFunctions.h"
 
-#if VSP_PLATFORM_WINDOWS
-	#define WIN32_LEAN_AND_MEAN
-	#include <Windows.h>
-#endif
-
 namespace Vsp
 {
 	// Non-negative integer handle addressing one managed script instance.
@@ -23,8 +18,11 @@ namespace Vsp
 	// Hosting API (nethost + hostfxr). The host:
 	//   1. loads nethost.dll and asks it for the hostfxr.dll path,
 	//   2. initializes hostfxr against a runtimeconfig.json,
-	//   3. fetches raw function pointers into the managed NativeBridge,
-	//   4. enumerates the managed script types, GENERATES a non-negative
+	//   3. fetches raw function pointers into the managed bridge
+	//      (VspEngine.NativeBridge, living in VspEngine.dll),
+	//   4. loads the game Assembly (Assembly.dll - the assembly that holds
+	//      the user scripts) through the managed bridge,
+	//   5. enumerates the managed script types, GENERATES a non-negative
 	//      InstanceID per instance and drives the lifecycle through the opaque
 	//      IntPtr handle every managed GameObject holds (the managed bridge
 	//      keeps no instance registry of its own).
@@ -46,10 +44,13 @@ namespace Vsp
 
 		static ScriptEngine& Get();
 
-		// Loads nethost/hostfxr, initializes the runtime and resolves every
-		// managed bridge entry point. Call once before any script work.
+		// Loads nethost/hostfxr, initializes the runtime, resolves every
+		// managed bridge entry point from the engine assembly (VspEngine.dll)
+		// and loads the game Assembly (Assembly.dll) that holds the user
+		// scripts. Call once before any script work.
 		bool Initialize(
-			const VspString& sAssemblyPath,
+			const VspString& sEngineAssemblyPath,
+			const VspString& sGameAssemblyPath,
 			const VspString& sRuntimeConfigPath,
 			const VspString& sDotNetRootPath,
 			VspString& outErrorText);
@@ -76,6 +77,11 @@ namespace Vsp
 		// Invokes OnUpdate for every registered instance.
 		void UpdateAllScripts();
 
+		// Invokes the managed render flow (VspEngine.Rendering.RenderFlow)
+		// once; the primary script's InstanceID is passed in (0 = none). The
+		// flow submits the frame's render commands through NativeExports.
+		void CallRenderFlow(ScriptInstanceId uPrimaryInstanceId);
+
 		uint32 GetScriptInstanceCount() const { return static_cast<uint32>(m_ScriptInstances.GetSize()); }
 		ScriptInstanceId GetPrimaryScriptInstanceId() const
 		{
@@ -91,7 +97,8 @@ namespace Vsp
 		bool LoadNetHostLibrary(const VspString& sDotNetRootPath, VspString& outErrorText);
 		bool LoadHostFxrLibrary(VspString& outErrorText);
 		bool InitializeHostFxrRuntime(const VspString& sRuntimeConfigPath, VspString& outErrorText);
-		bool LoadManagedEntryPoints(const VspString& sAssemblyPath, VspString& outErrorText);
+		bool LoadManagedEntryPoints(const VspString& sEngineAssemblyPath, VspString& outErrorText);
+		bool LoadGameAssembly(const VspString& sGameAssemblyPath, VspString& outErrorText);
 
 		static bool FetchManagedEntryPoint(
 			load_assembly_and_get_function_pointer_fn pLoadAssemblyFunction,
@@ -101,8 +108,10 @@ namespace Vsp
 			void** ppOutFunction,
 			VspString& outErrorText);
 
-		HMODULE m_hNetHostLibrary = nullptr;
-		HMODULE m_hHostFxrLibrary = nullptr;
+		// Native library handles (opaque void* - the platform-specific
+		// loading lives in Common/PlatformMisc behind #if VSP_PLATFORM_WINDOWS).
+		void* m_hNetHostLibrary = nullptr;
+		void* m_hHostFxrLibrary = nullptr;
 		hostfxr_handle m_RuntimeContext = nullptr;
 		load_assembly_and_get_function_pointer_fn m_LoadAssemblyFunction = nullptr;
 		BridgeFunctions m_BridgeFunctions;

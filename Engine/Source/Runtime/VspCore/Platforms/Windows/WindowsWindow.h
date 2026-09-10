@@ -46,9 +46,9 @@ namespace Vsp
          */
         void SetDisplayMode(
             WindowProperties::WindowDisplayMode mode,
-            uint32 fullscreenWidth  = 0,
+            uint32 fullscreenWidth = 0,
             uint32 fullscreenHeight = 0,
-            uint32 refreshRate      = 0) override;
+            uint32 refreshRate = 0) override;
 
         /** @brief Return the current display mode. */
         WindowProperties::WindowDisplayMode GetDisplayMode() const override { return m_Properties.DisplayMode; }
@@ -56,8 +56,8 @@ namespace Vsp
     private:
         // ── Window object handles ──────────────────────────────────────
         HINSTANCE     m_HInstance = nullptr;
-        HWND          m_HWnd      = nullptr;
-        HDC           m_HDC       = nullptr;
+        HWND          m_HWnd = nullptr;
+        HDC           m_HDC = nullptr;
         VspString     m_ClassName;               ///< Cached window class name for unregistration
 
         EventCallback    m_EventCallback;
@@ -66,13 +66,13 @@ namespace Vsp
         // ── Saved windowed state (restored when leaving fullscreen) ────
         struct WindowedState
         {
-            RECT  Rect     = {};
-            DWORD Style    = 0;
-            DWORD ExStyle  = 0;
-            int   X        = 0;
-            int   Y        = 0;
-            int   Width    = 0;
-            int   Height   = 0;
+            RECT  Rect = {};
+            DWORD Style = 0;
+            DWORD ExStyle = 0;
+            int   X = 0;
+            int   Y = 0;
+            int   Width = 0;
+            int   Height = 0;
             bool  WasMaximized = false;
         };
         WindowedState m_WindowedState;
@@ -80,15 +80,15 @@ namespace Vsp
         // ── Exclusive fullscreen configuration ──────────────────────────
         struct FullscreenConfig
         {
-            uint32 Width       = 0;
-            uint32 Height      = 0;
+            uint32 Width = 0;
+            uint32 Height = 0;
             uint32 RefreshRate = 0;
         };
         FullscreenConfig m_FullscreenConfig;
 
         // ── State guards ────────────────────────────────────────────────
         bool m_DisplaySettingsChanged = false;   ///< True when ChangeDisplaySettings was used
-        bool m_IsTransitioning        = false;   ///< Suppresses erroneous WM_SIZE during mode transitions
+        bool m_IsTransitioning = false;   ///< Suppresses erroneous WM_SIZE during mode transitions
 
         // ═══════════════════════════════════════════════════════════════
         //  Internal Helpers

@@ -1,7 +1,6 @@
 #include "RuntimePCH.h"
 
-#include <Windows.h>
-
+#include "Common/PlatformMisc.h"
 #include "Core/Application.h"
 #include "Core/Engine.h"
 #include "Core/Input/InputManager.h"
@@ -13,7 +12,6 @@
 namespace Vsp
 {
 	static constexpr const char* kLogTag = "GameEngine";
-	static constexpr float k_fMaximumDeltaSeconds = 0.1f;   // Avoid huge jumps after stalls.
 
 	// -------------------------------------------------------------------------
 	// Implementation
@@ -38,35 +36,13 @@ namespace Vsp
 		uint32 uPendingKeyUpCode = 0;
 		uint32 uKeyUpDueMilliseconds = 0;
 
-		// High-resolution frame timer.
-		LARGE_INTEGER nTimerFrequency = {};
-		LARGE_INTEGER nLastTickCounter = {};
-		bool bHasLastTick = false;
+		// High-resolution frame timer (all platform-specific timing code is
+		// encapsulated in Common/PlatformMisc behind #if VSP_PLATFORM_WINDOWS).
+		HighResolutionTimer FrameTimer;
 
 		float TickFrameTimer()
 		{
-			if (!bHasLastTick)
-			{
-				QueryPerformanceFrequency(&nTimerFrequency);
-				QueryPerformanceCounter(&nLastTickCounter);
-				bHasLastTick = true;
-				return 0.0f;
-			}
-
-			LARGE_INTEGER nCurrentTickCounter;
-			QueryPerformanceCounter(&nCurrentTickCounter);
-
-			const double dDeltaSeconds =
-				static_cast<double>(nCurrentTickCounter.QuadPart - nLastTickCounter.QuadPart) /
-				static_cast<double>(nTimerFrequency.QuadPart);
-			nLastTickCounter = nCurrentTickCounter;
-
-			float fDeltaSeconds = static_cast<float>(dDeltaSeconds);
-			if (fDeltaSeconds > k_fMaximumDeltaSeconds)
-			{
-				fDeltaSeconds = k_fMaximumDeltaSeconds;
-			}
-			return fDeltaSeconds;
+			return FrameTimer.Tick();
 		}
 
 		bool PollWindowSizeChanged() const
@@ -104,16 +80,14 @@ namespace Vsp
 
 			// Drive every managed script instance (Unity-style OnUpdate).
 			scriptEngine.UpdateAllScripts();
+		}
 
-			// Read the primary script's state back and feed the renderer.
-			float fPositionX = 0.0f;
-			float fPositionY = 0.0f;
-			if (uPrimaryScriptInstanceId != 0)
-			{
-				scriptCore.GetTransformPosition(uPrimaryScriptInstanceId, fPositionX, fPositionY);
-			}
-			pRenderer->SetTrianglePosition(fPositionX, fPositionY);
-			pRenderer->SetColorMode(scriptCore.GetColorMode(uPrimaryScriptInstanceId));
+		// Runs the managed render flow: VspEngine.Rendering.RenderFlow builds
+		// the frame (clear + triangle draws) through the native render-command
+		// API; the Vulkan renderer consumes the commands on RenderFrame.
+		void RunRenderFlow()
+		{
+			ScriptEngine::Get().CallRenderFlow(uPrimaryScriptInstanceId);
 		}
 	};
 
@@ -163,8 +137,8 @@ namespace Vsp
 
 		// The CoreCLR host needs DOTNET_ROOT pointing at the shipped runtime,
 		// so nethost/get_hostfxr_path and hostpolicy resolve from there.
-		SetEnvironmentVariableW(L"DOTNET_ROOT", config.sDotNetRootPath.ToWideText().GetData());
-		SetEnvironmentVariableW(L"DOTNET_ROOT(x86)", config.sDotNetRootPath.ToWideText().GetData());
+		PlatformMisc::SetEnvironmentVariableValue("DOTNET_ROOT", config.sDotNetRootPath);
+		PlatformMisc::SetEnvironmentVariableValue("DOTNET_ROOT(x86)", config.sDotNetRootPath);
 
 		// 1. Window + message pump.
 		WindowProperties windowProperties(config.sWindowTitle, config.uWindowWidth, config.uWindowHeight);
@@ -187,9 +161,12 @@ namespace Vsp
 			return false;
 		}
 
-		// 3. CoreCLR script host + automatic creation of all script instances.
+		// 3. CoreCLR script host: resolves the bridge from the engine
+		//    assembly (VspEngine.dll), loads the game Assembly (Assembly.dll)
+		//    and creates every script instance automatically.
 		ScriptEngine& scriptEngine = ScriptEngine::Get();
 		if (!scriptEngine.Initialize(
+			config.sEngineAssemblyPath,
 			config.sAssemblyPath,
 			config.sRuntimeConfigPath,
 			config.sDotNetRootPath,
@@ -250,15 +227,17 @@ namespace Vsp
 				break;
 			}
 
-			// 2. Scripts (C#) update and read-back into the renderer.
+			// 2. Scripts (C#) update, then the managed render flow builds
+			//    the frame's render commands.
 			m_pImpl->UpdateScripts();
+			m_pImpl->RunRenderFlow();
 
 			// 2b. Synthetic key simulation (acceptance tests): post real window
 			// messages into the engine's own queue, so the whole input pipeline
 			// runs exactly as it does for physical keys.
 			{
-				HWND windowHandle = static_cast<HWND>(
-					m_pImpl->pApplication->GetWindow()->GetNativeWindowHandle());
+				void* pWindowHandle =
+					m_pImpl->pApplication->GetWindow()->GetNativeWindowHandle();
 				const uint32 uElapsedMilliseconds =
 					static_cast<uint32>(m_pImpl->fElapsedSeconds * 1000.0f);
 
@@ -270,10 +249,10 @@ namespace Vsp
 					const GameEngineConfig::KeySimulationStep& step =
 						steps[m_pImpl->nNextKeyStepIndex];
 					LOG_INFO(kLogTag, "Simulating key down 0x{:X} at {} ms.", step.uVirtualKeyCode, uElapsedMilliseconds);
-					::PostMessageW(windowHandle, WM_KEYDOWN, step.uVirtualKeyCode, 0);
+					PlatformMisc::PostWindowKeyMessage(pWindowHandle, step.uVirtualKeyCode, true);
 					if (step.uHoldMilliseconds == 0)
 					{
-						::PostMessageW(windowHandle, WM_KEYUP, step.uVirtualKeyCode, 0);
+						PlatformMisc::PostWindowKeyMessage(pWindowHandle, step.uVirtualKeyCode, false);
 					}
 					else
 					{
@@ -287,7 +266,7 @@ namespace Vsp
 					uElapsedMilliseconds >= m_pImpl->uKeyUpDueMilliseconds)
 				{
 					LOG_INFO(kLogTag, "Simulating key up 0x{:X} at {} ms.", m_pImpl->uPendingKeyUpCode, uElapsedMilliseconds);
-					::PostMessageW(windowHandle, WM_KEYUP, m_pImpl->uPendingKeyUpCode, 0);
+					PlatformMisc::PostWindowKeyMessage(pWindowHandle, m_pImpl->uPendingKeyUpCode, false);
 					m_pImpl->uPendingKeyUpCode = 0;
 				}
 			}

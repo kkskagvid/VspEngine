@@ -20,7 +20,11 @@ namespace Vsp
 		uint32 uWindowWidth = 1280;
 		uint32 uWindowHeight = 720;
 
-		// Managed game assembly (VspPlayer.dll).
+		// Engine's managed runtime assembly (VspEngine.dll): hosts the
+		// interop bridge, the script base types and the managed render flow.
+		VspString sEngineAssemblyPath;
+
+		// Game Assembly (Assembly.dll): the assembly holding the user scripts.
 		VspString sAssemblyPath;
 
 		// runtimeconfig.json used by hostfxr (Launch.runtimeconfig.json).

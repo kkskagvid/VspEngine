@@ -2,8 +2,7 @@
 
 #include <cstdio>
 
-#include <Windows.h>
-
+#include "Common/PlatformMisc.h"
 #include "Core/Logging/Log.h"
 #include "Scripting/ScriptEngine.h"
 
@@ -12,7 +11,11 @@ namespace Vsp
 	static constexpr const char* kLogTag = "ScriptEngine";
 
 	// The managed bridge type (assembly-qualified) hosting the entry points.
-	static constexpr const wchar_t* k_sManagedBridgeTypeName = L"VspEngine.NativeBridge, VspPlayer";
+	// It lives in the engine's managed runtime assembly (VspEngine.dll).
+	static constexpr const wchar_t* k_sManagedBridgeTypeName = L"VspEngine.NativeBridge, VspEngine";
+
+	// Number of entry points the bridge hands back in one table call.
+	static constexpr uint32 k_nManagedBridgeFunctionCount = 9;
 
 	// Formats a 32-bit value as an 8-digit hexadecimal string for error text.
 	static VspString FormatHex(int32 nValue)
@@ -39,7 +42,8 @@ namespace Vsp
 	}
 
 	bool ScriptEngine::Initialize(
-		const VspString& sAssemblyPath,
+		const VspString& sEngineAssemblyPath,
+		const VspString& sGameAssemblyPath,
 		const VspString& sRuntimeConfigPath,
 		const VspString& sDotNetRootPath,
 		VspString& outErrorText)
@@ -67,12 +71,20 @@ namespace Vsp
 			return false;
 		}
 
-		if (!LoadManagedEntryPoints(sAssemblyPath, outErrorText))
+		// Bridge entry points live in the engine's managed runtime assembly.
+		if (!LoadManagedEntryPoints(sEngineAssemblyPath, outErrorText))
 		{
 			return false;
 		}
 
-		LOG_INFO(kLogTag, "CoreCLR host initialized (assembly: {})", sAssemblyPath.GetData());
+		// The game Assembly holds the user scripts (the engine loads it here).
+		if (!LoadGameAssembly(sGameAssemblyPath, outErrorText))
+		{
+			return false;
+		}
+
+		LOG_INFO(kLogTag, "CoreCLR host initialized (engine assembly: {}, game assembly: {}).",
+			sEngineAssemblyPath.GetData(), sGameAssemblyPath.GetData());
 		return true;
 	}
 
@@ -89,7 +101,7 @@ namespace Vsp
 		if (m_hHostFxrLibrary != nullptr && m_RuntimeContext != nullptr)
 		{
 			auto pCloseFn = reinterpret_cast<hostfxr_close_fn>(
-				GetProcAddress(m_hHostFxrLibrary, "hostfxr_close"));
+				PlatformMisc::GetDynamicLibraryFunction(m_hHostFxrLibrary, "hostfxr_close"));
 			if (pCloseFn != nullptr)
 			{
 				pCloseFn(m_RuntimeContext);
@@ -99,13 +111,13 @@ namespace Vsp
 
 		if (m_hHostFxrLibrary != nullptr)
 		{
-			FreeLibrary(m_hHostFxrLibrary);
+			PlatformMisc::UnloadDynamicLibrary(m_hHostFxrLibrary);
 			m_hHostFxrLibrary = nullptr;
 		}
 
 		if (m_hNetHostLibrary != nullptr)
 		{
-			FreeLibrary(m_hNetHostLibrary);
+			PlatformMisc::UnloadDynamicLibrary(m_hNetHostLibrary);
 			m_hNetHostLibrary = nullptr;
 		}
 
@@ -123,7 +135,7 @@ namespace Vsp
 		// nethost.dll ships next to the runtime in <DotNetRoot>/host/nethost.dll.
 		VspString sNetHostPath = sDotNetRootPath + "\\host\\nethost.dll";
 
-		m_hNetHostLibrary = LoadLibraryW(sNetHostPath.ToWideText().GetData());
+		m_hNetHostLibrary = PlatformMisc::LoadDynamicLibrary(sNetHostPath);
 		if (m_hNetHostLibrary == nullptr)
 		{
 			outErrorText = "Failed to load nethost.dll from " + sNetHostPath;
@@ -135,7 +147,7 @@ namespace Vsp
 	bool ScriptEngine::LoadHostFxrLibrary(VspString& outErrorText)
 	{
 		auto pGetHostFxrPathFn = reinterpret_cast<GetHostFxrPathFn>(
-			GetProcAddress(m_hNetHostLibrary, "get_hostfxr_path"));
+			PlatformMisc::GetDynamicLibraryFunction(m_hNetHostLibrary, "get_hostfxr_path"));
 		if (pGetHostFxrPathFn == nullptr)
 		{
 			outErrorText = "nethost.dll does not export get_hostfxr_path.";
@@ -154,7 +166,7 @@ namespace Vsp
 			return false;
 		}
 
-		m_hHostFxrLibrary = LoadLibraryW(sHostFxrPathBuffer);
+		m_hHostFxrLibrary = PlatformMisc::LoadDynamicLibrary(VspString(sHostFxrPathBuffer));
 		if (m_hHostFxrLibrary == nullptr)
 		{
 			outErrorText = "Failed to load hostfxr.dll from " + VspString(sHostFxrPathBuffer);
@@ -166,9 +178,9 @@ namespace Vsp
 	bool ScriptEngine::InitializeHostFxrRuntime(const VspString& sRuntimeConfigPath, VspString& outErrorText)
 	{
 		auto pInitializeForRuntimeConfigFn = reinterpret_cast<hostfxr_initialize_for_runtime_config_fn>(
-			GetProcAddress(m_hHostFxrLibrary, "hostfxr_initialize_for_runtime_config"));
+			PlatformMisc::GetDynamicLibraryFunction(m_hHostFxrLibrary, "hostfxr_initialize_for_runtime_config"));
 		auto pGetRuntimeDelegateFn = reinterpret_cast<hostfxr_get_runtime_delegate_fn>(
-			GetProcAddress(m_hHostFxrLibrary, "hostfxr_get_runtime_delegate"));
+			PlatformMisc::GetDynamicLibraryFunction(m_hHostFxrLibrary, "hostfxr_get_runtime_delegate"));
 		if (pInitializeForRuntimeConfigFn == nullptr || pGetRuntimeDelegateFn == nullptr)
 		{
 			outErrorText = "hostfxr.dll is missing required exports.";
@@ -194,52 +206,81 @@ namespace Vsp
 		return true;
 	}
 
-	bool ScriptEngine::LoadManagedEntryPoints(const VspString& sAssemblyPath, VspString& outErrorText)
+	bool ScriptEngine::LoadManagedEntryPoints(const VspString& sEngineAssemblyPath, VspString& outErrorText)
 	{
-		ArrayList<wchar_t> assemblyPathUtf16 = sAssemblyPath.ToWideText();
+		ArrayList<wchar_t> assemblyPathUtf16 = sEngineAssemblyPath.ToWideText();
 		const wchar_t* pAssemblyPath = assemblyPathUtf16.GetData();
 
-		auto FetchEntryPoint = [&](const wchar_t* pMethodName, void*& pFunction)
-		{
-			return FetchManagedEntryPoint(
-				m_LoadAssemblyFunction,
-				pAssemblyPath,
-				k_sManagedBridgeTypeName,
-				pMethodName,
-				&pFunction,
-				outErrorText);
-		};
-
+		// Exactly ONE load_assembly_and_get_function_pointer call loads
+		// VspEngine.dll. Every additional call would load another COPY of the
+		// assembly (each copy carries its own static state), so the single
+		// loaded copy hands the whole entry-point table back in one call.
 		void* pFunction = nullptr;
+		if (!FetchManagedEntryPoint(
+			m_LoadAssemblyFunction,
+			pAssemblyPath,
+			k_sManagedBridgeTypeName,
+			L"GetBridgeFunctionTable",
+			&pFunction,
+			outErrorText))
+		{
+			return false;
+		}
+		m_BridgeFunctions.GetBridgeFunctionTable =
+			reinterpret_cast<ManagedBridgeDetail::GetBridgeFunctionTableFn>(pFunction);
 
-		pFunction = nullptr;
-		if (!FetchEntryPoint(L"CreateInstance", pFunction)) return false;
-		m_BridgeFunctions.CreateInstance = reinterpret_cast<ManagedBridgeDetail::CreateInstanceFn>(pFunction);
+		// Slot order mirrors NativeBridge.GetBridgeFunctionTable:
+		//   0 CreateInstance, 1 GetScriptTypeCount, 2 GetScriptTypeName,
+		//   3 CallOnInit, 4 CallOnStart, 5 CallOnUpdate, 6 DestroyInstance,
+		//   7 CallRenderFlow, 8 LoadGameAssembly.
+		void* pFunctionTable[k_nManagedBridgeFunctionCount] = {};
+		m_BridgeFunctions.GetBridgeFunctionTable(pFunctionTable);
 
-		pFunction = nullptr;
-		if (!FetchEntryPoint(L"GetScriptTypeCount", pFunction)) return false;
-		m_BridgeFunctions.GetScriptTypeCount = reinterpret_cast<ManagedBridgeDetail::GetScriptTypeCountFn>(pFunction);
+		m_BridgeFunctions.CreateInstance = reinterpret_cast<ManagedBridgeDetail::CreateInstanceFn>(pFunctionTable[0]);
+		m_BridgeFunctions.GetScriptTypeCount = reinterpret_cast<ManagedBridgeDetail::GetScriptTypeCountFn>(pFunctionTable[1]);
+		m_BridgeFunctions.GetScriptTypeName = reinterpret_cast<ManagedBridgeDetail::GetScriptTypeNameFn>(pFunctionTable[2]);
+		m_BridgeFunctions.CallOnInit = reinterpret_cast<ManagedBridgeDetail::CallOnInitFn>(pFunctionTable[3]);
+		m_BridgeFunctions.CallOnStart = reinterpret_cast<ManagedBridgeDetail::CallOnStartFn>(pFunctionTable[4]);
+		m_BridgeFunctions.CallOnUpdate = reinterpret_cast<ManagedBridgeDetail::CallOnUpdateFn>(pFunctionTable[5]);
+		m_BridgeFunctions.DestroyInstance = reinterpret_cast<ManagedBridgeDetail::DestroyInstanceFn>(pFunctionTable[6]);
+		m_BridgeFunctions.CallRenderFlow = reinterpret_cast<ManagedBridgeDetail::CallRenderFlowFn>(pFunctionTable[7]);
+		m_BridgeFunctions.LoadGameAssembly = reinterpret_cast<ManagedBridgeDetail::LoadGameAssemblyFn>(pFunctionTable[8]);
 
-		pFunction = nullptr;
-		if (!FetchEntryPoint(L"GetScriptTypeName", pFunction)) return false;
-		m_BridgeFunctions.GetScriptTypeName = reinterpret_cast<ManagedBridgeDetail::GetScriptTypeNameFn>(pFunction);
+		if (m_BridgeFunctions.CreateInstance == nullptr ||
+			m_BridgeFunctions.GetScriptTypeCount == nullptr ||
+			m_BridgeFunctions.GetScriptTypeName == nullptr ||
+			m_BridgeFunctions.CallOnInit == nullptr ||
+			m_BridgeFunctions.CallOnStart == nullptr ||
+			m_BridgeFunctions.CallOnUpdate == nullptr ||
+			m_BridgeFunctions.DestroyInstance == nullptr ||
+			m_BridgeFunctions.CallRenderFlow == nullptr ||
+			m_BridgeFunctions.LoadGameAssembly == nullptr)
+		{
+			outErrorText = "The managed bridge returned an incomplete entry-point table.";
+			return false;
+		}
+		return true;
+	}
 
-		pFunction = nullptr;
-		if (!FetchEntryPoint(L"CallOnInit", pFunction)) return false;
-		m_BridgeFunctions.CallOnInit = reinterpret_cast<ManagedBridgeDetail::CallOnInitFn>(pFunction);
+	bool ScriptEngine::LoadGameAssembly(const VspString& sGameAssemblyPath, VspString& outErrorText)
+	{
+		if (!IsInitialized() || m_BridgeFunctions.LoadGameAssembly == nullptr)
+		{
+			outErrorText = "ScriptEngine is not initialized.";
+			return false;
+		}
 
-		pFunction = nullptr;
-		if (!FetchEntryPoint(L"CallOnStart", pFunction)) return false;
-		m_BridgeFunctions.CallOnStart = reinterpret_cast<ManagedBridgeDetail::CallOnStartFn>(pFunction);
-
-		pFunction = nullptr;
-		if (!FetchEntryPoint(L"CallOnUpdate", pFunction)) return false;
-		m_BridgeFunctions.CallOnUpdate = reinterpret_cast<ManagedBridgeDetail::CallOnUpdateFn>(pFunction);
-
-		pFunction = nullptr;
-		if (!FetchEntryPoint(L"DestroyInstance", pFunction)) return false;
-		m_BridgeFunctions.DestroyInstance = reinterpret_cast<ManagedBridgeDetail::DestroyInstanceFn>(pFunction);
-
+		// The managed bridge loads the game Assembly (Assembly.dll) into its
+		// own load context - the context that holds the single VspEngine.dll
+		// copy - so the bridge's ScriptBehaviour type and the scripts' base
+		// type are the same type.
+		const int32 nResult = m_BridgeFunctions.LoadGameAssembly(
+			sGameAssemblyPath.ToWideText().GetData());
+		if (nResult == 0)
+		{
+			outErrorText = "Failed to load the game Assembly: " + sGameAssemblyPath;
+			return false;
+		}
 		return true;
 	}
 
@@ -414,5 +455,17 @@ namespace Vsp
 		{
 			CallScriptUpdate(m_ScriptInstances[nIndex].uInstanceId);
 		}
+	}
+
+	void ScriptEngine::CallRenderFlow(ScriptInstanceId uPrimaryInstanceId)
+	{
+		if (!IsInitialized() || m_BridgeFunctions.CallRenderFlow == nullptr)
+		{
+			return;
+		}
+
+		// The managed render flow submits the frame's render commands through
+		// the native exports; the renderer consumes them on RenderFrame.
+		m_BridgeFunctions.CallRenderFlow(static_cast<uint32>(uPrimaryInstanceId));
 	}
 }

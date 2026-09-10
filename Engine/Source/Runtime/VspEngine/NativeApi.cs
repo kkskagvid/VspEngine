@@ -74,6 +74,19 @@ namespace VspEngine
 		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
 		internal static extern int VspRenderer_GetColorMode(uint instanceId);
 
+		// ---- Render flow (issued by Rendering.RenderFlow every frame) ----
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspRenderer_BeginFrame();
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspRenderer_SetClearColor(float red, float green, float blue, float alpha);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspRenderer_DrawTriangle(float positionX, float positionY, int colorMode);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspRenderer_EndFrame();
+
 		// ---- Logging ----
 		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
 		internal static extern void VspLog_Message([MarshalAs(UnmanagedType.LPUTF8Str)] string message);

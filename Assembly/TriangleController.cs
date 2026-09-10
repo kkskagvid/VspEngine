@@ -1,9 +1,12 @@
 using System.Numerics;
 
-namespace VspEngine
+using VspEngine;
+
+namespace Assembly
 {
 	/// <summary>
-	/// Acceptance demo: drives the colored triangle from script.
+	/// Acceptance demo living in the game Assembly (Assembly.dll): drives the
+	/// colored triangle from script.
 	/// W = move up, A = move left, S = move down, D = move right,
 	/// R = reset position, T = cycle color (red -> blue -> green -> multicolor).
 	/// </summary>
@@ -21,12 +24,12 @@ namespace VspEngine
 			positionY = 0.0f;
 			Transform.Position = Vector2.Zero;
 			Renderer.SetColorMode(InstanceID, (ColorMode)colorCycle);
-			NativeApi.VspLog_Message("TriangleController: OnInit (InstanceID = " + InstanceID + ")");
+			Debug.Log("TriangleController: OnInit (InstanceID = " + InstanceID + ")");
 		}
 
 		public override void OnStart()
 		{
-			NativeApi.VspLog_Message("TriangleController: OnStart - use W/A/S/D to move, R to reset, T to cycle color");
+			Debug.Log("TriangleController: OnStart - use W/A/S/D to move, R to reset, T to cycle color");
 		}
 
 		public override void OnUpdate()
@@ -55,7 +58,7 @@ namespace VspEngine
 
 		public override void OnDestroy()
 		{
-			NativeApi.VspLog_Message("TriangleController: OnDestroy");
+			Debug.Log("TriangleController: OnDestroy");
 		}
 	}
 }

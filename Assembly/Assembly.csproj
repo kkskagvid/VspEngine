@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <!-- The C++ host supplies its own runtimeconfig.json (Launch.runtimeconfig.json). -->
+        <GenerateRuntimeConfigurationFiles>false</GenerateRuntimeConfigurationFiles>
+
+        <!--
+          Standard layout: binaries land under Engine\Intermediate - nothing
+          is written into the Source tree. (obj/ and the NuGet restore caches
+          are redirected by Directory.Build.props, which is imported early
+          enough for MSBuild/NuGet to honor it.)
+        -->
+        <EngineIntermediateRoot>$(MSBuildProjectDirectory)\..\Engine\Intermediate</EngineIntermediateRoot>
+        <OutputPath>$(EngineIntermediateRoot)\Binaries\$(Configuration)_$(Platform)\</OutputPath>
+        <OutDir>$(OutputPath)</OutDir>
+
+        <!-- 禁用所有自动添加的子目录 -->
+        <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+        <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+        <AppendConfigurationToOutputPath>false</AppendConfigurationToOutputPath>
+        <AppendPlatformToOutputPath>false</AppendPlatformToOutputPath>
+
+        <PlatformTarget>x64</PlatformTarget>
+        <OutputType>Library</OutputType>
+        <Platforms>x64</Platforms>
+        <PackageOutputPath>$(OutputPath)</PackageOutputPath>
+
+        <!-- The game assembly that holds user scripts (loaded by the engine). -->
+        <RootNamespace>Assembly</RootNamespace>
+        <AssemblyName>Assembly</AssemblyName>
+
+        <!-- Never compile anything from stale local obj/bin folders. -->
+        <DefaultItemExcludes>$(DefaultItemExcludes);obj/**;bin/**</DefaultItemExcludes>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Engine\Source\Runtime\VspEngine\VspEngine.csproj" />
+    </ItemGroup>
+
+</Project>

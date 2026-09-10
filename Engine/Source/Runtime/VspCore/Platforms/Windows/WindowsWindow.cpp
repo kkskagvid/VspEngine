@@ -40,18 +40,18 @@ namespace Vsp
         ArrayList<wchar_t> wideWindowTitle = properties.Title.ToWideText();
 
         WNDCLASSEXW windowClass = {};
-        windowClass.cbSize        = sizeof(WNDCLASSEXW);
-        windowClass.style         = CS_HREDRAW | CS_VREDRAW;
-        windowClass.lpfnWndProc   = WindowProc;
-        windowClass.cbClsExtra    = 0;
-        windowClass.cbWndExtra    = 0;
-        windowClass.hInstance     = m_HInstance;
-        windowClass.hIcon         = LoadIconW(m_HInstance, MAKEINTRESOURCEW(105));
-        windowClass.hCursor       = LoadCursorW(nullptr, IDC_ARROW);
+        windowClass.cbSize = sizeof(WNDCLASSEXW);
+        windowClass.style = CS_HREDRAW | CS_VREDRAW;
+        windowClass.lpfnWndProc = WindowProc;
+        windowClass.cbClsExtra = 0;
+        windowClass.cbWndExtra = 0;
+        windowClass.hInstance = m_HInstance;
+        windowClass.hIcon = LoadIconW(m_HInstance, MAKEINTRESOURCEW(105));
+        windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
         windowClass.hbrBackground = nullptr;
-        windowClass.lpszMenuName  = nullptr;
+        windowClass.lpszMenuName = nullptr;
         windowClass.lpszClassName = wideClassName.GetData();
-        windowClass.hIconSm       = LoadIconW(m_HInstance, MAKEINTRESOURCEW(101));
+        windowClass.hIconSm = LoadIconW(m_HInstance, MAKEINTRESOURCEW(101));
 
         if (!RegisterClassExW(&windowClass))
         {
@@ -62,33 +62,33 @@ namespace Vsp
         LOG_INFO(kLogTag, "Registered window class '{}' (hInstance {:#x}).",
             className.GetData(), reinterpret_cast<uintptr_t>(m_HInstance));
 
-        DWORD windowStyle   = 0;
+        DWORD windowStyle = 0;
         DWORD windowExStyle = WS_EX_APPWINDOW | WS_EX_WINDOWEDGE;
 
-        RECT windowRect  = {};
-        int  windowX     = CW_USEDEFAULT;
-        int  windowY     = CW_USEDEFAULT;
+        RECT windowRect = {};
+        int  windowX = CW_USEDEFAULT;
+        int  windowY = CW_USEDEFAULT;
 
         switch (m_Properties.DisplayMode)
         {
         case WindowProperties::WindowDisplayMode::Windowed:
         {
             windowStyle = WS_OVERLAPPEDWINDOW | WS_VISIBLE;
-            windowRect.right  = static_cast<LONG>(m_Properties.Width);
+            windowRect.right = static_cast<LONG>(m_Properties.Width);
             windowRect.bottom = static_cast<LONG>(m_Properties.Height);
             AdjustWindowRectEx(&windowRect, windowStyle, FALSE, windowExStyle);
 
             // Center on the primary monitor's work area (excludes taskbar)
-            HMONITOR monitor = MonitorFromPoint(POINT{0, 0}, MONITOR_DEFAULTTOPRIMARY);
+            HMONITOR monitor = MonitorFromPoint(POINT{ 0, 0 }, MONITOR_DEFAULTTOPRIMARY);
             MONITORINFO mi = {};
             mi.cbSize = sizeof(MONITORINFO);
             if (GetMonitorInfoW(monitor, &mi))
             {
                 const RECT& work = mi.rcWork;
-                LONG winW = windowRect.right  - windowRect.left;
+                LONG winW = windowRect.right - windowRect.left;
                 LONG winH = windowRect.bottom - windowRect.top;
-                windowX = work.left + (work.right  - work.left - winW) / 2;
-                windowY = work.top  + (work.bottom - work.top  - winH) / 2;
+                windowX = work.left + (work.right - work.left - winW) / 2;
+                windowY = work.top + (work.bottom - work.top - winH) / 2;
                 if (windowX < work.left) windowX = work.left;
                 if (windowY < work.top)  windowY = work.top;
             }
@@ -100,14 +100,14 @@ namespace Vsp
             windowStyle = WS_POPUP | WS_VISIBLE;
 
             // Size to the primary monitor
-            HMONITOR monitor = MonitorFromPoint(POINT{0, 0}, MONITOR_DEFAULTTOPRIMARY);
+            HMONITOR monitor = MonitorFromPoint(POINT{ 0, 0 }, MONITOR_DEFAULTTOPRIMARY);
             MONITORINFO mi = {};
             mi.cbSize = sizeof(MONITORINFO);
             if (GetMonitorInfoW(monitor, &mi))
             {
                 windowRect = mi.rcMonitor;
-                windowX    = mi.rcMonitor.left;
-                windowY    = mi.rcMonitor.top;
+                windowX = mi.rcMonitor.left;
+                windowY = mi.rcMonitor.top;
             }
             break;
         }
@@ -121,21 +121,21 @@ namespace Vsp
             uint32 fsH = m_Properties.Height;
             if (ChangeToFullscreenDisplayMode(fsW, fsH, 0))
             {
-                windowRect.right  = static_cast<LONG>(fsW);
+                windowRect.right = static_cast<LONG>(fsW);
                 windowRect.bottom = static_cast<LONG>(fsH);
             }
             else
             {
                 // Fallback: use desktop resolution as a borderless window
                 LOG_WARNING(kLogTag, "Failed to set exclusive fullscreen display mode; falling back to borderless.");
-                HMONITOR monitor = MonitorFromPoint(POINT{0, 0}, MONITOR_DEFAULTTOPRIMARY);
+                HMONITOR monitor = MonitorFromPoint(POINT{ 0, 0 }, MONITOR_DEFAULTTOPRIMARY);
                 MONITORINFO mi = {};
                 mi.cbSize = sizeof(MONITORINFO);
                 if (GetMonitorInfoW(monitor, &mi))
                 {
                     windowRect = mi.rcMonitor;
-                    windowX    = mi.rcMonitor.left;
-                    windowY    = mi.rcMonitor.top;
+                    windowX = mi.rcMonitor.left;
+                    windowY = mi.rcMonitor.top;
                 }
                 RestoreDisplaySettings();
                 m_Properties.DisplayMode = WindowProperties::WindowDisplayMode::WindowedBorderless;
@@ -181,12 +181,12 @@ namespace Vsp
         {
             // When starting in borderless/fullscreen, seed the windowed
             // state with sensible defaults so we can return to windowed later.
-            m_WindowedState.Style   = WS_OVERLAPPEDWINDOW | WS_VISIBLE;
+            m_WindowedState.Style = WS_OVERLAPPEDWINDOW | WS_VISIBLE;
             m_WindowedState.ExStyle = WS_EX_APPWINDOW | WS_EX_WINDOWEDGE;
-            m_WindowedState.Width   = static_cast<int>(properties.Width);
-            m_WindowedState.Height  = static_cast<int>(properties.Height);
-            m_WindowedState.X       = CW_USEDEFAULT;
-            m_WindowedState.Y       = CW_USEDEFAULT;
+            m_WindowedState.Width = static_cast<int>(properties.Width);
+            m_WindowedState.Height = static_cast<int>(properties.Height);
+            m_WindowedState.X = CW_USEDEFAULT;
+            m_WindowedState.Y = CW_USEDEFAULT;
         }
 
         ShowWindow(m_HWnd, SW_SHOW);
@@ -232,7 +232,7 @@ namespace Vsp
         {
             RECT rect;
             GetClientRect(m_HWnd, &rect);
-            outWidth  = rect.right - rect.left;
+            outWidth = rect.right - rect.left;
             outHeight = rect.bottom - rect.top;
         }
         else
@@ -255,8 +255,8 @@ namespace Vsp
             return;
 
         // Store the requested fullscreen configuration
-        m_FullscreenConfig.Width       = fullscreenWidth;
-        m_FullscreenConfig.Height      = fullscreenHeight;
+        m_FullscreenConfig.Width = fullscreenWidth;
+        m_FullscreenConfig.Height = fullscreenHeight;
         m_FullscreenConfig.RefreshRate = refreshRate;
 
         // If the window is minimized, restore it first so the transition
@@ -290,33 +290,33 @@ namespace Vsp
         // configuration. If it was never saved (edge case), use defaults.
         if (m_WindowedState.Width <= 0 || m_WindowedState.Height <= 0)
         {
-            m_WindowedState.Style   = WS_OVERLAPPEDWINDOW | WS_VISIBLE;
+            m_WindowedState.Style = WS_OVERLAPPEDWINDOW | WS_VISIBLE;
             m_WindowedState.ExStyle = WS_EX_APPWINDOW | WS_EX_WINDOWEDGE;
-            m_WindowedState.X       = static_cast<int>(CW_USEDEFAULT);
-            m_WindowedState.Y       = static_cast<int>(CW_USEDEFAULT);
-            m_WindowedState.Width   = static_cast<int>(m_Properties.Width);
-            m_WindowedState.Height  = static_cast<int>(m_Properties.Height);
+            m_WindowedState.X = static_cast<int>(CW_USEDEFAULT);
+            m_WindowedState.Y = static_cast<int>(CW_USEDEFAULT);
+            m_WindowedState.Width = static_cast<int>(m_Properties.Width);
+            m_WindowedState.Height = static_cast<int>(m_Properties.Height);
         }
 
         m_IsTransitioning = true;
 
         // ── 3.  Restore the windowed style, extended-style, and rect ──
-        DWORD style   = m_WindowedState.Style;
+        DWORD style = m_WindowedState.Style;
         DWORD exStyle = m_WindowedState.ExStyle;
 
-        SetWindowLongPtrW(m_HWnd, GWL_STYLE,   static_cast<LONG_PTR>(style));
+        SetWindowLongPtrW(m_HWnd, GWL_STYLE, static_cast<LONG_PTR>(style));
         SetWindowLongPtrW(m_HWnd, GWL_EXSTYLE, static_cast<LONG_PTR>(exStyle));
 
         // ── 4.  The saved rect is already a window rect (from
         // rcNormalPosition); use its dimensions directly without
         // re-running AdjustWindowRectEx.
-        LONG x      = m_WindowedState.X;
-        LONG y      = m_WindowedState.Y;
-        LONG width  = m_WindowedState.Width;
+        LONG x = m_WindowedState.X;
+        LONG y = m_WindowedState.Y;
+        LONG width = m_WindowedState.Width;
         LONG height = m_WindowedState.Height;
 
         // Clamp to a minimum sensible size
-        if (width  < 200) width  = 200;
+        if (width < 200) width = 200;
         if (height < 150) height = 150;
 
         UINT flags = SWP_FRAMECHANGED | SWP_NOZORDER | SWP_NOACTIVATE;
@@ -362,9 +362,9 @@ namespace Vsp
         }
 
         const RECT& area = mi.rcMonitor;
-        int x      = area.left;
-        int y      = area.top;
-        int width  = area.right  - area.left;
+        int x = area.left;
+        int y = area.top;
+        int width = area.right - area.left;
         int height = area.bottom - area.top;
 
         m_IsTransitioning = true;
@@ -388,9 +388,9 @@ namespace Vsp
         }
 
         // ── 2.  Determine target resolution ────────────────────────────
-        uint32 targetWidth  = m_FullscreenConfig.Width;
+        uint32 targetWidth = m_FullscreenConfig.Width;
         uint32 targetHeight = m_FullscreenConfig.Height;
-        uint32 targetRate   = m_FullscreenConfig.RefreshRate;
+        uint32 targetRate = m_FullscreenConfig.RefreshRate;
 
         // If no explicit resolution was provided, query the monitor's
         // current (desktop) resolution so we match it 1:1.
@@ -405,21 +405,21 @@ namespace Vsp
                 dm.dmSize = sizeof(DEVMODEW);
                 if (EnumDisplaySettingsW(mi.szDevice, ENUM_CURRENT_SETTINGS, &dm))
                 {
-                    targetWidth  = dm.dmPelsWidth;
+                    targetWidth = dm.dmPelsWidth;
                     targetHeight = dm.dmPelsHeight;
                     if (targetRate == 0)
                         targetRate = dm.dmDisplayFrequency;
                 }
                 else
                 {
-                    targetWidth  = static_cast<uint32>(mi.rcMonitor.right  - mi.rcMonitor.left);
+                    targetWidth = static_cast<uint32>(mi.rcMonitor.right - mi.rcMonitor.left);
                     targetHeight = static_cast<uint32>(mi.rcMonitor.bottom - mi.rcMonitor.top);
                 }
             }
         }
 
-        m_FullscreenConfig.Width       = targetWidth;
-        m_FullscreenConfig.Height      = targetHeight;
+        m_FullscreenConfig.Width = targetWidth;
+        m_FullscreenConfig.Height = targetHeight;
         m_FullscreenConfig.RefreshRate = targetRate;
 
         // ── 3.  Attempt to change the display mode ──────────────────────
@@ -453,7 +453,7 @@ namespace Vsp
 
     void WindowsWindow::SaveWindowedState()
     {
-        m_WindowedState.Style   = static_cast<DWORD>(GetWindowLongPtrW(m_HWnd, GWL_STYLE));
+        m_WindowedState.Style = static_cast<DWORD>(GetWindowLongPtrW(m_HWnd, GWL_STYLE));
         m_WindowedState.ExStyle = static_cast<DWORD>(GetWindowLongPtrW(m_HWnd, GWL_EXSTYLE));
 
         // Use WINDOWPLACEMENT to record the normal (restored) position and
@@ -465,10 +465,10 @@ namespace Vsp
 
         // rcNormalPosition is the window rect in workspace coordinates for
         // the normal (restored) state — exactly what we need for restoring.
-        m_WindowedState.Rect   = wp.rcNormalPosition;
-        m_WindowedState.X      = wp.rcNormalPosition.left;
-        m_WindowedState.Y      = wp.rcNormalPosition.top;
-        m_WindowedState.Width  = wp.rcNormalPosition.right  - wp.rcNormalPosition.left;
+        m_WindowedState.Rect = wp.rcNormalPosition;
+        m_WindowedState.X = wp.rcNormalPosition.left;
+        m_WindowedState.Y = wp.rcNormalPosition.top;
+        m_WindowedState.Width = wp.rcNormalPosition.right - wp.rcNormalPosition.left;
         m_WindowedState.Height = wp.rcNormalPosition.bottom - wp.rcNormalPosition.top;
     }
 
@@ -476,7 +476,7 @@ namespace Vsp
     {
         if (m_HWnd)
             return MonitorFromWindow(m_HWnd, MONITOR_DEFAULTTONEAREST);
-        return MonitorFromPoint(POINT{0, 0}, MONITOR_DEFAULTTOPRIMARY);
+        return MonitorFromPoint(POINT{ 0, 0 }, MONITOR_DEFAULTTOPRIMARY);
     }
 
     bool WindowsWindow::ChangeToFullscreenDisplayMode(
@@ -503,9 +503,9 @@ namespace Vsp
             return false;
         }
 
-        dm.dmPelsWidth  = width;
+        dm.dmPelsWidth = width;
         dm.dmPelsHeight = height;
-        dm.dmFields     = DM_PELSWIDTH | DM_PELSHEIGHT;
+        dm.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT;
 
         if (refreshRate > 0)
         {
@@ -544,7 +544,7 @@ namespace Vsp
         int x, int y, int width, int height,
         UINT extraFlags)
     {
-        SetWindowLongPtrW(m_HWnd, GWL_STYLE,   static_cast<LONG_PTR>(style));
+        SetWindowLongPtrW(m_HWnd, GWL_STYLE, static_cast<LONG_PTR>(style));
         SetWindowLongPtrW(m_HWnd, GWL_EXSTYLE, static_cast<LONG_PTR>(exStyle));
 
         UINT flags = SWP_FRAMECHANGED | SWP_NOZORDER | extraFlags;
@@ -586,7 +586,7 @@ namespace Vsp
     {
         switch (uMsg)
         {
-        // ── Window Lifecycle ────────────────────────────────────────────
+            // ── Window Lifecycle ────────────────────────────────────────────
 
         case WM_CREATE:
             break;
@@ -614,7 +614,7 @@ namespace Vsp
 
             RECT clientRect;
             GetClientRect(hWnd, &clientRect);
-            int w = clientRect.right  - clientRect.left;
+            int w = clientRect.right - clientRect.left;
             int h = clientRect.bottom - clientRect.top;
 
             // Track window state
@@ -660,14 +660,14 @@ namespace Vsp
         case WM_ACTIVATEAPP:
             break;
 
-        // ── Display Change ──────────────────────────────────────────────
+            // ── Display Change ──────────────────────────────────────────────
 
         case WM_DISPLAYCHANGE:
         {
             // The display resolution changed externally. If we are in
             // exclusive fullscreen we may need to react, but for now we
             // simply forward the information via the resize event.
-            int newWidth  = static_cast<int>(LOWORD(lParam));
+            int newWidth = static_cast<int>(LOWORD(lParam));
             int newHeight = static_cast<int>(HIWORD(lParam));
 
             if (m_EventCallback && !m_IsTransitioning)
@@ -714,7 +714,7 @@ namespace Vsp
             if (m_EventCallback)
             {
                 MouseMovedEvent e(static_cast<float>(GET_X_LPARAM(lParam)),
-                                  static_cast<float>(GET_Y_LPARAM(lParam)));
+                    static_cast<float>(GET_Y_LPARAM(lParam)));
                 m_EventCallback(e);
             }
             break;

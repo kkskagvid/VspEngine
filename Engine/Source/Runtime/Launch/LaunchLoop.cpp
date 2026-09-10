@@ -1,9 +1,8 @@
-#include <Windows.h>
-
 #pragma warning(disable : 4996)
 #include <chrono>
 #include <cstdlib>
 
+#include "Common/PlatformMisc.h"
 #include "Core/Core.h"
 #include "Core/Engine.h"
 #include "Core/Logging/Log.h"
@@ -26,9 +25,10 @@ namespace Vsp
 		uint32 uWindowHeight = 720;
 		uint32 uMaxFrameCount = 0;             // 0 = unlimited
 		bool bShowErrorDialog = true;            // false = write errors to the log only (automation)
-		VspString sAssemblyPath;                 // defaults to <exe dir>\VspPlayer.dll
+		VspString sEngineAssemblyPath;           // defaults to <exe dir>\VspEngine.dll
+		VspString sAssemblyPath;                 // defaults to <exe dir>\Assembly.dll (game Assembly)
 		VspString sRuntimeConfigPath;            // defaults to <exe dir>\Launch.runtimeconfig.json
-		VspString sDotNetRootPath;               // defaults to <exe dir>\..\..\..\Binaries\dotnet\runtime10.0.10
+		VspString sDotNetRootPath;               // defaults to <exe dir>\Binaries\dotnet\runtime\10.0.10
 		ArrayList<GameEngineConfig::KeySimulationStep> KeySimulationSteps;
 		uint32 uKeyScriptCursorMilliseconds = 800;   // First synthetic key fires 800 ms in.
 		ArrayList<GameEngineConfig::FrameCapture> FrameCaptures;
@@ -78,32 +78,6 @@ namespace Vsp
 		return true;
 	}
 
-	// Returns the directory containing Launch.exe, without a trailing slash.
-	static VspString GetExecutableDirectoryPath()
-	{
-		wchar_t sExecutablePathBuffer[2048] = {};
-		const DWORD nLength = GetModuleFileNameW(nullptr, sExecutablePathBuffer, 2048);
-		if (nLength == 0)
-		{
-			return VspString();
-		}
-
-		VspString sExecutablePath(sExecutablePathBuffer);
-
-		// Search backwards for the final path separator.
-		VspString sDirectoryPath;
-		for (size_t nIndex = sExecutablePath.GetByteLength(); nIndex > 0; --nIndex)
-		{
-			const char cCharacter = sExecutablePath.GetData()[nIndex - 1];
-			if (cCharacter == '\\' || cCharacter == '/')
-			{
-				sDirectoryPath = sExecutablePath.GetSubString(0, nIndex - 1);
-				break;
-			}
-		}
-		return sDirectoryPath;
-	}
-
 	// Handles both "--frames=N" and "--frames N" forms.
 	static const wchar_t* ReadValueAfter(const wchar_t* pArgument, const wchar_t* pOptionName)
 	{
@@ -141,6 +115,10 @@ namespace Vsp
 		{
 			options.sWindowTitle = VspString(pValue);
 		}
+		else if ((pValue = ReadValueAfter(pArgument, L"--engine-assembly=")) != nullptr)
+		{
+			options.sEngineAssemblyPath = VspString(pValue);
+		}
 		else if ((pValue = ReadValueAfter(pArgument, L"--assembly=")) != nullptr)
 		{
 			options.sAssemblyPath = VspString(pValue);
@@ -172,11 +150,13 @@ namespace Vsp
 	{
 		LaunchOptions options;
 
-		// Default paths are derived from the executable location.
-		const VspString sExecutableDirectory = GetExecutableDirectoryPath();
-		options.sAssemblyPath = sExecutableDirectory + "\\VspPlayer.dll";
+		// Default paths are derived from the executable location (the
+		// platform-specific lookup is encapsulated in Common/PlatformMisc).
+		const VspString sExecutableDirectory = PlatformMisc::GetExecutableDirectoryPath();
+		options.sEngineAssemblyPath = sExecutableDirectory + "\\VspEngine.dll";
+		options.sAssemblyPath = sExecutableDirectory + "\\Assembly.dll";
 		options.sRuntimeConfigPath = sExecutableDirectory + "\\Launch.runtimeconfig.json";
-		options.sDotNetRootPath = sExecutableDirectory + "\\..\\..\\..\\Binaries\\dotnet\\runtime10.0.10";
+		options.sDotNetRootPath = sExecutableDirectory + "\\Binaries\\dotnet\\runtime\\10.0.10";
 
 		for (int32 nIndex = 1; nIndex < nArgumentCount; ++nIndex)
 		{
@@ -186,7 +166,8 @@ namespace Vsp
 			VspString sArgument(pArguments[nIndex]);
 			const bool bNeedsValue = sArgument.Equals("--frames") ||
 				sArgument.Equals("--width") || sArgument.Equals("--height") ||
-				sArgument.Equals("--title") || sArgument.Equals("--assembly") ||
+				sArgument.Equals("--title") || sArgument.Equals("--engine-assembly") ||
+				sArgument.Equals("--assembly") ||
 				sArgument.Equals("--runtime-config") || sArgument.Equals("--dotnet-root") ||
 				sArgument.Equals("--key") || sArgument.Equals("--capture");
 			if (bNeedsValue && nIndex + 1 < nArgumentCount)
@@ -207,6 +188,10 @@ namespace Vsp
 				else if (sArgument.Equals("--title"))
 				{
 					options.sWindowTitle = VspString(pValue);
+				}
+				else if (sArgument.Equals("--engine-assembly"))
+				{
+					options.sEngineAssemblyPath = VspString(pValue);
 				}
 				else if (sArgument.Equals("--assembly"))
 				{
@@ -279,14 +264,15 @@ namespace Vsp
 			LOG_INFO(kLogTag, "Available output device [{}]: {}", uIndex, deviceRegistry.GetDeviceAt(uIndex)->GetDeviceName());
 		}
 
-		LOG_INFO(kLogTag, "Launch starting (assembly: {}, dotnet root: {}).",
-			options.sAssemblyPath.GetData(), options.sDotNetRootPath.GetData());
+		LOG_INFO(kLogTag, "Launch starting (engine assembly: {}, game assembly: {}, dotnet root: {}).",
+			options.sEngineAssemblyPath.GetData(), options.sAssemblyPath.GetData(), options.sDotNetRootPath.GetData());
 
 		GameEngineConfig config;
 		config.sWindowTitle = options.sWindowTitle;
 		config.uWindowWidth = options.uWindowWidth;
 		config.uWindowHeight = options.uWindowHeight;
 		config.uMaxFrameCount = options.uMaxFrameCount;
+		config.sEngineAssemblyPath = options.sEngineAssemblyPath;
 		config.sAssemblyPath = options.sAssemblyPath;
 		config.sRuntimeConfigPath = options.sRuntimeConfigPath;
 		config.sDotNetRootPath = options.sDotNetRootPath;
