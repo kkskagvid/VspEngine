@@ -90,5 +90,17 @@ namespace VspEngine
 		// ---- Logging ----
 		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
 		internal static extern void VspLog_Message([MarshalAs(UnmanagedType.LPUTF8Str)] string message);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspLog_Debug([MarshalAs(UnmanagedType.LPUTF8Str)] string message);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspLog_Info([MarshalAs(UnmanagedType.LPUTF8Str)] string message);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspLog_Warning([MarshalAs(UnmanagedType.LPUTF8Str)] string message);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspLog_Error([MarshalAs(UnmanagedType.LPUTF8Str)] string message);
 	}
 }

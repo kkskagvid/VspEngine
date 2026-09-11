@@ -1,0 +1,12 @@
+阅读 VspRuntime、VspEngine、Launch 源码，实现下一步项目路线
+项目路线：
+1.
+
+项目要求
+1. 使用 cpp 20， msvc。
+2. 不使用异常处理。
+3. 命名必须清晰且直观，以便于理解函数的目的。
+4. Function names use PascalCase, fields inside classes and inside class functions use Hungarian notation.
+
+验收标准：
+完整测试整个项目 0 错误。
