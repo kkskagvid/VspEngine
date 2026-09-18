@@ -1,4 +1,10 @@
+param(
+    # Directory holding Launch.exe and the shots written by the acceptance run.
+    [string]$RunDirectory = "Engine\Intermediate\Binaries\Debug_x64"
+)
+
 Add-Type -AssemblyName System.Drawing
+
 
 function Analyze-Shot([string]$path)
 {
@@ -52,7 +58,7 @@ function Analyze-Shot([string]$path)
     }
 }
 
-Set-Location "Engine\Intermediate\Binaries\Debug_x64"
+Set-Location $RunDirectory
 $shots = Get-ChildItem shot*.bmp | Sort-Object Name
 $rows = $shots | ForEach-Object { Analyze-Shot $_.FullName }
 $rows | Format-Table -AutoSize

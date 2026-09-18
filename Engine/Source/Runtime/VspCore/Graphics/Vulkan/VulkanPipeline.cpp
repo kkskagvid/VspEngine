@@ -3,7 +3,6 @@
 #include <cstddef>
 
 #include "Core/Logging/Log.h"
-#include "Graphics/Vulkan/Shaders/ShaderBinary.h"
 #include "Graphics/Vulkan/VulkanPipeline.h"
 #include "Graphics/Vulkan/VulkanRHI.h"
 
@@ -17,40 +16,85 @@ namespace Vsp
 		// context always outlives the pipeline.
 	}
 
+	VulkanPipeline::VulkanPipeline(VulkanPipeline&& Other) noexcept
+		: m_VkPipelineLayout(Other.m_VkPipelineLayout)
+		, m_VkPipeline(Other.m_VkPipeline)
+	{
+		Other.m_VkPipelineLayout = VK_NULL_HANDLE;
+		Other.m_VkPipeline = VK_NULL_HANDLE;
+	}
+
+	VulkanPipeline& VulkanPipeline::operator=(VulkanPipeline&& Other) noexcept
+	{
+		if (this != &Other)
+		{
+			m_VkPipelineLayout = Other.m_VkPipelineLayout;
+			m_VkPipeline = Other.m_VkPipeline;
+
+			Other.m_VkPipelineLayout = VK_NULL_HANDLE;
+			Other.m_VkPipeline = VK_NULL_HANDLE;
+		}
+		return *this;
+	}
+
+	VkFormat VulkanPipeline::GetVertexAttributeFormat(uint32 uComponentCount)
+	{
+		switch (uComponentCount)
+		{
+		case 1: return VK_FORMAT_R32_SFLOAT;
+		case 2: return VK_FORMAT_R32G32_SFLOAT;
+		case 3: return VK_FORMAT_R32G32B32_SFLOAT;
+		case 4: return VK_FORMAT_R32G32B32A32_SFLOAT;
+		default: return VK_FORMAT_UNDEFINED;
+		}
+	}
+
+	VkPrimitiveTopology VulkanPipeline::GetPrimitiveTopology(RhiPrimitiveTopology eTopology)
+	{
+		switch (eTopology)
+		{
+		case RhiPrimitiveTopology::LineList: return VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+		case RhiPrimitiveTopology::PointList: return VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
+		case RhiPrimitiveTopology::TriangleList:
+		default: return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+		}
+	}
+
 	bool VulkanPipeline::Create(
 		const VulkanContext& context,
 		VkRenderPass renderPass,
-		VkDescriptorSetLayout descriptorSetLayout)
+		VkDescriptorSetLayout descriptorSetLayout,
+		VkShaderModule vertexShader,
+		VkShaderModule fragmentShader,
+		const RhiGraphicsPipelineState& state)
 	{
 		if (IsValid())
 		{
 			LOG_ERROR(kLogTag, "VulkanPipeline is already created.");
 			return false;
 		}
-
-		const VkDevice device = context.GetDevice();
-
-		// The bindless implementation is the only supported path.
-		// Note: the generated header stores the SPIR-V size in uint32 words;
-		// vkCreateShaderModule expects bytes.
-		VkShaderModule vertexShader = context.CreateShaderModule(
-			Shaders::k_TriangleBindless_vertSpv,
-			Shaders::k_nTriangleBindless_vertSpvSize * sizeof(uint32));
-		VkShaderModule fragmentShader = context.CreateShaderModule(
-			Shaders::k_TriangleBindless_fragSpv,
-			Shaders::k_nTriangleBindless_fragSpvSize * sizeof(uint32));
-
-		if (vertexShader == VK_NULL_HANDLE || fragmentShader == VK_NULL_HANDLE)
+		if (vertexShader == VK_NULL_HANDLE || fragmentShader == VK_NULL_HANDLE ||
+			renderPass == VK_NULL_HANDLE || descriptorSetLayout == VK_NULL_HANDLE)
 		{
+			LOG_ERROR(kLogTag, "A graphics pipeline needs both shader modules, a render pass and a descriptor set layout.");
 			return false;
 		}
 
-		// Push constants: one shared range covering both shader stages (the
-		// GLSL blocks use explicit offsets so the layout matches PushConstants).
+		const VkDevice device = context.GetDevice();
+
+		// Push constants: one shared range covering both shader stages. Vulkan
+		// requires a 4-byte aligned, non-empty range.
+		VkDeviceSize nPushConstantByteSize = state.uPushConstantByteCount;
+		if (nPushConstantByteSize < sizeof(uint32))
+		{
+			nPushConstantByteSize = sizeof(uint32);
+		}
+		nPushConstantByteSize = (nPushConstantByteSize + 3u) & ~static_cast<VkDeviceSize>(3u);
+
 		VkPushConstantRange pushConstantRange = {};
 		pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 		pushConstantRange.offset = 0;
-		pushConstantRange.size = k_nPushConstantByteSize;
+		pushConstantRange.size = static_cast<uint32>(nPushConstantByteSize);
 
 		VkPipelineLayoutCreateInfo layoutCreateInfo = {};
 		layoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -62,17 +106,17 @@ namespace Vsp
 		if (vkCreatePipelineLayout(device, &layoutCreateInfo, nullptr, &m_VkPipelineLayout) != VK_SUCCESS)
 		{
 			LOG_ERROR(kLogTag, "vkCreatePipelineLayout failed.");
-			vkDestroyShaderModule(device, vertexShader, nullptr);
-			vkDestroyShaderModule(device, fragmentShader, nullptr);
 			return false;
 		}
 
-		const bool bPipelineCreated = CreateGraphicsPipeline(
-			device, renderPass, vertexShader, fragmentShader, m_VkPipelineLayout, m_VkPipeline);
-
-		vkDestroyShaderModule(device, vertexShader, nullptr);
-		vkDestroyShaderModule(device, fragmentShader, nullptr);
-		return bPipelineCreated;
+		if (!CreateGraphicsPipeline(
+			device, renderPass, vertexShader, fragmentShader, m_VkPipelineLayout, state, m_VkPipeline))
+		{
+			vkDestroyPipelineLayout(device, m_VkPipelineLayout, nullptr);
+			m_VkPipelineLayout = VK_NULL_HANDLE;
+			return false;
+		}
+		return true;
 	}
 
 	bool VulkanPipeline::CreateGraphicsPipeline(
@@ -81,6 +125,7 @@ namespace Vsp
 		VkShaderModule vertexShader,
 		VkShaderModule fragmentShader,
 		VkPipelineLayout pipelineLayout,
+		const RhiGraphicsPipelineState& state,
 		VkPipeline& outPipeline)
 	{
 		VkPipelineShaderStageCreateInfo shaderStages[2] = {};
@@ -94,38 +139,32 @@ namespace Vsp
 		shaderStages[1].module = fragmentShader;
 		shaderStages[1].pName = "main";
 
-		// Vertex input: one binding, position + color + uv.
+		// Vertex input comes from the state the managed render pipeline built.
 		VkVertexInputBindingDescription vertexBinding = {};
 		vertexBinding.binding = 0;
-		vertexBinding.stride = sizeof(Vertex2D);
+		vertexBinding.stride = state.uVertexStride;
 		vertexBinding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-		VkVertexInputAttributeDescription vertexAttributes[3] = {};
-		vertexAttributes[0].location = 0;
-		vertexAttributes[0].binding = 0;
-		vertexAttributes[0].format = VK_FORMAT_R32G32_SFLOAT;
-		vertexAttributes[0].offset = offsetof(Vertex2D, fPositionX);
-
-		vertexAttributes[1].location = 1;
-		vertexAttributes[1].binding = 0;
-		vertexAttributes[1].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-		vertexAttributes[1].offset = offsetof(Vertex2D, fColorR);
-
-		vertexAttributes[2].location = 2;
-		vertexAttributes[2].binding = 0;
-		vertexAttributes[2].format = VK_FORMAT_R32G32_SFLOAT;
-		vertexAttributes[2].offset = offsetof(Vertex2D, fUvU);
+		VkVertexInputAttributeDescription vertexAttributes[k_nMaxPipelineVertexAttributeCount] = {};
+		for (uint32 uAttributeIndex = 0; uAttributeIndex < state.uVertexAttributeCount; ++uAttributeIndex)
+		{
+			const RhiVertexAttribute& attribute = state.VertexAttributes[uAttributeIndex];
+			vertexAttributes[uAttributeIndex].location = static_cast<uint32>(attribute.nShaderLocation);
+			vertexAttributes[uAttributeIndex].binding = 0;
+			vertexAttributes[uAttributeIndex].format = GetVertexAttributeFormat(attribute.uComponentCount);
+			vertexAttributes[uAttributeIndex].offset = attribute.uByteOffset;
+		}
 
 		VkPipelineVertexInputStateCreateInfo vertexInputInfo = {};
 		vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
 		vertexInputInfo.vertexBindingDescriptionCount = 1;
 		vertexInputInfo.pVertexBindingDescriptions = &vertexBinding;
-		vertexInputInfo.vertexAttributeDescriptionCount = 3;
+		vertexInputInfo.vertexAttributeDescriptionCount = state.uVertexAttributeCount;
 		vertexInputInfo.pVertexAttributeDescriptions = vertexAttributes;
 
 		VkPipelineInputAssemblyStateCreateInfo inputAssembly = {};
 		inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-		inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+		inputAssembly.topology = GetPrimitiveTopology(state.eTopology);
 		inputAssembly.primitiveRestartEnable = VK_FALSE;
 
 		// Dynamic viewport/scissor keep resize handling trivial.
@@ -159,7 +198,7 @@ namespace Vsp
 		colorBlendAttachment.colorWriteMask =
 			VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
 			VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-		colorBlendAttachment.blendEnable = VK_TRUE;
+		colorBlendAttachment.blendEnable = state.bBlendEnabled ? VK_TRUE : VK_FALSE;
 		colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
 		colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
 		colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;

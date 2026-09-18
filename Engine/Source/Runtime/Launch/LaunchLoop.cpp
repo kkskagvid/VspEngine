@@ -24,6 +24,7 @@ namespace Vsp
 		uint32 uWindowWidth = 1280;
 		uint32 uWindowHeight = 720;
 		uint32 uMaxFrameCount = 0;             // 0 = unlimited
+		float fFixedDeltaMilliseconds = 0.0f;    // 0 = wall clock; > 0 = fixed frame step (deterministic runs)
 		bool bShowErrorDialog = true;            // false = write errors to the log only (automation)
 		VspString sEngineAssemblyPath;           // defaults to <exe dir>\VspEngine.dll
 		VspString sAssemblyPath;                 // defaults to <exe dir>\Assembly.dll (game Assembly)
@@ -111,6 +112,10 @@ namespace Vsp
 		{
 			options.uWindowHeight = static_cast<uint32>(wcstoul(pValue, nullptr, 10));
 		}
+		else if ((pValue = ReadValueAfter(pArgument, L"--fixed-delta-time=")) != nullptr)
+		{
+			options.fFixedDeltaMilliseconds = static_cast<float>(wcstod(pValue, nullptr));
+		}
 		else if ((pValue = ReadValueAfter(pArgument, L"--title=")) != nullptr)
 		{
 			options.sWindowTitle = VspString(pValue);
@@ -142,6 +147,34 @@ namespace Vsp
 		}
 	}
 
+	// Locates the shipped .NET runtime relative to the executable. The runtime
+	// is staged either next to the executable (a self-contained run directory)
+	// or stays in the repository's Binaries tree, so the same executable works
+	// from both layouts: the first candidate that actually holds nethost.dll
+	// wins. --dotnet-root overrides the whole probe.
+	static VspString ResolveDefaultDotNetRootPath(const VspString& sExecutableDirectory)
+	{
+		static constexpr uint32 k_nCandidateCount = 3;
+		const VspString sCandidates[k_nCandidateCount] =
+		{
+			sExecutableDirectory + "\\Binaries\\dotnet\\runtime\\10.0.10",
+			sExecutableDirectory + "\\..\\..\\..\\Binaries\\dotnet\\runtime\\10.0.10",
+			sExecutableDirectory + "\\..\\..\\..\\Binaries\\dotnet\\runtime10.0.10",
+		};
+
+		for (uint32 uCandidateIndex = 0; uCandidateIndex < k_nCandidateCount; ++uCandidateIndex)
+		{
+			if (PlatformMisc::DoesFileExist(sCandidates[uCandidateIndex] + "\\host\\nethost.dll"))
+			{
+				return sCandidates[uCandidateIndex];
+			}
+		}
+
+		// Nothing matched: fall back to the staged layout so the error message
+		// names the place the stager would have used.
+		return sCandidates[0];
+	}
+
 	// -------------------------------------------------------------------------
 	// Main loop
 	// -------------------------------------------------------------------------
@@ -156,7 +189,7 @@ namespace Vsp
 		options.sEngineAssemblyPath = sExecutableDirectory + "\\VspEngine.dll";
 		options.sAssemblyPath = sExecutableDirectory + "\\Assembly.dll";
 		options.sRuntimeConfigPath = sExecutableDirectory + "\\Launch.runtimeconfig.json";
-		options.sDotNetRootPath = sExecutableDirectory + "\\Binaries\\dotnet\\runtime\\10.0.10";
+		options.sDotNetRootPath = ResolveDefaultDotNetRootPath(sExecutableDirectory);
 
 		for (int32 nIndex = 1; nIndex < nArgumentCount; ++nIndex)
 		{
@@ -166,6 +199,7 @@ namespace Vsp
 			VspString sArgument(pArguments[nIndex]);
 			const bool bNeedsValue = sArgument.Equals("--frames") ||
 				sArgument.Equals("--width") || sArgument.Equals("--height") ||
+				sArgument.Equals("--fixed-delta-time") ||
 				sArgument.Equals("--title") || sArgument.Equals("--engine-assembly") ||
 				sArgument.Equals("--assembly") ||
 				sArgument.Equals("--runtime-config") || sArgument.Equals("--dotnet-root") ||
@@ -184,6 +218,10 @@ namespace Vsp
 				else if (sArgument.Equals("--height"))
 				{
 					options.uWindowHeight = static_cast<uint32>(wcstoul(pValue, nullptr, 10));
+				}
+				else if (sArgument.Equals("--fixed-delta-time"))
+				{
+					options.fFixedDeltaMilliseconds = static_cast<float>(wcstod(pValue, nullptr));
 				}
 				else if (sArgument.Equals("--title"))
 				{
@@ -272,6 +310,9 @@ namespace Vsp
 		config.uWindowWidth = options.uWindowWidth;
 		config.uWindowHeight = options.uWindowHeight;
 		config.uMaxFrameCount = options.uMaxFrameCount;
+		config.fFixedDeltaSeconds = options.fFixedDeltaMilliseconds > 0.0f
+			? options.fFixedDeltaMilliseconds / 1000.0f
+			: 0.0f;
 		config.sEngineAssemblyPath = options.sEngineAssemblyPath;
 		config.sAssemblyPath = options.sAssemblyPath;
 		config.sRuntimeConfigPath = options.sRuntimeConfigPath;

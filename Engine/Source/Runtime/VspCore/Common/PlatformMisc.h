@@ -33,6 +33,11 @@ namespace Vsp
 		// variable is unset or empty.
 		static uint32 GetEnvironmentVariableValue(const char* pName, char* pBuffer, uint32 uBufferSize);
 
+		// -------- File system --------
+		// True when the path addresses an existing file. Used for the startup
+		// probes that locate the shipped .NET runtime.
+		static bool DoesFileExist(const VspString& sFilePath);
+
 		// -------- Dynamic library loading (DLL / shared object) --------
 		static void* LoadDynamicLibrary(const VspString& sFilePath);
 		static void UnloadDynamicLibrary(void* pLibraryHandle);

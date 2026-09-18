@@ -1,10 +1,13 @@
 #include "RuntimePCH.h"
 
+#include "Classes/Scene.h"
 #include "Common/PlatformMisc.h"
 #include "Core/Application.h"
 #include "Core/Engine.h"
 #include "Core/Input/InputManager.h"
 #include "Core/Logging/Log.h"
+#include "Graphics/GraphicsSystem.h"
+#include "Graphics/RenderCore.h"
 #include "Graphics/Vulkan/VulkanRenderer2D.h"
 #include "Scripting/ScriptCore.h"
 #include "Scripting/ScriptEngine.h"
@@ -72,7 +75,13 @@ namespace Vsp
 			ScriptEngine& scriptEngine = ScriptEngine::Get();
 			ScriptCore& scriptCore = ScriptCore::Get();
 
-			const float fDeltaSeconds = TickFrameTimer();
+			// Acceptance runs replace the wall clock with a fixed step so the
+			// whole run is reproducible; the wall-clock timer keeps ticking
+			// either way, so switching back needs no special handling.
+			const float fWallClockDeltaSeconds = TickFrameTimer();
+			const float fDeltaSeconds = (Config.fFixedDeltaSeconds > 0.0f)
+				? Config.fFixedDeltaSeconds
+				: fWallClockDeltaSeconds;
 			fElapsedSeconds += fDeltaSeconds;
 
 			scriptCore.SetDeltaTime(fDeltaSeconds);
@@ -82,12 +91,13 @@ namespace Vsp
 			scriptEngine.UpdateAllScripts();
 		}
 
-		// Runs the managed render flow: VspEngine.Rendering.RenderFlow builds
-		// the frame (clear + triangle draws) through the native render-command
-		// API; the Vulkan renderer consumes the commands on RenderFrame.
+		// Runs the managed render pipeline: it builds the frame's draw list
+		// from the native scene and records every graphics command through the
+		// wrapped graphics API; the Vulkan backend plays the recorded command
+		// list back on RenderFrame.
 		void RunRenderFlow()
 		{
-			ScriptEngine::Get().CallRenderFlow(uPrimaryScriptInstanceId);
+			ScriptEngine::Get().CallRenderFlow();
 		}
 	};
 
@@ -107,14 +117,24 @@ namespace Vsp
 			return;
 		}
 
-		// Destroy managed instances before the runtime context goes away.
+		// Destroy managed instances (and the scene objects they address)
+		// before the runtime context goes away; the managed render pipeline
+		// releases its graphics resources as part of that shutdown, which is
+		// why the backend must still be alive here.
 		ScriptEngine::Get().Shutdown();
+
+		// Nothing can address the backend past this point.
+		GraphicsSystem::Get().SetActiveBackend(nullptr);
 
 		if (m_pImpl->pRenderer != nullptr)
 		{
 			m_pImpl->pRenderer->Shutdown();
 			m_pImpl->pRenderer.reset();
 		}
+
+		// The scene owns every native object the managed handles addressed; the
+		// scripts are gone, so its tables go with them.
+		Scene::Get().Clear();
 
 		if (m_pImpl->pApplication != nullptr)
 		{
@@ -160,6 +180,10 @@ namespace Vsp
 			outErrorText = "Failed to initialize the Vulkan renderer (see the engine log for details).";
 			return false;
 		}
+
+		// The backend is now the target of every wrapped-graphics-API call the
+		// managed render pipeline makes.
+		GraphicsSystem::Get().SetActiveBackend(m_pImpl->pRenderer.get());
 
 		// 3. CoreCLR script host: resolves the bridge from the engine
 		//    assembly (VspEngine.dll), loads the game Assembly (Assembly.dll)
@@ -288,7 +312,15 @@ namespace Vsp
 				{
 					float fPositionX = 0.0f;
 					float fPositionY = 0.0f;
-					ScriptCore::Get().GetTransformPosition(m_pImpl->uPrimaryScriptInstanceId, fPositionX, fPositionY);
+					float fPositionZ = 0.0f;
+					const Transform* pPrimaryTransform = Scene::Get().FindTransform(
+						Scene::Get().FindGameObjectTransformHandle(
+							ScriptEngine::Get().GetPrimaryScriptGameObjectHandle()));
+					if (pPrimaryTransform != nullptr)
+					{
+						pPrimaryTransform->GetLocalPosition(fPositionX, fPositionY, fPositionZ);
+					}
+
 					LOG_INFO(kLogTag, "Capture at frame {}: script position={:p}, deltaTime={}, elapsed={} ms.",
 						m_pImpl->uFrameCount, Position2D{ fPositionX, fPositionY },
 						ScriptCore::Get().GetDeltaTime(),

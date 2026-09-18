@@ -18,17 +18,14 @@ namespace Vsp
 	bool VulkanDescriptors::Create(
 		const VulkanContext& context,
 		uint32 uFrameCount,
-		const VulkanBuffer* const* ppFrameUniformBuffers,
-		VkImageView textureView,
-		VkSampler textureSampler)
+		const VulkanBuffer* const* ppFrameUniformBuffers)
 	{
 		if (IsValid())
 		{
 			LOG_ERROR(kLogTag, "VulkanDescriptors are already created.");
 			return false;
 		}
-		if (uFrameCount == 0 || uFrameCount > k_nMaxDescriptorSetCount ||
-			ppFrameUniformBuffers == nullptr || textureView == VK_NULL_HANDLE || textureSampler == VK_NULL_HANDLE)
+		if (uFrameCount == 0 || uFrameCount > k_nMaxDescriptorSetCount || ppFrameUniformBuffers == nullptr)
 		{
 			LOG_ERROR(kLogTag, "Invalid descriptor set creation arguments.");
 			return false;
@@ -51,7 +48,8 @@ namespace Vsp
 		bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
 		// One flag entry per layout binding: binding 0 has no flags, binding 1
-		// is partially bound (only slot 0 is written).
+		// is partially bound (only the slots the engine actually created are
+		// written, and shaders only index those).
 		VkDescriptorBindingFlags bindingFlags[2] =
 		{
 			0,
@@ -115,13 +113,9 @@ namespace Vsp
 		}
 		m_nSetCount = uFrameCount;
 
-		// Write the per-frame UBOs + the texture into slot 0 of the bindless
-		// array (partially bound: all other slots stay uninitialized).
-		VkDescriptorImageInfo imageInfo = {};
-		imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		imageInfo.imageView = textureView;
-		imageInfo.sampler = textureSampler;
-
+		// Write the per-frame UBOs. The sampled-image array stays unwritten:
+		// the binding is partially bound, so a shader may only index the slots
+		// WriteTextureSlot filled in.
 		for (uint32 uFrameIndex = 0; uFrameIndex < uFrameCount; ++uFrameIndex)
 		{
 			VkDescriptorBufferInfo bufferInfo = {};
@@ -129,27 +123,59 @@ namespace Vsp
 			bufferInfo.offset = 0;
 			bufferInfo.range = ppFrameUniformBuffers[uFrameIndex]->GetByteSize();
 
-			VkWriteDescriptorSet writes[2] = {};
-			writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			writes[0].dstSet = m_VkDescriptorSets[uFrameIndex];
-			writes[0].dstBinding = 0;
-			writes[0].dstArrayElement = 0;
-			writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-			writes[0].descriptorCount = 1;
-			writes[0].pBufferInfo = &bufferInfo;
+			VkWriteDescriptorSet write = {};
+			write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+			write.dstSet = m_VkDescriptorSets[uFrameIndex];
+			write.dstBinding = 0;
+			write.dstArrayElement = 0;
+			write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+			write.descriptorCount = 1;
+			write.pBufferInfo = &bufferInfo;
 
-			writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			writes[1].dstSet = m_VkDescriptorSets[uFrameIndex];
-			writes[1].dstBinding = 1;
-			writes[1].dstArrayElement = 0;
-			writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-			writes[1].descriptorCount = 1;   // Slot 0 only; the rest stays partially bound.
-			writes[1].pImageInfo = &imageInfo;
-
-			vkUpdateDescriptorSets(device, 2, writes, 0, nullptr);
+			vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
 		}
 
 		LOG_INFO(kLogTag, "Bindless descriptors ready ({} sampled-image slots).", k_nMaxBindlessTextureCount);
+		return true;
+	}
+
+	bool VulkanDescriptors::WriteTextureSlot(
+		const VulkanContext& context,
+		uint32 uBindlessSlot,
+		VkImageView textureView,
+		VkSampler textureSampler)
+	{
+		if (!IsValid() || m_nSetCount == 0)
+		{
+			LOG_ERROR(kLogTag, "Cannot write a texture slot before the descriptor sets exist.");
+			return false;
+		}
+		if (uBindlessSlot >= k_nMaxBindlessTextureCount || textureView == VK_NULL_HANDLE || textureSampler == VK_NULL_HANDLE)
+		{
+			LOG_ERROR(kLogTag, "Invalid bindless texture slot write.");
+			return false;
+		}
+
+		const VkDevice device = context.GetDevice();
+
+		VkDescriptorImageInfo imageInfo = {};
+		imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		imageInfo.imageView = textureView;
+		imageInfo.sampler = textureSampler;
+
+		VkWriteDescriptorSet writes[k_nMaxDescriptorSetCount] = {};
+		for (uint32 uFrameIndex = 0; uFrameIndex < m_nSetCount; ++uFrameIndex)
+		{
+			writes[uFrameIndex].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+			writes[uFrameIndex].dstSet = m_VkDescriptorSets[uFrameIndex];
+			writes[uFrameIndex].dstBinding = 1;
+			writes[uFrameIndex].dstArrayElement = uBindlessSlot;
+			writes[uFrameIndex].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+			writes[uFrameIndex].descriptorCount = 1;
+			writes[uFrameIndex].pImageInfo = &imageInfo;
+		}
+
+		vkUpdateDescriptorSets(device, m_nSetCount, writes, 0, nullptr);
 		return true;
 	}
 

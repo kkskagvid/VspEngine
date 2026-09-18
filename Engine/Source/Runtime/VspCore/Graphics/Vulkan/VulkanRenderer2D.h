@@ -2,8 +2,10 @@
 
 #include <vulkan/vulkan.h>
 
+#include "Core/Templates/ArrayList.h"
 #include "Graphics/IGraphics.h"
 #include "Graphics/RenderCore.h"
+#include "Graphics/RhiTypes.h"
 #include "Graphics/Vulkan/VulkanBuffer.h"
 #include "Graphics/Vulkan/VulkanDescriptors.h"
 #include "Graphics/Vulkan/VulkanImage.h"
@@ -16,51 +18,113 @@ namespace Vsp
 	// -------------------------------------------------------------------------
 	// VulkanRenderer2D
 	// -------------------------------------------------------------------------
-	// Minimal 2D renderer drawing triangles submitted by the managed render
-	// flow. The Vulkan module is split into functional units - the renderer
-	// is the orchestrator that owns and wires them together:
+	// The Vulkan backend behind the wrapped graphics API. It is the
+	// orchestrator that owns and wires the functional units together:
 	//   - VulkanContext (instance + surface + device facade)
 	//   - VulkanSwapChain (swapchain, image views, framebuffers, render pass)
-	//   - VulkanBuffer   (vertex geometry, per-frame camera uniforms)
-	//   - VulkanImage    (the demo texture: image + view + sampler)
+	//   - VulkanBuffer   (per-frame camera uniforms and every managed buffer)
+	//   - VulkanImage    (textures created through CreateTexture)
 	//   - VulkanDescriptors (bindless layout/pool/sets - the only supported path)
-	//   - VulkanPipeline (pipeline layout + graphics pipeline)
-	// RenderFrame() consumes the frame commands collected by RenderCore (the
-	// managed VspEngine render flow submits them through NativeExports) and
-	// records the swapchain command buffer from them.
+	//   - VulkanPipeline (graphics pipelines created through the pipeline builders)
+	//
+	// Two halves:
+	//   - RenderFrame() plays back the command list recorded in RenderCore (the
+	//     managed render pipeline submitted it through NativeExports) into the
+	//     swapchain command buffer;
+	//   - the Create*/Destroy* overrides implement the resource side of the
+	//     wrapped graphics API the managed render pipeline calls.
 	// It only runs the Vulkan 1.3 bindless implementation: devices below
 	// Vulkan 1.3 (or without bindless descriptor indexing) are rejected
 	// during device negotiation - there is no Vulkan 1.2 fallback path.
-	// All errors are logged through the Log module; nothing throws.
+	// All errors are logged through the Log module; nothing throws and every
+	// creation function returns an invalid (0) handle on failure.
 	// -------------------------------------------------------------------------
 #pragma warning(push)
-#pragma warning(disable : 4251)   // Members of non-dll-interface helper classes.
+#pragma warning(disable : 4251)   // ArrayList members: header-only templates.
 	class RUNTIME_API VulkanRenderer2D : public IGraphics
 	{
 	public:
 		static constexpr uint32 k_nMaxFramesInFlight = 2;
 
+		// The presentation engine keeps a reference to the semaphore a submit
+		// signaled until the image is presented again, so there has to be one
+		// render-finished semaphore PER SWAPCHAIN IMAGE - a per-frame-in-flight
+		// semaphore would be re-signaled while still in use.
+		static constexpr uint32 k_nMaxSwapChainImageCount = 8;
+
 		~VulkanRenderer2D() override;
 
+		// -------- Backend lifetime --------
 		bool Initialize(void* pNativeWindowHandle) override;
 		void Shutdown() override;
 		void OnWindowResize(uint32 uWidth, uint32 uHeight) override;
 		bool RenderFrame() override;
 
+		// -------- Wrapped graphics API: buffers --------
+		RhiBufferHandle CreateBuffer(const RhiBufferDescriptor& descriptor) override;
+		void DestroyBuffer(RhiBufferHandle uBuffer) override;
+		bool UpdateBuffer(RhiBufferHandle uBuffer, uint32 uByteOffset, const void* pData, uint32 uByteCount) override;
+
+		// -------- Wrapped graphics API: shaders --------
+		RhiShaderHandle CreateShader(RhiShaderStage eStage, const void* pSpirvCode, uint32 uByteCount) override;
+		void DestroyShader(RhiShaderHandle uShader) override;
+
+		// -------- Wrapped graphics API: textures (bindless slots) --------
+		RhiTextureHandle CreateTexture(const RhiTextureDescriptor& descriptor, const void* pPixelDataRgba8) override;
+		void DestroyTexture(RhiTextureHandle uTexture) override;
+		int32 GetTextureBindlessSlot(RhiTextureHandle uTexture) const override;
+
+		// -------- Wrapped graphics API: pipelines --------
+		RhiPipelineHandle CreateGraphicsPipeline(const RhiGraphicsPipelineState& state) override;
+		void DestroyGraphicsPipeline(RhiPipelineHandle uPipeline) override;
+
+		// -------- Wrapped graphics API: the back buffer --------
+		void GetBackbufferExtent(uint32& outWidth, uint32& outHeight) const override;
+
 		// Reads the most recently presented swapchain image back to the CPU and
 		// writes it as a 32-bit BMP (used by automated acceptance tests).
 		bool CaptureFramebuffer(const VspString& sFilePath);
 
-		VulkanFeaturePath GetFeaturePath() const { return m_Context.GetDeviceProperties().eFeaturePath; }
 		const VulkanDeviceProperties& GetDeviceProperties() const { return m_Context.GetDeviceProperties(); }
 
 	private:
+		// One buffer created through the wrapped graphics API.
+		struct BufferEntry
+		{
+			bool bIsActive = false;
+			bool bIsDynamic = false;
+			VkDeviceSize nByteSize = 0;
+			VulkanBuffer Buffer;
+		};
+
+		// One compiled shader module created through the wrapped graphics API.
+		struct ShaderEntry
+		{
+			bool bIsActive = false;
+			RhiShaderStage eStage = RhiShaderStage::Vertex;
+			VkShaderModule VkShader = VK_NULL_HANDLE;
+		};
+
+		// One texture; uBindlessSlot is where the shaders find it.
+		struct TextureEntry
+		{
+			bool bIsActive = false;
+			uint32 uBindlessSlot = 0;
+			VulkanImage Image;
+		};
+
+		// One graphics pipeline created through the wrapped graphics API.
+		struct PipelineEntry
+		{
+			bool bIsActive = false;
+			VulkanPipeline Pipeline;
+		};
+
 		struct FrameResources
 		{
 			VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
 			VulkanBuffer CameraUniformBuffer;
 			VkSemaphore imageAvailableSemaphore = VK_NULL_HANDLE;
-			VkSemaphore renderFinishedSemaphore = VK_NULL_HANDLE;
 			VkFence inFlightFence = VK_NULL_HANDLE;
 		};
 
@@ -71,16 +135,39 @@ namespace Vsp
 
 		// -------- Creation / destruction helpers --------
 		bool CreateFrameResources();
-		bool CreateTriangleGeometry();
 		void DestroyFrameResources();
-		void DestroyTriangleGeometry();
+
+		void DestroyBuffers();
+		void DestroyShaders();
+		void DestroyTextures();
+		void DestroyPipelines();
+
+		// -------- Resource tables --------
+		// Slot lookup shared by every resource table: handles are 1-based
+		// indices, 0 always means invalid.
+		template <typename EntryType>
+		EntryType* FindResource(ArrayList<EntryType>& Table, uint32 uHandle);
+
+		template <typename EntryType>
+		const EntryType* FindResource(const ArrayList<EntryType>& Table, uint32 uHandle) const;
+
+		// ---- Pipeline builders are resolved through GraphicsSystem, so the
+		// ---- backend only resolves its own handles here.
+		VkShaderModule GetShaderModule(RhiShaderHandle uShader, RhiShaderStage eStage) const;
+		uint32 AcquireBindlessTextureSlot() const;
 
 		// -------- Frame helpers --------
 		void UpdateCameraUniform(uint32 uFrameIndex);
-		void BuildPushConstants(
-			const RenderCore::TriangleDrawCommand& drawCommand,
-			PushConstants& outPushConstants) const;
 		void RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32 uImageIndex);
+
+		// Plays the commands recorded in RenderCore back into the command
+		// buffer. Returns true when the command list opened a render pass
+		// itself (the caller then does not need its default pass).
+		bool PlaybackCommands(VkCommandBuffer commandBuffer, uint32 uImageIndex);
+
+		void RecordDefaultRenderPass(VkCommandBuffer commandBuffer, uint32 uImageIndex);
+		void RecordRenderPassBegin(VkCommandBuffer commandBuffer, uint32 uImageIndex);
+		void RecordFullExtentViewportAndScissor(VkCommandBuffer commandBuffer);
 
 		// -------- Device / swapchain --------
 		VulkanContext m_Context;
@@ -88,17 +175,18 @@ namespace Vsp
 		FrameResources m_Frames[k_nMaxFramesInFlight];
 		uint32 m_nCurrentFrameIndex = 0;
 
-		// -------- Triangle geometry --------
-		VulkanBuffer m_TriangleVertexBuffer;
-
-		// -------- Demo texture (white, used by the bindless path) --------
-		VulkanImage m_DemoTexture;
+		// One render-finished semaphore per swapchain image (see
+		// k_nMaxSwapChainImageCount); indexed by the acquired image.
+		VkSemaphore m_RenderFinishedSemaphores[k_nMaxSwapChainImageCount] = {};
 
 		// -------- Bindless descriptors (the only supported path) --------
 		VulkanDescriptors m_BindlessDescriptors;
 
-		// -------- Pipeline --------
-		VulkanPipeline m_TrianglePipeline;
+		// -------- Resources created through the wrapped graphics API --------
+		ArrayList<BufferEntry> m_Buffers;
+		ArrayList<ShaderEntry> m_Shaders;
+		ArrayList<TextureEntry> m_Textures;
+		ArrayList<PipelineEntry> m_Pipelines;
 
 		// -------- State --------
 		bool m_bIsMinimized = false;

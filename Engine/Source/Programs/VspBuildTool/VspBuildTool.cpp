@@ -713,7 +713,7 @@ static bool ResolveStageFileSource(
 #if VSP_PLATFORM_WINDOWS
 		::GetEnvironmentVariableW(L"VULKAN_SDK", sVulkanSdkRoot, k_nMaxPathLength);
 #endif
-		if (sVulkanSdkRoot[0] != L'\\0')
+		if (sVulkanSdkRoot[0] != L'\0')
 		{
 			JoinPath(pOutSourcePath, uCapacity, sVulkanSdkRoot, L"Bin\\vulkan-1.dll");
 		}
@@ -840,8 +840,25 @@ static bool EnsureDotNetRuntime(const BuildToolOptions& options, bool bListOnly)
 	}
 	else
 	{
-		swprintf_s(sRuntimeSource, k_nMaxPathLength, L"%ls\\Engine\\Binaries\\dotnet\\%ls",
+		// The runtime tree ships in one of two layouts, so probe both before
+		// giving up: the flat "runtime10.0.10" directory and the versioned
+		// "runtime\10.0.10" one.
+		wchar_t sFlatCandidate[k_nMaxPathLength] = {};
+		swprintf_s(sFlatCandidate, k_nMaxPathLength, L"%ls\\Engine\\Binaries\\dotnet\\%ls",
 			options.sRootPath, k_sDotNetRuntimeName);
+
+		wchar_t sVersionedCandidate[k_nMaxPathLength] = {};
+		swprintf_s(sVersionedCandidate, k_nMaxPathLength, L"%ls\\Engine\\Binaries\\dotnet\\runtime\\10.0.10",
+			options.sRootPath);
+
+		if (DirectoryExists(sFlatCandidate))
+		{
+			wcscpy_s(sRuntimeSource, k_nMaxPathLength, sFlatCandidate);
+		}
+		else
+		{
+			wcscpy_s(sRuntimeSource, k_nMaxPathLength, sVersionedCandidate);
+		}
 	}
 
 	if (!DirectoryExists(sRuntimeSource))

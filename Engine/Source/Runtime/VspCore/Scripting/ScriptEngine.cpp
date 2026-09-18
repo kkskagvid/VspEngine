@@ -2,6 +2,7 @@
 
 #include <cstdio>
 
+#include "Classes/Scene.h"
 #include "Common/PlatformMisc.h"
 #include "Core/Logging/Log.h"
 #include "Scripting/ScriptEngine.h"
@@ -15,7 +16,7 @@ namespace Vsp
 	static constexpr const wchar_t* k_sManagedBridgeTypeName = L"VspEngine.NativeBridge, VspEngine";
 
 	// Number of entry points the bridge hands back in one table call.
-	static constexpr uint32 k_nManagedBridgeFunctionCount = 9;
+	static constexpr uint32 k_nManagedBridgeFunctionCount = 10;
 
 	// Formats a 32-bit value as an 8-digit hexadecimal string for error text.
 	static VspString FormatHex(int32 nValue)
@@ -96,6 +97,10 @@ namespace Vsp
 			DestroyScriptInstance(m_ScriptInstances[nInstanceIndex].uInstanceId);
 		}
 		m_ScriptInstances.Clear();
+
+		// The render pipeline owns graphics resources; let it release them
+		// while the backend is still alive.
+		ReleaseRenderPipeline();
 
 		// Close the hostfxr context (CoreCLR itself stays loaded per-process).
 		if (m_hHostFxrLibrary != nullptr && m_RuntimeContext != nullptr)
@@ -232,7 +237,7 @@ namespace Vsp
 		// Slot order mirrors NativeBridge.GetBridgeFunctionTable:
 		//   0 CreateInstance, 1 GetScriptTypeCount, 2 GetScriptTypeName,
 		//   3 CallOnInit, 4 CallOnStart, 5 CallOnUpdate, 6 DestroyInstance,
-		//   7 CallRenderFlow, 8 LoadGameAssembly.
+		//   7 CallRenderFlow, 8 LoadGameAssembly, 9 ReleaseRenderPipeline.
 		void* pFunctionTable[k_nManagedBridgeFunctionCount] = {};
 		m_BridgeFunctions.GetBridgeFunctionTable(pFunctionTable);
 
@@ -245,6 +250,7 @@ namespace Vsp
 		m_BridgeFunctions.DestroyInstance = reinterpret_cast<ManagedBridgeDetail::DestroyInstanceFn>(pFunctionTable[6]);
 		m_BridgeFunctions.CallRenderFlow = reinterpret_cast<ManagedBridgeDetail::CallRenderFlowFn>(pFunctionTable[7]);
 		m_BridgeFunctions.LoadGameAssembly = reinterpret_cast<ManagedBridgeDetail::LoadGameAssemblyFn>(pFunctionTable[8]);
+		m_BridgeFunctions.ReleaseRenderPipeline = reinterpret_cast<ManagedBridgeDetail::ReleaseRenderPipelineFn>(pFunctionTable[9]);
 
 		if (m_BridgeFunctions.CreateInstance == nullptr ||
 			m_BridgeFunctions.GetScriptTypeCount == nullptr ||
@@ -254,7 +260,8 @@ namespace Vsp
 			m_BridgeFunctions.CallOnUpdate == nullptr ||
 			m_BridgeFunctions.DestroyInstance == nullptr ||
 			m_BridgeFunctions.CallRenderFlow == nullptr ||
-			m_BridgeFunctions.LoadGameAssembly == nullptr)
+			m_BridgeFunctions.LoadGameAssembly == nullptr ||
+			m_BridgeFunctions.ReleaseRenderPipeline == nullptr)
 		{
 			outErrorText = "The managed bridge returned an incomplete entry-point table.";
 			return false;
@@ -380,20 +387,55 @@ namespace Vsp
 		// The C++ host owns InstanceID generation (non-negative, 1-based).
 		const ScriptInstanceId uInstanceId = m_nNextInstanceId++;
 
+		// The script's native data lives in the scene: every script instance
+		// owns a GameObject (with its Transform) and the script Component that
+		// is attached to it. The managed ScriptBehaviour only stores the three
+		// handles, so nothing but the handle set crosses the boundary.
+		Scene& scene = Scene::Get();
+		const NativeObjectHandle uGameObjectHandle = scene.CreateGameObject(sTypeName);
+		if (uGameObjectHandle == k_nInvalidObjectHandle)
+		{
+			LOG_ERROR(kLogTag, "Failed to create the game object of script type '{}'.", sTypeName.GetData());
+			return 0;
+		}
+
+		const NativeObjectHandle uComponentHandle = scene.CreateComponent(uGameObjectHandle, ComponentKind::Script);
+		if (uComponentHandle == k_nInvalidObjectHandle)
+		{
+			scene.DestroyGameObject(uGameObjectHandle);
+			return 0;
+		}
+
+		Component* pComponent = scene.FindComponent(uComponentHandle);
+		if (pComponent != nullptr)
+		{
+			pComponent->SetScriptTypeName(sTypeName);
+		}
+
+		const NativeObjectHandle uTransformHandle = scene.FindGameObjectTransformHandle(uGameObjectHandle);
+
 		void* pManagedHandle = m_BridgeFunctions.CreateInstance(
 			static_cast<int32>(uInstanceId),
+			uGameObjectHandle,
+			uTransformHandle,
+			uComponentHandle,
 			sTypeName.ToWideText().GetData());
 		if (pManagedHandle == nullptr)
 		{
+			scene.DestroyGameObject(uGameObjectHandle);
 			return 0;
 		}
 
 		ScriptInstanceEntry entry;
 		entry.uInstanceId = uInstanceId;
 		entry.pManagedHandle = pManagedHandle;
+		entry.uGameObjectHandle = uGameObjectHandle;
+		entry.uTransformHandle = uTransformHandle;
+		entry.uComponentHandle = uComponentHandle;
 		m_ScriptInstances.Add(entry);
 
-		LOG_INFO(kLogTag, "Created script instance with InstanceID {}", uInstanceId);
+		LOG_INFO(kLogTag, "Created script instance with InstanceID {} (game object handle {}).",
+			uInstanceId, uGameObjectHandle);
 		return uInstanceId;
 	}
 
@@ -427,12 +469,22 @@ namespace Vsp
 	void ScriptEngine::DestroyScriptInstance(ScriptInstanceId uInstanceId)
 	{
 		const ScriptInstanceEntry* pEntry = FindInstanceEntry(uInstanceId);
-		if (pEntry == nullptr || m_BridgeFunctions.DestroyInstance == nullptr)
+		if (pEntry == nullptr)
 		{
 			return;
 		}
 
-		m_BridgeFunctions.DestroyInstance(pEntry->pManagedHandle);
+		if (m_BridgeFunctions.DestroyInstance != nullptr)
+		{
+			m_BridgeFunctions.DestroyInstance(pEntry->pManagedHandle);
+		}
+
+		// Releasing the game object also releases its transform and the script
+		// component attached to it.
+		if (pEntry->uGameObjectHandle != k_nInvalidObjectHandle)
+		{
+			Scene::Get().DestroyGameObject(pEntry->uGameObjectHandle);
+		}
 
 		for (size_t nIndex = 0; nIndex < m_ScriptInstances.GetSize(); ++nIndex)
 		{
@@ -457,15 +509,29 @@ namespace Vsp
 		}
 	}
 
-	void ScriptEngine::CallRenderFlow(ScriptInstanceId uPrimaryInstanceId)
+	void ScriptEngine::CallRenderFlow()
 	{
 		if (!IsInitialized() || m_BridgeFunctions.CallRenderFlow == nullptr)
 		{
 			return;
 		}
 
-		// The managed render flow submits the frame's render commands through
-		// the native exports; the renderer consumes them on RenderFrame.
-		m_BridgeFunctions.CallRenderFlow(static_cast<uint32>(uPrimaryInstanceId));
+		// The managed render pipeline builds the frame's draw list from the
+		// native scene and records every graphics command through the wrapped
+		// graphics API; the backend plays the recorded list back on RenderFrame.
+		m_BridgeFunctions.CallRenderFlow();
+	}
+
+	void ScriptEngine::ReleaseRenderPipeline()
+	{
+		if (!IsInitialized() || m_BridgeFunctions.ReleaseRenderPipeline == nullptr)
+		{
+			return;
+		}
+
+		// The pipeline owns graphics resources created through the wrapped
+		// graphics API; releasing them here keeps the resource teardown inside
+		// the managed pipeline instead of the backend's shutdown path.
+		m_BridgeFunctions.ReleaseRenderPipeline();
 	}
 }

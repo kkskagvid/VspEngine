@@ -16,6 +16,35 @@ namespace Vsp
 		// context always outlives the image.
 	}
 
+	VulkanImage::VulkanImage(VulkanImage&& Other) noexcept
+		: m_VkImage(Other.m_VkImage)
+		, m_VkImageMemory(Other.m_VkImageMemory)
+		, m_VkImageView(Other.m_VkImageView)
+		, m_VkSampler(Other.m_VkSampler)
+	{
+		Other.m_VkImage = VK_NULL_HANDLE;
+		Other.m_VkImageMemory = VK_NULL_HANDLE;
+		Other.m_VkImageView = VK_NULL_HANDLE;
+		Other.m_VkSampler = VK_NULL_HANDLE;
+	}
+
+	VulkanImage& VulkanImage::operator=(VulkanImage&& Other) noexcept
+	{
+		if (this != &Other)
+		{
+			m_VkImage = Other.m_VkImage;
+			m_VkImageMemory = Other.m_VkImageMemory;
+			m_VkImageView = Other.m_VkImageView;
+			m_VkSampler = Other.m_VkSampler;
+
+			Other.m_VkImage = VK_NULL_HANDLE;
+			Other.m_VkImageMemory = VK_NULL_HANDLE;
+			Other.m_VkImageView = VK_NULL_HANDLE;
+			Other.m_VkSampler = VK_NULL_HANDLE;
+		}
+		return *this;
+	}
+
 	bool VulkanImage::Create(
 		const VulkanContext& context,
 		uint32 uWidth,

@@ -13,15 +13,72 @@ namespace Vsp
 {
 	static constexpr const char* kLogTag = "VulkanRenderer2D";
 
-	// The acceptance triangle: one vertex per corner, distinct vertex colors.
-	static constexpr Vertex2D k_sTriangleVertices[] =
+	// Both programmable stages may read the push-constant block.
+	static constexpr uint32 k_nPushConstantStageFlags =
+		VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+
+	// -------------------------------------------------------------------------
+	// Resource tables
+	// -------------------------------------------------------------------------
+
+	template <typename EntryType>
+	EntryType* VulkanRenderer2D::FindResource(ArrayList<EntryType>& Table, uint32 uHandle)
 	{
-		// bottom-left (red)    bottom-right (green)  top (blue)
-		{ -0.5f, -0.45f,  1.0f, 0.0f, 0.0f, 1.0f,  0.0f, 0.0f },
-		{  0.5f, -0.45f,  0.0f, 1.0f, 0.0f, 1.0f,  1.0f, 0.0f },
-		{  0.0f,  0.55f,  0.0f, 0.0f, 1.0f, 1.0f,  0.5f, 1.0f },
-	};
-	static constexpr size_t k_nTriangleVertexCount = 3;
+		if (uHandle == k_nInvalidRhiHandle || uHandle > Table.GetSize())
+		{
+			return nullptr;
+		}
+
+		EntryType& entry = Table[uHandle - 1u];
+		return entry.bIsActive ? &entry : nullptr;
+	}
+
+	template <typename EntryType>
+	const EntryType* VulkanRenderer2D::FindResource(const ArrayList<EntryType>& Table, uint32 uHandle) const
+	{
+		return const_cast<VulkanRenderer2D*>(this)->FindResource(
+			const_cast<ArrayList<EntryType>&>(Table), uHandle);
+	}
+
+	VkShaderModule VulkanRenderer2D::GetShaderModule(RhiShaderHandle uShader, RhiShaderStage eStage) const
+	{
+		const ShaderEntry* pEntry = FindResource(m_Shaders, uShader);
+		if (pEntry == nullptr)
+		{
+			LOG_ERROR(kLogTag, "The shader handle {} is not live.", uShader);
+			return VK_NULL_HANDLE;
+		}
+		if (pEntry->eStage != eStage)
+		{
+			LOG_ERROR(kLogTag, "The shader handle {} was created for the other pipeline stage.", uShader);
+			return VK_NULL_HANDLE;
+		}
+		return pEntry->VkShader;
+	}
+
+	uint32 VulkanRenderer2D::AcquireBindlessTextureSlot() const
+	{
+		// The lowest slot no live texture occupies; the bindless array has
+		// VulkanDescriptors::k_nMaxBindlessTextureCount entries.
+		for (uint32 uSlot = 0; uSlot < VulkanDescriptors::k_nMaxBindlessTextureCount; ++uSlot)
+		{
+			bool bIsOccupied = false;
+			for (size_t nTextureIndex = 0; nTextureIndex < m_Textures.GetSize(); ++nTextureIndex)
+			{
+				if (m_Textures[nTextureIndex].bIsActive && m_Textures[nTextureIndex].uBindlessSlot == uSlot)
+				{
+					bIsOccupied = true;
+					break;
+				}
+			}
+
+			if (!bIsOccupied)
+			{
+				return uSlot;
+			}
+		}
+		return UINT32_MAX;
+	}
 
 	// -------------------------------------------------------------------------
 	// Lifecycle
@@ -34,7 +91,8 @@ namespace Vsp
 
 	bool VulkanRenderer2D::Initialize(void* pNativeWindowHandle)
 	{
-		// 1. Context facade (instance + surface + device), swapchain, frames.
+		// 1. Context facade (instance + surface + device), then the swapchain
+		//    and the per-frame resources.
 		if (!m_Context.Initialize("Vsp Engine", pNativeWindowHandle))
 		{
 			// Device below Vulkan 1.3 lands here: the context has already
@@ -44,48 +102,25 @@ namespace Vsp
 
 		if (!m_SwapChain.Initialize(m_Context, 1280, 720)) return false;
 		if (!CreateFrameResources()) return false;
-		if (!CreateTriangleGeometry()) return false;
 
-		// 2. Demo texture (white 8x8 - keeps the acceptance colors exact
-		//    while the bindless array sampling is exercised).
-		constexpr uint32 k_nTextureWidth = 8;
-		constexpr uint32 k_nTextureHeight = 8;
-		uint8_t texturePixels[k_nTextureWidth * k_nTextureHeight * 4];
-		for (uint32 nPixelIndex = 0; nPixelIndex < k_nTextureWidth * k_nTextureHeight; ++nPixelIndex)
-		{
-			texturePixels[nPixelIndex * 4 + 0] = 255;
-			texturePixels[nPixelIndex * 4 + 1] = 255;
-			texturePixels[nPixelIndex * 4 + 2] = 255;
-			texturePixels[nPixelIndex * 4 + 3] = 255;
-		}
-		if (!m_DemoTexture.Create(m_Context, k_nTextureWidth, k_nTextureHeight, texturePixels)) return false;
-
-		// 3. Descriptor set layout first, then the pipeline that references it.
-		//    Bindless is the only supported implementation.
+		// 2. Bindless descriptors: layout + pool + one set per frame. The
+		//    texture slots stay empty until the managed render pipeline creates
+		//    its textures through CreateTexture.
 		const VulkanBuffer* ppFrameUniformBuffers[k_nMaxFramesInFlight] =
 		{
 			&m_Frames[0].CameraUniformBuffer,
 			&m_Frames[1].CameraUniformBuffer,
 		};
-		if (!m_BindlessDescriptors.Create(
-			m_Context,
-			k_nMaxFramesInFlight,
-			ppFrameUniformBuffers,
-			m_DemoTexture.GetView(),
-			m_DemoTexture.GetSampler()))
-		{
-			return false;
-		}
-		if (!m_TrianglePipeline.Create(
-			m_Context,
-			m_SwapChain.GetRenderPass(),
-			m_BindlessDescriptors.GetLayout()))
+		if (!m_BindlessDescriptors.Create(m_Context, k_nMaxFramesInFlight, ppFrameUniformBuffers))
 		{
 			return false;
 		}
 
+		// Nothing else is created here: buffers, shaders, textures and
+		// pipelines all come from the managed render pipeline through the
+		// wrapped graphics API.
 		m_bIsInitialized = true;
-		LOG_INFO(kLogTag, "Renderer ready (feature path: Vulkan 1.3 bindless).");
+		LOG_INFO(kLogTag, "Renderer ready (feature path: Vulkan 1.3 bindless); waiting for the managed render pipeline.");
 		return true;
 	}
 
@@ -96,11 +131,15 @@ namespace Vsp
 			m_Context.WaitIdle();
 		}
 
+		// Pipelines reference the swapchain render pass, the resources
+		// reference the descriptor sets and the frame resources own the
+		// per-frame uniform buffers, so teardown walks the graph backwards.
+		DestroyPipelines();
+		DestroyBuffers();
+		DestroyTextures();
+		DestroyShaders();
 		DestroyFrameResources();
-		DestroyTriangleGeometry();
-		m_DemoTexture.Destroy(m_Context);
 		m_BindlessDescriptors.Destroy(m_Context);
-		m_TrianglePipeline.Destroy(m_Context);
 
 		m_SwapChain.Destroy();
 		m_Context.Destroy();
@@ -123,7 +162,409 @@ namespace Vsp
 		if (!m_SwapChain.Recreate(uWidth, uHeight))
 		{
 			// The recreate failure was already logged inside the swapchain.
+			// Note: the render pass survives a recreate (same format, same
+			// sample count), so the pipelines the managed side created stay
+			// valid across resizes.
 		}
+	}
+
+	void VulkanRenderer2D::DestroyBuffers()
+	{
+		if (!m_Context.IsInitialized())
+		{
+			m_Buffers.Clear();
+			return;
+		}
+
+		for (size_t nEntryIndex = 0; nEntryIndex < m_Buffers.GetSize(); ++nEntryIndex)
+		{
+			if (m_Buffers[nEntryIndex].bIsActive)
+			{
+				m_Buffers[nEntryIndex].Buffer.Destroy(m_Context);
+				m_Buffers[nEntryIndex].bIsActive = false;
+			}
+		}
+		m_Buffers.Clear();
+	}
+
+	void VulkanRenderer2D::DestroyShaders()
+	{
+		if (!m_Context.IsInitialized())
+		{
+			m_Shaders.Clear();
+			return;
+		}
+
+		const VkDevice device = m_Context.GetDevice();
+		for (size_t nEntryIndex = 0; nEntryIndex < m_Shaders.GetSize(); ++nEntryIndex)
+		{
+			ShaderEntry& entry = m_Shaders[nEntryIndex];
+			if (entry.bIsActive && entry.VkShader != VK_NULL_HANDLE)
+			{
+				vkDestroyShaderModule(device, entry.VkShader, nullptr);
+			}
+			entry.VkShader = VK_NULL_HANDLE;
+			entry.bIsActive = false;
+		}
+		m_Shaders.Clear();
+	}
+
+	void VulkanRenderer2D::DestroyTextures()
+	{
+		if (!m_Context.IsInitialized())
+		{
+			m_Textures.Clear();
+			return;
+		}
+
+		for (size_t nEntryIndex = 0; nEntryIndex < m_Textures.GetSize(); ++nEntryIndex)
+		{
+			TextureEntry& entry = m_Textures[nEntryIndex];
+			if (entry.bIsActive)
+			{
+				entry.Image.Destroy(m_Context);
+				entry.bIsActive = false;
+			}
+		}
+		m_Textures.Clear();
+	}
+
+	void VulkanRenderer2D::DestroyPipelines()
+	{
+		if (!m_Context.IsInitialized())
+		{
+			m_Pipelines.Clear();
+			return;
+		}
+
+		for (size_t nEntryIndex = 0; nEntryIndex < m_Pipelines.GetSize(); ++nEntryIndex)
+		{
+			PipelineEntry& entry = m_Pipelines[nEntryIndex];
+			if (entry.bIsActive)
+			{
+				entry.Pipeline.Destroy(m_Context);
+				entry.bIsActive = false;
+			}
+		}
+		m_Pipelines.Clear();
+	}
+
+	// -------------------------------------------------------------------------
+	// Wrapped graphics API: buffers
+	// -------------------------------------------------------------------------
+
+	RhiBufferHandle VulkanRenderer2D::CreateBuffer(const RhiBufferDescriptor& descriptor)
+	{
+		if (!m_bIsInitialized)
+		{
+			LOG_ERROR(kLogTag, "CreateBuffer: the renderer is not initialized.");
+			return k_nInvalidRhiHandle;
+		}
+
+		VkBufferUsageFlags eUsage = descriptor.bIsVertexBuffer
+			? VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
+			: VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+
+		VkMemoryPropertyFlags eProperties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+		if (descriptor.bIsDynamic)
+		{
+			// A dynamic buffer is written straight from the CPU every frame.
+			eProperties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+		}
+		else
+		{
+			// A static buffer is filled through a staging copy.
+			eUsage |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+		}
+
+		BufferEntry entry;
+		entry.bIsActive = true;
+		entry.bIsDynamic = descriptor.bIsDynamic;
+		entry.nByteSize = descriptor.uByteSize;
+		if (!entry.Buffer.Allocate(m_Context, descriptor.uByteSize, eUsage, eProperties))
+		{
+			return k_nInvalidRhiHandle;
+		}
+
+		// Recycle a released slot before growing the table.
+		for (size_t nEntryIndex = 0; nEntryIndex < m_Buffers.GetSize(); ++nEntryIndex)
+		{
+			if (!m_Buffers[nEntryIndex].bIsActive)
+			{
+				m_Buffers[nEntryIndex] = std::move(entry);
+				return static_cast<RhiBufferHandle>(nEntryIndex + 1u);
+			}
+		}
+
+		m_Buffers.Add(std::move(entry));
+		return static_cast<RhiBufferHandle>(m_Buffers.GetSize());
+	}
+
+	void VulkanRenderer2D::DestroyBuffer(RhiBufferHandle uBuffer)
+	{
+		BufferEntry* pEntry = FindResource(m_Buffers, uBuffer);
+		if (pEntry == nullptr)
+		{
+			return;
+		}
+
+		m_Context.WaitIdle();
+		pEntry->Buffer.Destroy(m_Context);
+		pEntry->bIsActive = false;
+		pEntry->bIsDynamic = false;
+		pEntry->nByteSize = 0;
+	}
+
+	bool VulkanRenderer2D::UpdateBuffer(
+		RhiBufferHandle uBuffer,
+		uint32 uByteOffset,
+		const void* pData,
+		uint32 uByteCount)
+	{
+		BufferEntry* pEntry = FindResource(m_Buffers, uBuffer);
+		if (pEntry == nullptr || pData == nullptr || uByteCount == 0)
+		{
+			LOG_ERROR(kLogTag, "UpdateBuffer: the buffer handle is not live or the range is empty.");
+			return false;
+		}
+		if (static_cast<VkDeviceSize>(uByteOffset) + uByteCount > pEntry->nByteSize)
+		{
+			LOG_ERROR(kLogTag, "UpdateBuffer: the range [{}, {}) exceeds the {} byte buffer.",
+				uByteOffset, uByteOffset + uByteCount, static_cast<uint32>(pEntry->nByteSize));
+			return false;
+		}
+
+		if (pEntry->bIsDynamic)
+		{
+			return pEntry->Buffer.WriteData(m_Context, uByteOffset, pData, uByteCount);
+		}
+
+		// Static buffer: upload through a host-visible staging buffer and a
+		// one-shot copy (the helper waits for the queue, so the buffer is
+		// ready before this call returns).
+		VkBuffer stagingBuffer = VK_NULL_HANDLE;
+		VkDeviceMemory stagingBufferMemory = VK_NULL_HANDLE;
+		m_Context.AllocateBuffer(
+			uByteCount,
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			stagingBuffer,
+			stagingBufferMemory);
+		if (stagingBuffer == VK_NULL_HANDLE)
+		{
+			return false;
+		}
+
+		void* pMappedData = nullptr;
+		vkMapMemory(m_Context.GetDevice(), stagingBufferMemory, 0, uByteCount, 0, &pMappedData);
+		memcpy(pMappedData, pData, uByteCount);
+		vkUnmapMemory(m_Context.GetDevice(), stagingBufferMemory);
+
+		VkCommandBuffer commandBuffer = m_Context.BeginOneTimeCommandBuffer();
+		bool bSuccess = (commandBuffer != VK_NULL_HANDLE);
+		if (bSuccess)
+		{
+			VkBufferCopy copyRegion = {};
+			copyRegion.srcOffset = 0;
+			copyRegion.dstOffset = uByteOffset;
+			copyRegion.size = uByteCount;
+			vkCmdCopyBuffer(commandBuffer, stagingBuffer, pEntry->Buffer.GetBuffer(), 1, &copyRegion);
+			bSuccess = m_Context.EndOneTimeCommandBuffer(commandBuffer);
+		}
+
+		vkDestroyBuffer(m_Context.GetDevice(), stagingBuffer, nullptr);
+		vkFreeMemory(m_Context.GetDevice(), stagingBufferMemory, nullptr);
+		return bSuccess;
+	}
+
+	// -------------------------------------------------------------------------
+	// Wrapped graphics API: shaders
+	// -------------------------------------------------------------------------
+
+	RhiShaderHandle VulkanRenderer2D::CreateShader(RhiShaderStage eStage, const void* pSpirvCode, uint32 uByteCount)
+	{
+		if (!m_bIsInitialized)
+		{
+			LOG_ERROR(kLogTag, "CreateShader: the renderer is not initialized.");
+			return k_nInvalidRhiHandle;
+		}
+
+		const VkShaderModule shaderModule = m_Context.CreateShaderModule(
+			static_cast<const uint32*>(pSpirvCode), uByteCount);
+		if (shaderModule == VK_NULL_HANDLE)
+		{
+			return k_nInvalidRhiHandle;
+		}
+
+		ShaderEntry entry;
+		entry.bIsActive = true;
+		entry.eStage = eStage;
+		entry.VkShader = shaderModule;
+
+		for (size_t nEntryIndex = 0; nEntryIndex < m_Shaders.GetSize(); ++nEntryIndex)
+		{
+			if (!m_Shaders[nEntryIndex].bIsActive)
+			{
+				m_Shaders[nEntryIndex] = entry;
+				return static_cast<RhiShaderHandle>(nEntryIndex + 1u);
+			}
+		}
+
+		m_Shaders.Add(entry);
+		return static_cast<RhiShaderHandle>(m_Shaders.GetSize());
+	}
+
+	void VulkanRenderer2D::DestroyShader(RhiShaderHandle uShader)
+	{
+		ShaderEntry* pEntry = FindResource(m_Shaders, uShader);
+		if (pEntry == nullptr)
+		{
+			return;
+		}
+
+		m_Context.WaitIdle();
+		if (pEntry->VkShader != VK_NULL_HANDLE)
+		{
+			vkDestroyShaderModule(m_Context.GetDevice(), pEntry->VkShader, nullptr);
+			pEntry->VkShader = VK_NULL_HANDLE;
+		}
+		pEntry->bIsActive = false;
+	}
+
+	// -------------------------------------------------------------------------
+	// Wrapped graphics API: textures
+	// -------------------------------------------------------------------------
+
+	RhiTextureHandle VulkanRenderer2D::CreateTexture(
+		const RhiTextureDescriptor& descriptor,
+		const void* pPixelDataRgba8)
+	{
+		if (!m_bIsInitialized)
+		{
+			LOG_ERROR(kLogTag, "CreateTexture: the renderer is not initialized.");
+			return k_nInvalidRhiHandle;
+		}
+
+		const uint32 uBindlessSlot = AcquireBindlessTextureSlot();
+		if (uBindlessSlot == UINT32_MAX)
+		{
+			LOG_ERROR(kLogTag, "CreateTexture: every bindless texture slot is taken.");
+			return k_nInvalidRhiHandle;
+		}
+
+		TextureEntry entry;
+		entry.bIsActive = true;
+		entry.uBindlessSlot = uBindlessSlot;
+		if (!entry.Image.Create(m_Context, descriptor.uWidth, descriptor.uHeight, pPixelDataRgba8))
+		{
+			return k_nInvalidRhiHandle;
+		}
+
+		// The descriptor sets are read by in-flight frames, so the update has
+		// to wait for the device to go idle.
+		m_Context.WaitIdle();
+		if (!m_BindlessDescriptors.WriteTextureSlot(
+			m_Context, uBindlessSlot, entry.Image.GetView(), entry.Image.GetSampler()))
+		{
+			entry.Image.Destroy(m_Context);
+			return k_nInvalidRhiHandle;
+		}
+
+		for (size_t nEntryIndex = 0; nEntryIndex < m_Textures.GetSize(); ++nEntryIndex)
+		{
+			if (!m_Textures[nEntryIndex].bIsActive)
+			{
+				m_Textures[nEntryIndex] = std::move(entry);
+				return static_cast<RhiTextureHandle>(nEntryIndex + 1u);
+			}
+		}
+
+		m_Textures.Add(std::move(entry));
+		return static_cast<RhiTextureHandle>(m_Textures.GetSize());
+	}
+
+	void VulkanRenderer2D::DestroyTexture(RhiTextureHandle uTexture)
+	{
+		TextureEntry* pEntry = FindResource(m_Textures, uTexture);
+		if (pEntry == nullptr)
+		{
+			return;
+		}
+
+		m_Context.WaitIdle();
+		pEntry->Image.Destroy(m_Context);
+		pEntry->bIsActive = false;
+	}
+
+	int32 VulkanRenderer2D::GetTextureBindlessSlot(RhiTextureHandle uTexture) const
+	{
+		const TextureEntry* pEntry = FindResource(m_Textures, uTexture);
+		return pEntry != nullptr ? static_cast<int32>(pEntry->uBindlessSlot) : -1;
+	}
+
+	// -------------------------------------------------------------------------
+	// Wrapped graphics API: pipelines
+	// -------------------------------------------------------------------------
+
+	RhiPipelineHandle VulkanRenderer2D::CreateGraphicsPipeline(const RhiGraphicsPipelineState& state)
+	{
+		if (!m_bIsInitialized)
+		{
+			LOG_ERROR(kLogTag, "CreateGraphicsPipeline: the renderer is not initialized.");
+			return k_nInvalidRhiHandle;
+		}
+
+		const VkShaderModule vertexShader = GetShaderModule(state.uVertexShader, RhiShaderStage::Vertex);
+		const VkShaderModule fragmentShader = GetShaderModule(state.uFragmentShader, RhiShaderStage::Fragment);
+		if (vertexShader == VK_NULL_HANDLE || fragmentShader == VK_NULL_HANDLE)
+		{
+			return k_nInvalidRhiHandle;
+		}
+
+		PipelineEntry entry;
+		entry.bIsActive = true;
+		if (!entry.Pipeline.Create(
+			m_Context,
+			m_SwapChain.GetRenderPass(),
+			m_BindlessDescriptors.GetLayout(),
+			vertexShader,
+			fragmentShader,
+			state))
+		{
+			return k_nInvalidRhiHandle;
+		}
+
+		for (size_t nEntryIndex = 0; nEntryIndex < m_Pipelines.GetSize(); ++nEntryIndex)
+		{
+			if (!m_Pipelines[nEntryIndex].bIsActive)
+			{
+				m_Pipelines[nEntryIndex] = std::move(entry);
+				return static_cast<RhiPipelineHandle>(nEntryIndex + 1u);
+			}
+		}
+
+		m_Pipelines.Add(std::move(entry));
+		return static_cast<RhiPipelineHandle>(m_Pipelines.GetSize());
+	}
+
+	void VulkanRenderer2D::DestroyGraphicsPipeline(RhiPipelineHandle uPipeline)
+	{
+		PipelineEntry* pEntry = FindResource(m_Pipelines, uPipeline);
+		if (pEntry == nullptr)
+		{
+			return;
+		}
+
+		m_Context.WaitIdle();
+		pEntry->Pipeline.Destroy(m_Context);
+		pEntry->bIsActive = false;
+	}
+
+	void VulkanRenderer2D::GetBackbufferExtent(uint32& outWidth, uint32& outHeight) const
+	{
+		const VkExtent2D extent = m_SwapChain.GetExtent();
+		outWidth = extent.width;
+		outHeight = extent.height;
 	}
 
 	// -------------------------------------------------------------------------
@@ -147,6 +588,13 @@ namespace Vsp
 			return false;
 		}
 
+		if (m_SwapChain.GetImageCount() > k_nMaxSwapChainImageCount)
+		{
+			LOG_ERROR(kLogTag, "The swapchain has {} images, more than the {} the renderer keeps semaphores for.",
+				m_SwapChain.GetImageCount(), k_nMaxSwapChainImageCount);
+			return false;
+		}
+
 		VkSemaphoreCreateInfo semaphoreCreateInfo = {};
 		semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
@@ -154,13 +602,24 @@ namespace Vsp
 		fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 		fenceCreateInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;   // First frame passes the wait.
 
+		// The presentation engine may still wait on the semaphore a submit
+		// signaled until that image is presented again, so each swapchain image
+		// owns its own render-finished semaphore.
+		for (uint32 uImageIndex = 0; uImageIndex < k_nMaxSwapChainImageCount; ++uImageIndex)
+		{
+			if (vkCreateSemaphore(device, &semaphoreCreateInfo, nullptr, &m_RenderFinishedSemaphores[uImageIndex]) != VK_SUCCESS)
+			{
+				LOG_ERROR(kLogTag, "Failed to create the render-finished semaphores.");
+				return false;
+			}
+		}
+
 		for (uint32 uFrameIndex = 0; uFrameIndex < k_nMaxFramesInFlight; ++uFrameIndex)
 		{
 			FrameResources& frame = m_Frames[uFrameIndex];
 			frame.commandBuffer = commandBuffers[uFrameIndex];
 
 			if (vkCreateSemaphore(device, &semaphoreCreateInfo, nullptr, &frame.imageAvailableSemaphore) != VK_SUCCESS ||
-				vkCreateSemaphore(device, &semaphoreCreateInfo, nullptr, &frame.renderFinishedSemaphore) != VK_SUCCESS ||
 				vkCreateFence(device, &fenceCreateInfo, nullptr, &frame.inFlightFence) != VK_SUCCESS)
 			{
 				LOG_ERROR(kLogTag, "Failed to create frame sync objects.");
@@ -195,8 +654,16 @@ namespace Vsp
 
 			if (frame.inFlightFence != VK_NULL_HANDLE) { vkDestroyFence(device, frame.inFlightFence, nullptr); frame.inFlightFence = VK_NULL_HANDLE; }
 			if (frame.imageAvailableSemaphore != VK_NULL_HANDLE) { vkDestroySemaphore(device, frame.imageAvailableSemaphore, nullptr); frame.imageAvailableSemaphore = VK_NULL_HANDLE; }
-			if (frame.renderFinishedSemaphore != VK_NULL_HANDLE) { vkDestroySemaphore(device, frame.renderFinishedSemaphore, nullptr); frame.renderFinishedSemaphore = VK_NULL_HANDLE; }
 			frame.CameraUniformBuffer.Destroy(m_Context);
+		}
+
+		for (uint32 uImageIndex = 0; uImageIndex < k_nMaxSwapChainImageCount; ++uImageIndex)
+		{
+			if (m_RenderFinishedSemaphores[uImageIndex] != VK_NULL_HANDLE)
+			{
+				vkDestroySemaphore(device, m_RenderFinishedSemaphores[uImageIndex], nullptr);
+				m_RenderFinishedSemaphores[uImageIndex] = VK_NULL_HANDLE;
+			}
 		}
 
 		VkCommandBuffer commandBuffers[k_nMaxFramesInFlight] = {};
@@ -205,68 +672,6 @@ namespace Vsp
 			commandBuffers[uFrameIndex] = m_Frames[uFrameIndex].commandBuffer;
 		}
 		vkFreeCommandBuffers(device, m_Context.GetCommandPool(), k_nMaxFramesInFlight, commandBuffers);
-	}
-
-	// -------------------------------------------------------------------------
-	// Triangle geometry
-	// -------------------------------------------------------------------------
-
-	bool VulkanRenderer2D::CreateTriangleGeometry()
-	{
-		const VkDeviceSize k_nBufferByteSize = sizeof(k_sTriangleVertices);
-
-		VkBuffer stagingBuffer = VK_NULL_HANDLE;
-		VkDeviceMemory stagingBufferMemory = VK_NULL_HANDLE;
-		m_Context.AllocateBuffer(
-			k_nBufferByteSize,
-			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-			stagingBuffer,
-			stagingBufferMemory);
-		if (stagingBuffer == VK_NULL_HANDLE)
-		{
-			return false;
-		}
-
-		void* pMappedData = nullptr;
-		vkMapMemory(m_Context.GetDevice(), stagingBufferMemory, 0, k_nBufferByteSize, 0, &pMappedData);
-		memcpy(pMappedData, k_sTriangleVertices, static_cast<size_t>(k_nBufferByteSize));
-		vkUnmapMemory(m_Context.GetDevice(), stagingBufferMemory);
-
-		if (!m_TriangleVertexBuffer.Allocate(
-			m_Context,
-			k_nBufferByteSize,
-			VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))
-		{
-			vkDestroyBuffer(m_Context.GetDevice(), stagingBuffer, nullptr);
-			vkFreeMemory(m_Context.GetDevice(), stagingBufferMemory, nullptr);
-			return false;
-		}
-
-		// Copy staging -> device local through a one-time command buffer.
-		VkCommandBuffer commandBuffer = m_Context.BeginOneTimeCommandBuffer();
-		if (commandBuffer == VK_NULL_HANDLE)
-		{
-			vkDestroyBuffer(m_Context.GetDevice(), stagingBuffer, nullptr);
-			vkFreeMemory(m_Context.GetDevice(), stagingBufferMemory, nullptr);
-			return false;
-		}
-
-		VkBufferCopy copyRegion = {};
-		copyRegion.size = k_nBufferByteSize;
-		vkCmdCopyBuffer(commandBuffer, stagingBuffer, m_TriangleVertexBuffer.GetBuffer(), 1, &copyRegion);
-
-		const bool bSuccess = m_Context.EndOneTimeCommandBuffer(commandBuffer);
-
-		vkDestroyBuffer(m_Context.GetDevice(), stagingBuffer, nullptr);
-		vkFreeMemory(m_Context.GetDevice(), stagingBufferMemory, nullptr);
-		return bSuccess;
-	}
-
-	void VulkanRenderer2D::DestroyTriangleGeometry()
-	{
-		m_TriangleVertexBuffer.Destroy(m_Context);
 	}
 
 	// -------------------------------------------------------------------------
@@ -283,73 +688,45 @@ namespace Vsp
 		// Draw positions arrive per draw as vertex push-constant offsets, so
 		// the camera matrix is the projection alone.
 		const VkExtent2D extent = m_SwapChain.GetExtent();
-		const float fAspectRatio = static_cast<float>(extent.width) / static_cast<float>(extent.height);
+		if (extent.height == 0)
+		{
+			return;
+		}
 
+		const float fAspectRatio = static_cast<float>(extent.width) / static_cast<float>(extent.height);
 		const glm::mat4 projectionMatrix = glm::ortho(-fAspectRatio, fAspectRatio, 1.0f, -1.0f, -1.0f, 1.0f);
 
 		CameraUniformData uniformData;
 		memcpy(uniformData.m4ViewProjection, &projectionMatrix[0][0], sizeof(uniformData.m4ViewProjection));
 
-		m_Frames[uFrameIndex].CameraUniformBuffer.WriteData(m_Context, &uniformData, sizeof(CameraUniformData));
+		m_Frames[uFrameIndex].CameraUniformBuffer.WriteData(m_Context, 0, &uniformData, sizeof(CameraUniformData));
 	}
 
-	void VulkanRenderer2D::BuildPushConstants(
-		const RenderCore::TriangleDrawCommand& drawCommand,
-		PushConstants& outPushConstants) const
+	void VulkanRenderer2D::RecordFullExtentViewportAndScissor(VkCommandBuffer commandBuffer)
 	{
-		outPushConstants = {};
-		outPushConstants.fPositionOffsetX = drawCommand.fPositionX;
-		outPushConstants.fPositionOffsetY = drawCommand.fPositionY;
-		outPushConstants.uTextureIndex = 0;   // Demo texture lives in slot 0.
-		outPushConstants.nColorMode = drawCommand.nColorMode;
+		const VkExtent2D extent = m_SwapChain.GetExtent();
 
-		switch (drawCommand.nColorMode)
-		{
-		case 0:   // Red
-			outPushConstants.fOverrideColorR = 1.0f;
-			outPushConstants.fOverrideColorG = 0.0f;
-			outPushConstants.fOverrideColorB = 0.0f;
-			outPushConstants.fOverrideColorA = 1.0f;
-			break;
-		case 1:   // Blue
-			outPushConstants.fOverrideColorR = 0.0f;
-			outPushConstants.fOverrideColorG = 0.0f;
-			outPushConstants.fOverrideColorB = 1.0f;
-			outPushConstants.fOverrideColorA = 1.0f;
-			break;
-		case 2:   // Green
-			outPushConstants.fOverrideColorR = 0.0f;
-			outPushConstants.fOverrideColorG = 1.0f;
-			outPushConstants.fOverrideColorB = 0.0f;
-			outPushConstants.fOverrideColorA = 1.0f;
-			break;
-		default:   // MultiColor - vertex colors are used, override ignored.
-			outPushConstants.fOverrideColorR = 0.0f;
-			outPushConstants.fOverrideColorG = 0.0f;
-			outPushConstants.fOverrideColorB = 0.0f;
-			outPushConstants.fOverrideColorA = 0.0f;
-			break;
-		}
+		VkViewport viewport = {};
+		viewport.x = 0.0f;
+		viewport.y = 0.0f;
+		viewport.width = static_cast<float>(extent.width);
+		viewport.height = static_cast<float>(extent.height);
+		viewport.minDepth = 0.0f;
+		viewport.maxDepth = 1.0f;
+		vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+		VkRect2D scissor = {};
+		scissor.offset = { 0, 0 };
+		scissor.extent = extent;
+		vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 	}
 
-	void VulkanRenderer2D::RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32 uImageIndex)
+	void VulkanRenderer2D::RecordRenderPassBegin(VkCommandBuffer commandBuffer, uint32 uImageIndex)
 	{
-		// The frame commands were submitted by the managed render flow
-		// (RenderCore). A frame that was not opened/closed in order falls
-		// back to the default frame so the window always shows something.
-		const RenderCore& renderCore = RenderCore::Get();
-		const bool bHasValidFrame = renderCore.IsFrameValid();
-
-		RenderCore::FrameClearColor clearColor;
-		if (bHasValidFrame)
-		{
-			clearColor = renderCore.GetClearColor();
-		}
-
-		VkCommandBufferBeginInfo beginInfo = {};
-		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-
-		vkBeginCommandBuffer(commandBuffer, &beginInfo);
+		// The clear color is the frame's clear color: BeginFrame /
+		// SetClearColor / EndFrame wrap the whole command list, so it applies
+		// to every render pass the pipeline opens.
+		const RenderCore::FrameClearColor& clearColor = RenderCore::Get().GetClearColor();
 
 		const VkExtent2D extent = m_SwapChain.GetExtent();
 
@@ -367,78 +744,167 @@ namespace Vsp
 
 		vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-		// Viewport/scissor are dynamic states.
-		VkViewport viewport = {};
-		viewport.x = 0.0f;
-		viewport.y = 0.0f;
-		viewport.width = static_cast<float>(extent.width);
-		viewport.height = static_cast<float>(extent.height);
-		viewport.minDepth = 0.0f;
-		viewport.maxDepth = 1.0f;
-		vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+		// A render pass starts with the viewport and scissor covering the whole
+		// attachment; the pipeline may override them per frame.
+		RecordFullExtentViewportAndScissor(commandBuffer);
+	}
 
-		VkRect2D scissor = {};
-		scissor.offset = { 0, 0 };
-		scissor.extent = extent;
-		vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+	void VulkanRenderer2D::RecordDefaultRenderPass(VkCommandBuffer commandBuffer, uint32 uImageIndex)
+	{
+		// Used when the managed render pipeline submitted no usable frame (or
+		// a frame without a render pass): the window still clears to the
+		// frame's clear color instead of showing stale pixels.
+		RecordRenderPassBegin(commandBuffer, uImageIndex);
+		vkCmdEndRenderPass(commandBuffer);
+	}
 
-		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_TrianglePipeline.GetPipeline());
+	bool VulkanRenderer2D::PlaybackCommands(VkCommandBuffer commandBuffer, uint32 uImageIndex)
+	{
+		const ArrayList<RhiCommand>& commands = RenderCore::Get().GetCommands();
 
-		VkDescriptorSet descriptorSet = m_BindlessDescriptors.GetSet(m_nCurrentFrameIndex);
-		vkCmdBindDescriptorSets(
-			commandBuffer,
-			VK_PIPELINE_BIND_POINT_GRAPHICS,
-			m_TrianglePipeline.GetLayout(),
-			0,
-			1,
-			&descriptorSet,
-			0,
-			nullptr);
+		VkPipelineLayout boundPipelineLayout = VK_NULL_HANDLE;
+		bool bRenderPassActive = false;
 
-		const VkDeviceSize k_nVertexBufferOffset = 0;
-		VkBuffer vertexBuffer = m_TriangleVertexBuffer.GetBuffer();
-		vkCmdBindVertexBuffers(
-			commandBuffer, 0, 1, &vertexBuffer, &k_nVertexBufferOffset);
+		// Whether the command list opened a render pass at all: when it did,
+		// the caller must not add its fallback clear pass on top of it.
+		bool bRenderPassSeen = false;
 
-		const uint32 k_nPushConstantStageFlags =
-			VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-
-		if (bHasValidFrame)
+		for (size_t nCommandIndex = 0; nCommandIndex < commands.GetSize(); ++nCommandIndex)
 		{
-			// Draw exactly what the managed render flow submitted.
-			const ArrayList<RenderCore::TriangleDrawCommand>& drawCommands =
-				renderCore.GetTriangleDrawCommands();
-			for (size_t nCommandIndex = 0; nCommandIndex < drawCommands.GetSize(); ++nCommandIndex)
+			const RhiCommand& command = commands[nCommandIndex];
+			switch (command.eType)
 			{
-				PushConstants pushConstants;
-				BuildPushConstants(drawCommands[nCommandIndex], pushConstants);
-				vkCmdPushConstants(
-					commandBuffer,
-					m_TrianglePipeline.GetLayout(),
-					k_nPushConstantStageFlags,
-					0,
-					sizeof(PushConstants),
-					&pushConstants);
-				vkCmdDraw(commandBuffer, static_cast<uint32>(k_nTriangleVertexCount), 1, 0, 0);
+			case RhiCommandType::BeginRenderPass:
+				if (!bRenderPassActive)
+				{
+					RecordRenderPassBegin(commandBuffer, uImageIndex);
+					bRenderPassActive = true;
+					bRenderPassSeen = true;
+				}
+				break;
+
+			case RhiCommandType::EndRenderPass:
+				if (bRenderPassActive)
+				{
+					vkCmdEndRenderPass(commandBuffer);
+					bRenderPassActive = false;
+					boundPipelineLayout = VK_NULL_HANDLE;
+				}
+				break;
+
+			case RhiCommandType::SetViewport:
+			{
+				VkViewport viewport = {};
+				viewport.x = command.fValue[0];
+				viewport.y = command.fValue[1];
+				viewport.width = command.fValue[2];
+				viewport.height = command.fValue[3];
+				viewport.minDepth = 0.0f;
+				viewport.maxDepth = 1.0f;
+				vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+				break;
+			}
+
+			case RhiCommandType::SetScissor:
+			{
+				VkRect2D scissor = {};
+				scissor.offset = { static_cast<int32>(command.uValueA), static_cast<int32>(command.uValueB) };
+				scissor.extent = { command.uValueC, command.uValueD };
+				vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+				break;
+			}
+
+			case RhiCommandType::BindPipeline:
+			{
+				const PipelineEntry* pEntry = FindResource(m_Pipelines, command.uResourceHandle);
+				if (pEntry == nullptr || !pEntry->Pipeline.IsValid())
+				{
+					LOG_WARNING(kLogTag, "Frame playback: pipeline handle {} is not live; the command is skipped.",
+						command.uResourceHandle);
+					break;
+				}
+
+				boundPipelineLayout = pEntry->Pipeline.GetLayout();
+				vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pEntry->Pipeline.GetPipeline());
+
+				// The pipeline layout always carries the bindless set at index
+				// 0, so binding it with the pipeline keeps the two in sync.
+				const VkDescriptorSet descriptorSet = m_BindlessDescriptors.GetSet(m_nCurrentFrameIndex);
+				vkCmdBindDescriptorSets(
+					commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, boundPipelineLayout,
+					0, 1, &descriptorSet, 0, nullptr);
+				break;
+			}
+
+			case RhiCommandType::BindVertexBuffer:
+			{
+				const BufferEntry* pEntry = FindResource(m_Buffers, command.uResourceHandle);
+				if (pEntry == nullptr)
+				{
+					LOG_WARNING(kLogTag, "Frame playback: vertex buffer handle {} is not live; the command is skipped.",
+						command.uResourceHandle);
+					break;
+				}
+
+				const VkDeviceSize k_nVertexBufferOffset = 0;
+				const VkBuffer vertexBuffer = pEntry->Buffer.GetBuffer();
+				vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, &k_nVertexBufferOffset);
+				break;
+			}
+
+			case RhiCommandType::PushConstants:
+				if (boundPipelineLayout != VK_NULL_HANDLE && command.uValueC > 0)
+				{
+					vkCmdPushConstants(
+						commandBuffer,
+						boundPipelineLayout,
+						command.uValueA != 0 ? command.uValueA : k_nPushConstantStageFlags,
+						command.uValueB,
+						command.uValueC,
+						command.PushConstantBytes);
+				}
+				break;
+
+			case RhiCommandType::Draw:
+				if (bRenderPassActive && command.uValueA > 0)
+				{
+					vkCmdDraw(commandBuffer, command.uValueA, 1, command.uValueB, 0);
+				}
+				break;
+
+			default:
+				break;
 			}
 		}
-		else
+
+		if (bRenderPassActive)
 		{
-			// Default frame: multicolor triangle at the origin.
-			RenderCore::TriangleDrawCommand defaultCommand;
-			PushConstants pushConstants;
-			BuildPushConstants(defaultCommand, pushConstants);
-			vkCmdPushConstants(
-				commandBuffer,
-				m_TrianglePipeline.GetLayout(),
-				k_nPushConstantStageFlags,
-				0,
-				sizeof(PushConstants),
-				&pushConstants);
-			vkCmdDraw(commandBuffer, static_cast<uint32>(k_nTriangleVertexCount), 1, 0, 0);
+			vkCmdEndRenderPass(commandBuffer);
+		}
+		return bRenderPassSeen;
+	}
+
+	void VulkanRenderer2D::RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32 uImageIndex)
+	{
+		VkCommandBufferBeginInfo beginInfo = {};
+		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		vkBeginCommandBuffer(commandBuffer, &beginInfo);
+
+		const RenderCore& renderCore = RenderCore::Get();
+		bool bRenderPassRecorded = false;
+
+		if (renderCore.IsFrameValid())
+		{
+			bRenderPassRecorded = PlaybackCommands(commandBuffer, uImageIndex);
 		}
 
-		vkCmdEndRenderPass(commandBuffer);
+		if (!bRenderPassRecorded)
+		{
+			// No usable frame (or one without a render pass): fall back to a
+			// plain clear so the window always shows the frame's background.
+			RecordDefaultRenderPass(commandBuffer, uImageIndex);
+		}
+
 		vkEndCommandBuffer(commandBuffer);
 	}
 
@@ -479,14 +945,15 @@ namespace Vsp
 
 		UpdateCameraUniform(m_nCurrentFrameIndex);
 
+		const uint32 uImageIndex = m_SwapChain.GetCurrentImageIndex();
 		vkResetCommandBuffer(frame.commandBuffer, 0);
-		RecordCommandBuffer(frame.commandBuffer, m_SwapChain.GetCurrentImageIndex());
+		RecordCommandBuffer(frame.commandBuffer, uImageIndex);
 
 		bool bIsOutOfDate = false;
 		if (!m_SwapChain.SubmitAndPresent(
 			frame.commandBuffer,
 			frame.imageAvailableSemaphore,
-			frame.renderFinishedSemaphore,
+			m_RenderFinishedSemaphores[uImageIndex],
 			frame.inFlightFence,
 			bIsOutOfDate))
 		{

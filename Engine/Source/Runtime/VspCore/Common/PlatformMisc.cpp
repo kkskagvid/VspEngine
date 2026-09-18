@@ -86,6 +86,26 @@ namespace Vsp
 	}
 
 	// -------------------------------------------------------------------------
+	// File system
+	// -------------------------------------------------------------------------
+
+	bool PlatformMisc::DoesFileExist(const VspString& sFilePath)
+	{
+		if (sFilePath.IsEmpty())
+		{
+			return false;
+		}
+
+#if VSP_PLATFORM_WINDOWS
+		const DWORD nAttributes = ::GetFileAttributesW(sFilePath.ToWideText().GetData());
+		return nAttributes != INVALID_FILE_ATTRIBUTES && (nAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0;
+#else
+		LOG_ERROR(kLogTag, "DoesFileExist is not implemented on this platform.");
+		return false;
+#endif
+	}
+
+	// -------------------------------------------------------------------------
 	// Dynamic libraries
 	// -------------------------------------------------------------------------
 

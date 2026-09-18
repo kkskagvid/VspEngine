@@ -36,6 +36,13 @@ namespace Vsp
 		// 0 = run until the window closes; > 0 = exit after N frames (smoke tests).
 		uint32 uMaxFrameCount = 0;
 
+		// 0 = advance the frame clock with the wall clock. A positive value
+		// advances it by exactly this many seconds every frame instead, which
+		// makes an automated run independent of how fast the machine renders:
+		// frame N always happens at N * fFixedDeltaSeconds of engine time, so
+		// the scheduled key presses and captures line up on every machine.
+		float fFixedDeltaSeconds = 0.0f;
+
 		// Automated acceptance-test hooks --------------------------------------
 		// Posts synthetic WM_KEYDOWN/WM_KEYUP messages into the engine's own
 		// window, exercising the full input pipeline (Win32 -> events ->

@@ -21,7 +21,15 @@ namespace Vsp
 	class VulkanBuffer
 	{
 	public:
+		VulkanBuffer() = default;
 		~VulkanBuffer();
+
+		// A buffer owns its handles, so it moves but never copies; moving
+		// leaves the source empty (Destroy() on it then does nothing).
+		VulkanBuffer(const VulkanBuffer&) = delete;
+		VulkanBuffer& operator=(const VulkanBuffer&) = delete;
+		VulkanBuffer(VulkanBuffer&& Other) noexcept;
+		VulkanBuffer& operator=(VulkanBuffer&& Other) noexcept;
 
 		// Creates the buffer and its device memory. Returns false on failure.
 		bool Allocate(
@@ -30,9 +38,13 @@ namespace Vsp
 			VkBufferUsageFlags eUsage,
 			VkMemoryPropertyFlags eProperties);
 
-		// Maps, copies nByteSize bytes and unmaps. Fails when the buffer is
-		// not host-visible or nByteSize exceeds the allocated size.
-		bool WriteData(const VulkanContext& context, const void* pData, VkDeviceSize nByteSize);
+		// Maps, copies nByteCount bytes to nByteOffset and unmaps. Fails when
+		// the buffer is not host-visible or the range exceeds the allocation.
+		bool WriteData(
+			const VulkanContext& context,
+			VkDeviceSize nByteOffset,
+			const void* pData,
+			VkDeviceSize nByteCount);
 
 		void Destroy(const VulkanContext& context);
 

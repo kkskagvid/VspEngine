@@ -1,0 +1,263 @@
+#include "RuntimePCH.h"
+
+#include <cstring>
+
+#include "Graphics/GraphicsSystem.h"
+#include "Graphics/RenderCore.h"
+#include "Graphics/Vulkan/Shaders/ShaderBinary.h"
+#include "Scripting/ScriptExport.h"
+
+// -------------------------------------------------------------------------
+// Wrapped-graphics-API exports consumed by managed code (C# -> C++ direction).
+// VspEngine.Rendering.RhiApi P/Invokes these exact names from VspCore.dll.
+// The managed render pipeline is the only caller: it creates device resources,
+// assembles pipeline state and records one frame per engine frame; the active
+// graphics backend plays the recorded commands back while it records the
+// swapchain command buffer.
+// Everything is plain data in/out - no exceptions cross the boundary.
+// -------------------------------------------------------------------------
+
+namespace
+{
+	// The SPIR-V blobs the engine ships with its shaders. The managed render
+	// pipeline reads them through the two accessors below and hands them back
+	// to VspRhi_CreateShader, so shader creation uses the very same path a
+	// pipeline with its own SPIR-V would use.
+	const uint32* GetEmbeddedShaderWords(Vsp::RhiEmbeddedShader eShader, uint32& outWordCount)
+	{
+		switch (eShader)
+		{
+		case Vsp::RhiEmbeddedShader::TriangleBindlessVertex:
+			outWordCount = Vsp::Shaders::k_nTriangleBindless_vertSpvSize;
+			return Vsp::Shaders::k_TriangleBindless_vertSpv;
+
+		case Vsp::RhiEmbeddedShader::TriangleBindlessFragment:
+			outWordCount = Vsp::Shaders::k_nTriangleBindless_fragSpvSize;
+			return Vsp::Shaders::k_TriangleBindless_fragSpv;
+
+		default:
+			outWordCount = 0;
+			return nullptr;
+		}
+	}
+}
+
+// -------- Embedded shaders --------
+
+CSHARP_EXPORT int32 VspRhi_GetEmbeddedShaderByteCount(int32 nEmbeddedShader)
+{
+	uint32 uWordCount = 0;
+	GetEmbeddedShaderWords(static_cast<Vsp::RhiEmbeddedShader>(nEmbeddedShader), uWordCount);
+	return static_cast<int32>(uWordCount * sizeof(uint32));
+}
+
+CSHARP_EXPORT int32 VspRhi_GetEmbeddedShaderBytes(int32 nEmbeddedShader, void* pBuffer, uint32 uBufferCapacity)
+{
+	uint32 uWordCount = 0;
+	const uint32* pWords = GetEmbeddedShaderWords(static_cast<Vsp::RhiEmbeddedShader>(nEmbeddedShader), uWordCount);
+	if (pWords == nullptr || pBuffer == nullptr)
+	{
+		return 0;
+	}
+
+	const uint32 uByteCount = uWordCount * sizeof(uint32);
+	if (uByteCount > uBufferCapacity)
+	{
+		return 0;
+	}
+
+	memcpy(pBuffer, pWords, uByteCount);
+	return static_cast<int32>(uByteCount);
+}
+
+// -------- Buffers --------
+
+CSHARP_EXPORT uint32 VspRhi_CreateBuffer(uint32 uByteSize, int32 bIsVertexBuffer, int32 bIsDynamic)
+{
+	Vsp::RhiBufferDescriptor descriptor;
+	descriptor.uByteSize = uByteSize;
+	descriptor.bIsVertexBuffer = (bIsVertexBuffer != 0);
+	descriptor.bIsDynamic = (bIsDynamic != 0);
+	return Vsp::GraphicsSystem::Get().CreateBuffer(descriptor);
+}
+
+CSHARP_EXPORT void VspRhi_DestroyBuffer(uint32 uBuffer)
+{
+	Vsp::GraphicsSystem::Get().DestroyBuffer(uBuffer);
+}
+
+CSHARP_EXPORT int32 VspRhi_UpdateBuffer(uint32 uBuffer, uint32 uByteOffset, const void* pData, uint32 uByteCount)
+{
+	return Vsp::GraphicsSystem::Get().UpdateBuffer(uBuffer, uByteOffset, pData, uByteCount) ? 1 : 0;
+}
+
+// -------- Shaders --------
+
+CSHARP_EXPORT uint32 VspRhi_CreateShader(int32 nStage, const void* pSpirvCode, uint32 uByteCount)
+{
+	return Vsp::GraphicsSystem::Get().CreateShader(
+		static_cast<Vsp::RhiShaderStage>(nStage), pSpirvCode, uByteCount);
+}
+
+CSHARP_EXPORT void VspRhi_DestroyShader(uint32 uShader)
+{
+	Vsp::GraphicsSystem::Get().DestroyShader(uShader);
+}
+
+// -------- Textures (bindless slots) --------
+
+CSHARP_EXPORT uint32 VspRhi_CreateTexture(uint32 uWidth, uint32 uHeight, const void* pPixelDataRgba8)
+{
+	Vsp::RhiTextureDescriptor descriptor;
+	descriptor.uWidth = uWidth;
+	descriptor.uHeight = uHeight;
+	return Vsp::GraphicsSystem::Get().CreateTexture(descriptor, pPixelDataRgba8);
+}
+
+CSHARP_EXPORT void VspRhi_DestroyTexture(uint32 uTexture)
+{
+	Vsp::GraphicsSystem::Get().DestroyTexture(uTexture);
+}
+
+CSHARP_EXPORT int32 VspRhi_GetTextureBindlessSlot(uint32 uTexture)
+{
+	return Vsp::GraphicsSystem::Get().GetTextureBindlessSlot(uTexture);
+}
+
+// -------- Pipeline state builders --------
+
+CSHARP_EXPORT uint32 VspRhi_CreatePipelineBuilder()
+{
+	return Vsp::GraphicsSystem::Get().CreatePipelineBuilder();
+}
+
+CSHARP_EXPORT void VspRhi_DestroyPipelineBuilder(uint32 uBuilder)
+{
+	Vsp::GraphicsSystem::Get().DestroyPipelineBuilder(uBuilder);
+}
+
+CSHARP_EXPORT void VspRhi_PipelineBuilderSetShader(uint32 uBuilder, int32 nStage, uint32 uShader)
+{
+	Vsp::GraphicsSystem::Get().PipelineBuilderSetShader(
+		uBuilder, static_cast<Vsp::RhiShaderStage>(nStage), uShader);
+}
+
+CSHARP_EXPORT void VspRhi_PipelineBuilderSetVertexStride(uint32 uBuilder, uint32 uVertexStride)
+{
+	Vsp::GraphicsSystem::Get().PipelineBuilderSetVertexStride(uBuilder, uVertexStride);
+}
+
+CSHARP_EXPORT void VspRhi_PipelineBuilderAddVertexAttribute(
+	uint32 uBuilder,
+	int32 nShaderLocation,
+	uint32 uComponentCount,
+	uint32 uByteOffset)
+{
+	Vsp::GraphicsSystem::Get().PipelineBuilderAddVertexAttribute(
+		uBuilder, nShaderLocation, uComponentCount, uByteOffset);
+}
+
+CSHARP_EXPORT void VspRhi_PipelineBuilderSetTopology(uint32 uBuilder, int32 nTopology)
+{
+	Vsp::GraphicsSystem::Get().PipelineBuilderSetTopology(
+		uBuilder, static_cast<Vsp::RhiPrimitiveTopology>(nTopology));
+}
+
+CSHARP_EXPORT void VspRhi_PipelineBuilderSetBlendEnabled(uint32 uBuilder, int32 bBlendEnabled)
+{
+	Vsp::GraphicsSystem::Get().PipelineBuilderSetBlendEnabled(uBuilder, bBlendEnabled != 0);
+}
+
+CSHARP_EXPORT void VspRhi_PipelineBuilderSetPushConstantByteCount(uint32 uBuilder, uint32 uPushConstantByteCount)
+{
+	Vsp::GraphicsSystem::Get().PipelineBuilderSetPushConstantByteCount(uBuilder, uPushConstantByteCount);
+}
+
+CSHARP_EXPORT uint32 VspRhi_PipelineBuilderBuild(uint32 uBuilder)
+{
+	return Vsp::GraphicsSystem::Get().BuildPipelineFromBuilder(uBuilder);
+}
+
+CSHARP_EXPORT void VspRhi_DestroyPipeline(uint32 uPipeline)
+{
+	Vsp::GraphicsSystem::Get().DestroyGraphicsPipeline(uPipeline);
+}
+
+// -------- Frame recording (the command list of one frame) --------
+
+CSHARP_EXPORT void VspRhi_BeginFrame()
+{
+	Vsp::RenderCore::Get().BeginFrame();
+}
+
+CSHARP_EXPORT void VspRhi_EndFrame()
+{
+	Vsp::RenderCore::Get().EndFrame();
+}
+
+CSHARP_EXPORT int32 VspRhi_IsFrameValid()
+{
+	return Vsp::RenderCore::Get().IsFrameValid() ? 1 : 0;
+}
+
+CSHARP_EXPORT void VspRhi_SetClearColor(float fColorR, float fColorG, float fColorB, float fColorA)
+{
+	Vsp::RenderCore::Get().SetClearColor(fColorR, fColorG, fColorB, fColorA);
+}
+
+CSHARP_EXPORT void VspRhi_CmdBeginRenderPass()
+{
+	Vsp::RenderCore::Get().BeginRenderPass();
+}
+
+CSHARP_EXPORT void VspRhi_CmdEndRenderPass()
+{
+	Vsp::RenderCore::Get().EndRenderPass();
+}
+
+CSHARP_EXPORT void VspRhi_CmdSetViewport(float fX, float fY, float fWidth, float fHeight)
+{
+	Vsp::RenderCore::Get().SetViewport(fX, fY, fWidth, fHeight);
+}
+
+CSHARP_EXPORT void VspRhi_CmdSetScissor(int32 nX, int32 nY, uint32 uWidth, uint32 uHeight)
+{
+	Vsp::RenderCore::Get().SetScissor(nX, nY, uWidth, uHeight);
+}
+
+CSHARP_EXPORT void VspRhi_CmdBindPipeline(uint32 uPipeline)
+{
+	Vsp::RenderCore::Get().BindPipeline(uPipeline);
+}
+
+CSHARP_EXPORT void VspRhi_CmdBindVertexBuffer(uint32 uVertexBuffer)
+{
+	Vsp::RenderCore::Get().BindVertexBuffer(uVertexBuffer);
+}
+
+CSHARP_EXPORT void VspRhi_CmdPushConstants(
+	int32 nShaderStageFlags,
+	uint32 uByteOffset,
+	const void* pData,
+	uint32 uByteCount)
+{
+	Vsp::RenderCore::Get().PushConstants(
+		static_cast<uint32>(nShaderStageFlags), uByteOffset, pData, uByteCount);
+}
+
+CSHARP_EXPORT void VspRhi_CmdDraw(uint32 uVertexCount, uint32 uFirstVertex)
+{
+	Vsp::RenderCore::Get().Draw(uVertexCount, uFirstVertex);
+}
+
+// -------- Back buffer --------
+
+CSHARP_EXPORT int32 VspRhi_GetBackbufferWidth()
+{
+	return static_cast<int32>(Vsp::GraphicsSystem::Get().GetBackbufferWidth());
+}
+
+CSHARP_EXPORT int32 VspRhi_GetBackbufferHeight()
+{
+	return static_cast<int32>(Vsp::GraphicsSystem::Get().GetBackbufferHeight());
+}

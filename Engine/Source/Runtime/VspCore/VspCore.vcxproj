@@ -19,6 +19,11 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Classes\Object.h" />
+    <ClInclude Include="Classes\GameObject.h" />
+    <ClInclude Include="Classes\Component.h" />
+    <ClInclude Include="Classes\Scene.h" />
+    <ClInclude Include="Classes\Transform.h" />
     <ClInclude Include="Common\NativeApi.h" />
     <ClInclude Include="Common\PlatformMisc.h" />
     <ClInclude Include="Platforms\Windows\WindowsWindow.h" />
@@ -43,6 +48,8 @@
     <ClInclude Include="Core\Type.h" />
     <ClInclude Include="Core\Input\KeyCode.h" />
     <ClInclude Include="Core\Input\InputManager.h" />
+    <ClInclude Include="Graphics\RhiTypes.h" />
+    <ClInclude Include="Graphics\GraphicsSystem.h" />
     <ClInclude Include="Graphics\RenderCore.h" />
     <ClInclude Include="Graphics\Vulkan\VulkanInstance.h" />
     <ClInclude Include="Graphics\Vulkan\VulkanDevice.h" />
@@ -67,6 +74,11 @@
     <ClInclude Include="Scripting\ScriptExport.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="Classes\Object.cpp" />
+    <ClCompile Include="Classes\GameObject.cpp" />
+    <ClCompile Include="Classes\Component.cpp" />
+    <ClCompile Include="Classes\Scene.cpp" />
+    <ClCompile Include="Classes\Transform.cpp" />
     <ClCompile Include="Core\Application.cpp" />
     <ClCompile Include="Core\Engine.cpp" />
     <ClCompile Include="Core\String\StringConv.cpp" />
@@ -85,6 +97,7 @@
     <ClCompile Include="Core\Logging\Log.cpp" />
     <ClCompile Include="Core\Logging\LogBackend.cpp" />
     <ClCompile Include="Core\Output\OutputDevice.cpp" />
+    <ClCompile Include="Graphics\GraphicsSystem.cpp" />
     <ClCompile Include="Graphics\RenderCore.cpp" />
     <ClCompile Include="Graphics\Vulkan\VulkanInstance.cpp" />
     <ClCompile Include="Graphics\Vulkan\VulkanDevice.cpp" />
@@ -96,6 +109,8 @@
     <ClCompile Include="Graphics\Vulkan\VulkanSwapChain.cpp" />
     <ClCompile Include="Graphics\Vulkan\VulkanRenderer2D.cpp" />
     <ClCompile Include="Scripting\NativeExports.cpp" />
+    <ClCompile Include="Scripting\SceneExports.cpp" />
+    <ClCompile Include="Scripting\RhiExports.cpp" />
     <ClCompile Include="Scripting\ScriptCore.cpp" />
     <ClCompile Include="Scripting\ScriptEngine.cpp" />
     <ClCompile Include="Scripting\ScriptBehaviour.cpp" />

@@ -2,7 +2,6 @@
 
 #include "Core/Core.h"
 #include "Core/String/VspStringFormat.h"
-#include "Core/Templates/ArrayList.h"
 
 namespace Vsp
 {
@@ -22,27 +21,16 @@ namespace Vsp
 	// -------------------------------------------------------------------------
 	// ScriptCore
 	// -------------------------------------------------------------------------
-	// Central point where all state exchanged with managed scripts lives:
-	//   - frame timing (queried by managed Time.DeltaTime / Time.ElapsedTime)
-	//   - per-script-instance transforms (keyed by non-negative InstanceID)
-	//   - renderer commands issued from scripts (triangle color mode)
-	// The native exports (NativeExports.cpp) forward C# calls into this class,
-	// and the game loop reads it back to drive the renderer.
+	// The frame clock managed scripts read through Time.DeltaTime /
+	// Time.ElapsedTime. It is the only per-frame state the script host still
+	// owns: everything else a script touches (transforms, components, render
+	// state) lives in the native scene (Classes/Scene), and rendering is driven
+	// by the managed render pipeline through the wrapped graphics API.
+	// The native exports (NativeExports.cpp) forward C# calls into this class.
 	// -------------------------------------------------------------------------
-#pragma warning(push)
-#pragma warning(disable : 4251)   // ArrayList member: header-only template.
 	class RUNTIME_API ScriptCore
 	{
 	public:
-		struct TransformEntry
-		{
-			uint32 uInstanceId = 0;
-			float fPositionX = 0.0f;
-			float fPositionY = 0.0f;
-		};
-
-		static constexpr int32 k_nDefaultColorMode = 3;   // MultiColor
-
 		static ScriptCore& Get();
 
 		// -------- Time --------
@@ -52,26 +40,12 @@ namespace Vsp
 		void SetElapsedTime(float fElapsedSeconds) { m_fElapsedTime = fElapsedSeconds; }
 		float GetElapsedTime() const { return m_fElapsedTime; }
 
-		// -------- Transforms --------
-		void SetTransformPosition(uint32 uInstanceId, float fPositionX, float fPositionY);
-		bool GetTransformPosition(uint32 uInstanceId, float& outPositionX, float& outPositionY) const;
-
-		// -------- Renderer commands --------
-		void SetColorMode(uint32 uInstanceId, int32 nColorMode);
-		int32 GetColorMode(uint32 uInstanceId) const;
-
 	private:
 		ScriptCore() = default;
 
-		TransformEntry* FindTransformEntry(uint32 uInstanceId);
-		const TransformEntry* FindTransformEntry(uint32 uInstanceId) const;
-
-		ArrayList<TransformEntry> m_TransformEntries;
 		float m_fDeltaTime = 0.0f;
 		float m_fElapsedTime = 0.0f;
-		int32 m_nColorMode = k_nDefaultColorMode;
 	};
-#pragma warning(pop)
 }
 
 namespace Vsp

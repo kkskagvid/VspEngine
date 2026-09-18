@@ -9,6 +9,10 @@ namespace Assembly
 	/// colored triangle from script.
 	/// W = move up, A = move left, S = move down, D = move right,
 	/// R = reset position, T = cycle color (red -> blue -> green -> multicolor).
+	///
+	/// The script owns no rendering state of its own: the transform, the color
+	/// mode and the render flag all live in the native scene, and the engine's
+	/// render pipeline reads them while it builds the frame.
 	/// </summary>
 	public sealed class TriangleController : ScriptBehaviour
 	{
@@ -22,9 +26,10 @@ namespace Assembly
 		{
 			positionX = 0.0f;
 			positionY = 0.0f;
+
 			Transform.Position = Vector2.Zero;
-			Renderer.SetColorMode(InstanceID, (ColorMode)colorCycle);
-			Debug.Log("TriangleController: OnInit (InstanceID = " + InstanceID + ")");
+			Renderer.SetColorMode(this, (ColorMode)colorCycle);
+			Debug.Log("TriangleController: OnInit (InstanceID = " + InstanceID + ", component handle = " + NativeHandle + ")");
 		}
 
 		public override void OnStart()
@@ -50,7 +55,7 @@ namespace Assembly
 			if (Input.GetKeyDown(KeyCode.T))
 			{
 				colorCycle = (colorCycle + 1) % 4;
-				Renderer.SetColorMode(InstanceID, (ColorMode)colorCycle);
+				Renderer.SetColorMode(this, (ColorMode)colorCycle);
 			}
 
 			Transform.Position = new Vector2(positionX, positionY);

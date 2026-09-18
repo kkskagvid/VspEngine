@@ -18,9 +18,11 @@ namespace VspEngine
 	/// Ownership model:
 	///   - The C++ host GENERATES the non-negative InstanceID and passes it
 	///     into CreateInstance.
-	///   - The created GameObject holds its own IntPtr (NativePtr, the
-	///     object's GCHandle) and the host passes that pointer back on every
-	///     lifecycle call. No instances Dictionary is maintained here.
+	///   - Creating an instance also creates its native scene objects (a
+	///     GameObject with its Transform plus the script Component); the host
+	///     hands those handles over as well, and the created ScriptBehaviour
+	///     stores nothing but the handles. Lifecycle calls pass the object's
+	///     GCHandle back, so no instances Dictionary is maintained here.
 	///
 	/// Assembly model:
 	///   - This class lives in VspEngine.dll (the engine's managed runtime).
@@ -41,7 +43,7 @@ namespace VspEngine
 		// -----------------------------------------------------------------
 
 		[UnmanagedFunctionPointer(CallingConvention.StdCall)]
-		private delegate IntPtr CreateInstanceDelegate(int instanceId, IntPtr typeNamePtr);
+		private delegate IntPtr CreateInstanceDelegate(int instanceId, uint gameObjectHandle, uint transformHandle, uint componentHandle, IntPtr typeNamePtr);
 
 		[UnmanagedFunctionPointer(CallingConvention.StdCall)]
 		private delegate int GetScriptTypeCountDelegate();
@@ -53,10 +55,13 @@ namespace VspEngine
 		private delegate void CallLifecycleDelegate(IntPtr handlePtr);
 
 		[UnmanagedFunctionPointer(CallingConvention.StdCall)]
-		private delegate void CallRenderFlowDelegate(uint primaryInstanceId);
+		private delegate void CallRenderFlowDelegate();
 
 		[UnmanagedFunctionPointer(CallingConvention.StdCall)]
 		private delegate int LoadGameAssemblyDelegate(IntPtr assemblyPathPtr);
+
+		[UnmanagedFunctionPointer(CallingConvention.StdCall)]
+		private delegate void ReleaseRenderPipelineDelegate();
 
 		private static readonly CreateInstanceDelegate s_CreateInstanceDelegate = CreateInstance;
 		private static readonly GetScriptTypeCountDelegate s_GetScriptTypeCountDelegate = GetScriptTypeCount;
@@ -67,6 +72,7 @@ namespace VspEngine
 		private static readonly CallLifecycleDelegate s_DestroyInstanceDelegate = DestroyInstance;
 		private static readonly CallRenderFlowDelegate s_CallRenderFlowDelegate = CallRenderFlow;
 		private static readonly LoadGameAssemblyDelegate s_LoadGameAssemblyDelegate = LoadGameAssembly;
+		private static readonly ReleaseRenderPipelineDelegate s_ReleaseRenderPipelineDelegate = ReleaseRenderPipeline;
 
 		private static Assembly? GetGameAssembly()
 		{
@@ -98,7 +104,7 @@ namespace VspEngine
 		/// VspEngine.dll. Slot order (mirrored in ScriptEngine.cpp):
 		///   0 CreateInstance, 1 GetScriptTypeCount, 2 GetScriptTypeName,
 		///   3 CallOnInit, 4 CallOnStart, 5 CallOnUpdate, 6 DestroyInstance,
-		///   7 CallRenderFlow, 8 LoadGameAssembly.
+		///   7 CallRenderFlow, 8 LoadGameAssembly, 9 ReleaseRenderPipeline.
 		/// </summary>
 		[UnmanagedCallersOnly(EntryPoint = "GetBridgeFunctionTable")]
 		public static void GetBridgeFunctionTable(IntPtr tablePtr)
@@ -116,6 +122,7 @@ namespace VspEngine
 			Marshal.WriteIntPtr(tablePtr, (slotIndex++) * IntPtr.Size, Marshal.GetFunctionPointerForDelegate(s_DestroyInstanceDelegate));
 			Marshal.WriteIntPtr(tablePtr, (slotIndex++) * IntPtr.Size, Marshal.GetFunctionPointerForDelegate(s_CallRenderFlowDelegate));
 			Marshal.WriteIntPtr(tablePtr, (slotIndex++) * IntPtr.Size, Marshal.GetFunctionPointerForDelegate(s_LoadGameAssemblyDelegate));
+			Marshal.WriteIntPtr(tablePtr, (slotIndex++) * IntPtr.Size, Marshal.GetFunctionPointerForDelegate(s_ReleaseRenderPipelineDelegate));
 		}
 
 		/// <summary>
@@ -189,11 +196,17 @@ namespace VspEngine
 
 		/// <summary>
 		/// Creates a managed instance of the given script type (looked up in
-		/// the game Assembly). The InstanceID is assigned by the C++ host; the
-		/// returned handle is the instance's IntPtr (GCHandle) used for all
-		/// later lifecycle calls.
+		/// the game Assembly). The InstanceID and the handles of the native
+		/// scene objects the script is attached to are all assigned by the C++
+		/// host; the returned handle is the instance's IntPtr (GCHandle) used
+		/// for all later lifecycle calls.
 		/// </summary>
-		public static IntPtr CreateInstance(int instanceId, IntPtr typeNamePtr)
+		public static IntPtr CreateInstance(
+			int instanceId,
+			uint gameObjectHandle,
+			uint transformHandle,
+			uint componentHandle,
+			IntPtr typeNamePtr)
 		{
 			try
 			{
@@ -210,12 +223,16 @@ namespace VspEngine
 				if (instance == null)
 					return IntPtr.Zero;
 
+				// A managed engine object is a reference handle: it stores the
+				// native handles and forwards everything else to them.
 				instance.InstanceID = (uint)instanceId;
+				instance.NativeHandle = componentHandle;
 
 				// Pin the instance and hand its GCHandle back to the host. The
 				// handle keeps the object alive until DestroyInstance frees it.
 				GCHandle handle = GCHandle.Alloc(instance);
 				instance.NativePtr = GCHandle.ToIntPtr(handle);
+				instance.OnHandlesAssigned(gameObjectHandle, transformHandle);
 				return instance.NativePtr;
 			}
 			catch
@@ -262,22 +279,37 @@ namespace VspEngine
 		}
 
 		/// <summary>
-		/// Runs the managed render flow for one frame. The host passes the
-		/// primary script's InstanceID (0 = none); the flow reads that
-		/// instance's transform and color mode and issues the frame's render
-		/// commands through the native render-command API.
+		/// Runs the managed render pipeline (RenderPipelineManager) for one
+		/// frame. The pipeline gathers its draw list from the native scene and
+		/// records every graphics command through the wrapped graphics API.
 		/// </summary>
-		public static void CallRenderFlow(uint primaryInstanceId)
+		public static void CallRenderFlow()
 		{
 			try
 			{
-				RenderFlow.Execute(primaryInstanceId);
+				RenderFlow.Execute();
 			}
 			catch (Exception exception)
 			{
-				// A broken render flow must not tear the process down: report
+				// A broken render pipeline must not tear the process down: report
 				// the failure and keep the last submitted frame state.
-				NativeApi.VspLog_Message("RenderFlow: " + exception.Message);
+				NativeApi.VspLog_Error("RenderFlow: " + exception.Message);
+			}
+		}
+
+		/// <summary>
+		/// Lets the managed render pipeline release the graphics resources it
+		/// created. The host calls it before the graphics backend goes away.
+		/// </summary>
+		public static void ReleaseRenderPipeline()
+		{
+			try
+			{
+				RenderFlow.Release();
+			}
+			catch (Exception exception)
+			{
+				NativeApi.VspLog_Error("RenderFlow: " + exception.Message);
 			}
 		}
 

@@ -18,6 +18,31 @@ namespace Vsp
 		// explicit teardown path.
 	}
 
+	VulkanBuffer::VulkanBuffer(VulkanBuffer&& Other) noexcept
+		: m_VkBuffer(Other.m_VkBuffer)
+		, m_VkDeviceMemory(Other.m_VkDeviceMemory)
+		, m_nByteSize(Other.m_nByteSize)
+	{
+		Other.m_VkBuffer = VK_NULL_HANDLE;
+		Other.m_VkDeviceMemory = VK_NULL_HANDLE;
+		Other.m_nByteSize = 0;
+	}
+
+	VulkanBuffer& VulkanBuffer::operator=(VulkanBuffer&& Other) noexcept
+	{
+		if (this != &Other)
+		{
+			m_VkBuffer = Other.m_VkBuffer;
+			m_VkDeviceMemory = Other.m_VkDeviceMemory;
+			m_nByteSize = Other.m_nByteSize;
+
+			Other.m_VkBuffer = VK_NULL_HANDLE;
+			Other.m_VkDeviceMemory = VK_NULL_HANDLE;
+			Other.m_nByteSize = 0;
+		}
+		return *this;
+	}
+
 	bool VulkanBuffer::Allocate(
 		const VulkanContext& context,
 		VkDeviceSize nByteSize,
@@ -44,27 +69,31 @@ namespace Vsp
 		return true;
 	}
 
-	bool VulkanBuffer::WriteData(const VulkanContext& context, const void* pData, VkDeviceSize nByteSize)
+	bool VulkanBuffer::WriteData(
+		const VulkanContext& context,
+		VkDeviceSize nByteOffset,
+		const void* pData,
+		VkDeviceSize nByteCount)
 	{
 		if (!IsValid())
 		{
 			LOG_ERROR(kLogTag, "Cannot write to an unallocated buffer.");
 			return false;
 		}
-		if (pData == nullptr || nByteSize == 0 || nByteSize > m_nByteSize)
+		if (pData == nullptr || nByteCount == 0 || nByteOffset + nByteCount > m_nByteSize)
 		{
 			LOG_ERROR(kLogTag, "Invalid data range for buffer write.");
 			return false;
 		}
 
 		void* pMappedData = nullptr;
-		if (vkMapMemory(context.GetDevice(), m_VkDeviceMemory, 0, nByteSize, 0, &pMappedData) != VK_SUCCESS)
+		if (vkMapMemory(context.GetDevice(), m_VkDeviceMemory, nByteOffset, nByteCount, 0, &pMappedData) != VK_SUCCESS)
 		{
 			LOG_ERROR(kLogTag, "vkMapMemory failed.");
 			return false;
 		}
 
-		memcpy(pMappedData, pData, static_cast<size_t>(nByteSize));
+		memcpy(pMappedData, pData, static_cast<size_t>(nByteCount));
 		vkUnmapMemory(context.GetDevice(), m_VkDeviceMemory);
 		return true;
 	}

@@ -23,7 +23,15 @@ namespace Vsp
 	class VulkanImage
 	{
 	public:
+		VulkanImage() = default;
 		~VulkanImage();
+
+		// An image owns its handles, so it moves but never copies; moving
+		// leaves the source empty (Destroy() on it then does nothing).
+		VulkanImage(const VulkanImage&) = delete;
+		VulkanImage& operator=(const VulkanImage&) = delete;
+		VulkanImage(VulkanImage&& Other) noexcept;
+		VulkanImage& operator=(VulkanImage&& Other) noexcept;
 
 		// Creates the image, view and sampler from the given RGBA8 pixels
 		// (uWidth * uHeight * 4 bytes). Returns false on failure.

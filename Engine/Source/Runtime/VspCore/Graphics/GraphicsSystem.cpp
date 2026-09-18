@@ -1,0 +1,346 @@
+#include "RuntimePCH.h"
+
+#include "Core/Logging/Log.h"
+#include "Graphics/GraphicsSystem.h"
+
+namespace Vsp
+{
+	static constexpr const char* kLogTag = "GraphicsSystem";
+
+	GraphicsSystem& GraphicsSystem::Get()
+	{
+		static GraphicsSystem s_Instance;
+		return s_Instance;
+	}
+
+	// -------------------------------------------------------------------------
+	// Buffers
+	// -------------------------------------------------------------------------
+
+	RhiBufferHandle GraphicsSystem::CreateBuffer(const RhiBufferDescriptor& descriptor)
+	{
+		if (m_pActiveBackend == nullptr)
+		{
+			LOG_ERROR(kLogTag, "CreateBuffer: no graphics backend is active.");
+			return k_nInvalidRhiHandle;
+		}
+		if (descriptor.uByteSize == 0)
+		{
+			LOG_ERROR(kLogTag, "CreateBuffer: a zero-byte buffer is not a valid request.");
+			return k_nInvalidRhiHandle;
+		}
+		return m_pActiveBackend->CreateBuffer(descriptor);
+	}
+
+	void GraphicsSystem::DestroyBuffer(RhiBufferHandle uBuffer)
+	{
+		if (m_pActiveBackend != nullptr)
+		{
+			m_pActiveBackend->DestroyBuffer(uBuffer);
+		}
+	}
+
+	bool GraphicsSystem::UpdateBuffer(RhiBufferHandle uBuffer, uint32 uByteOffset, const void* pData, uint32 uByteCount)
+	{
+		if (m_pActiveBackend == nullptr || pData == nullptr || uByteCount == 0)
+		{
+			return false;
+		}
+		return m_pActiveBackend->UpdateBuffer(uBuffer, uByteOffset, pData, uByteCount);
+	}
+
+	// -------------------------------------------------------------------------
+	// Shaders
+	// -------------------------------------------------------------------------
+
+	RhiShaderHandle GraphicsSystem::CreateShader(RhiShaderStage eStage, const void* pSpirvCode, uint32 uByteCount)
+	{
+		if (m_pActiveBackend == nullptr)
+		{
+			LOG_ERROR(kLogTag, "CreateShader: no graphics backend is active.");
+			return k_nInvalidRhiHandle;
+		}
+		if (pSpirvCode == nullptr || uByteCount == 0 || (uByteCount % 4) != 0)
+		{
+			LOG_ERROR(kLogTag, "CreateShader: the SPIR-V blob must be non-empty and 4-byte aligned.");
+			return k_nInvalidRhiHandle;
+		}
+		return m_pActiveBackend->CreateShader(eStage, pSpirvCode, uByteCount);
+	}
+
+	void GraphicsSystem::DestroyShader(RhiShaderHandle uShader)
+	{
+		if (m_pActiveBackend != nullptr)
+		{
+			m_pActiveBackend->DestroyShader(uShader);
+		}
+	}
+
+	// -------------------------------------------------------------------------
+	// Textures
+	// -------------------------------------------------------------------------
+
+	RhiTextureHandle GraphicsSystem::CreateTexture(const RhiTextureDescriptor& descriptor, const void* pPixelDataRgba8)
+	{
+		if (m_pActiveBackend == nullptr)
+		{
+			LOG_ERROR(kLogTag, "CreateTexture: no graphics backend is active.");
+			return k_nInvalidRhiHandle;
+		}
+		if (descriptor.uWidth == 0 || descriptor.uHeight == 0 || pPixelDataRgba8 == nullptr)
+		{
+			LOG_ERROR(kLogTag, "CreateTexture: width, height and pixel data are all required.");
+			return k_nInvalidRhiHandle;
+		}
+		return m_pActiveBackend->CreateTexture(descriptor, pPixelDataRgba8);
+	}
+
+	void GraphicsSystem::DestroyTexture(RhiTextureHandle uTexture)
+	{
+		if (m_pActiveBackend != nullptr)
+		{
+			m_pActiveBackend->DestroyTexture(uTexture);
+		}
+	}
+
+	int32 GraphicsSystem::GetTextureBindlessSlot(RhiTextureHandle uTexture) const
+	{
+		return m_pActiveBackend != nullptr ? m_pActiveBackend->GetTextureBindlessSlot(uTexture) : -1;
+	}
+
+	// -------------------------------------------------------------------------
+	// Pipelines
+	// -------------------------------------------------------------------------
+
+	RhiPipelineHandle GraphicsSystem::CreateGraphicsPipeline(const RhiGraphicsPipelineState& state)
+	{
+		if (m_pActiveBackend == nullptr)
+		{
+			LOG_ERROR(kLogTag, "CreateGraphicsPipeline: no graphics backend is active.");
+			return k_nInvalidRhiHandle;
+		}
+		return m_pActiveBackend->CreateGraphicsPipeline(state);
+	}
+
+	void GraphicsSystem::DestroyGraphicsPipeline(RhiPipelineHandle uPipeline)
+	{
+		if (m_pActiveBackend != nullptr)
+		{
+			m_pActiveBackend->DestroyGraphicsPipeline(uPipeline);
+		}
+	}
+
+	// -------------------------------------------------------------------------
+	// Back buffer
+	// -------------------------------------------------------------------------
+
+	uint32 GraphicsSystem::GetBackbufferWidth() const
+	{
+		uint32 uWidth = 0;
+		uint32 uHeight = 0;
+		if (m_pActiveBackend != nullptr)
+		{
+			m_pActiveBackend->GetBackbufferExtent(uWidth, uHeight);
+		}
+		return uWidth;
+	}
+
+	uint32 GraphicsSystem::GetBackbufferHeight() const
+	{
+		uint32 uWidth = 0;
+		uint32 uHeight = 0;
+		if (m_pActiveBackend != nullptr)
+		{
+			m_pActiveBackend->GetBackbufferExtent(uWidth, uHeight);
+		}
+		return uHeight;
+	}
+
+	// -------------------------------------------------------------------------
+	// Pipeline state builders
+	// -------------------------------------------------------------------------
+
+	GraphicsSystem::PipelineBuilderEntry* GraphicsSystem::FindPipelineBuilder(RhiPipelineBuilderHandle uBuilder)
+	{
+		if (uBuilder == k_nInvalidRhiHandle || uBuilder > m_PipelineBuilders.GetSize())
+		{
+			return nullptr;
+		}
+
+		PipelineBuilderEntry& entry = m_PipelineBuilders[uBuilder - 1u];
+		return entry.bIsActive ? &entry : nullptr;
+	}
+
+	const GraphicsSystem::PipelineBuilderEntry* GraphicsSystem::FindPipelineBuilder(RhiPipelineBuilderHandle uBuilder) const
+	{
+		return const_cast<GraphicsSystem*>(this)->FindPipelineBuilder(uBuilder);
+	}
+
+	RhiPipelineBuilderHandle GraphicsSystem::CreatePipelineBuilder()
+	{
+		// Recycle a released builder before growing the table.
+		for (size_t nBuilderIndex = 0; nBuilderIndex < m_PipelineBuilders.GetSize(); ++nBuilderIndex)
+		{
+			if (!m_PipelineBuilders[nBuilderIndex].bIsActive)
+			{
+				PipelineBuilderEntry& entry = m_PipelineBuilders[nBuilderIndex];
+				entry.bIsActive = true;
+				entry.State = RhiGraphicsPipelineState();
+				return static_cast<RhiPipelineBuilderHandle>(nBuilderIndex + 1u);
+			}
+		}
+
+		if (m_PipelineBuilders.GetSize() >= k_nMaxPipelineBuilderCount)
+		{
+			LOG_ERROR(kLogTag, "CreatePipelineBuilder: the {} builder limit is reached.", k_nMaxPipelineBuilderCount);
+			return k_nInvalidRhiHandle;
+		}
+
+		PipelineBuilderEntry entry;
+		entry.bIsActive = true;
+		m_PipelineBuilders.Add(entry);
+		return static_cast<RhiPipelineBuilderHandle>(m_PipelineBuilders.GetSize());
+	}
+
+	void GraphicsSystem::DestroyPipelineBuilder(RhiPipelineBuilderHandle uBuilder)
+	{
+		PipelineBuilderEntry* pEntry = FindPipelineBuilder(uBuilder);
+		if (pEntry != nullptr)
+		{
+			pEntry->bIsActive = false;
+			pEntry->State = RhiGraphicsPipelineState();
+		}
+	}
+
+	void GraphicsSystem::PipelineBuilderSetShader(
+		RhiPipelineBuilderHandle uBuilder,
+		RhiShaderStage eStage,
+		RhiShaderHandle uShader)
+	{
+		PipelineBuilderEntry* pEntry = FindPipelineBuilder(uBuilder);
+		if (pEntry == nullptr)
+		{
+			return;
+		}
+
+		if (eStage == RhiShaderStage::Vertex)
+		{
+			pEntry->State.uVertexShader = uShader;
+		}
+		else
+		{
+			pEntry->State.uFragmentShader = uShader;
+		}
+	}
+
+	void GraphicsSystem::PipelineBuilderSetVertexStride(RhiPipelineBuilderHandle uBuilder, uint32 uVertexStride)
+	{
+		PipelineBuilderEntry* pEntry = FindPipelineBuilder(uBuilder);
+		if (pEntry != nullptr)
+		{
+			pEntry->State.uVertexStride = uVertexStride;
+		}
+	}
+
+	void GraphicsSystem::PipelineBuilderAddVertexAttribute(
+		RhiPipelineBuilderHandle uBuilder,
+		int32 nShaderLocation,
+		uint32 uComponentCount,
+		uint32 uByteOffset)
+	{
+		PipelineBuilderEntry* pEntry = FindPipelineBuilder(uBuilder);
+		if (pEntry == nullptr)
+		{
+			return;
+		}
+
+		if (uComponentCount < 1u || uComponentCount > 4u)
+		{
+			LOG_ERROR(kLogTag, "PipelineBuilderAddVertexAttribute: component count {} is out of range.", uComponentCount);
+			return;
+		}
+
+		RhiGraphicsPipelineState& state = pEntry->State;
+		if (state.uVertexAttributeCount >= k_nMaxPipelineVertexAttributeCount)
+		{
+			LOG_ERROR(kLogTag, "PipelineBuilderAddVertexAttribute: the {} attribute limit is reached.",
+				k_nMaxPipelineVertexAttributeCount);
+			return;
+		}
+
+		RhiVertexAttribute& attribute = state.VertexAttributes[state.uVertexAttributeCount];
+		attribute.nShaderLocation = nShaderLocation;
+		attribute.uComponentCount = uComponentCount;
+		attribute.uByteOffset = uByteOffset;
+		++state.uVertexAttributeCount;
+	}
+
+	void GraphicsSystem::PipelineBuilderSetTopology(
+		RhiPipelineBuilderHandle uBuilder,
+		RhiPrimitiveTopology eTopology)
+	{
+		PipelineBuilderEntry* pEntry = FindPipelineBuilder(uBuilder);
+		if (pEntry != nullptr)
+		{
+			pEntry->State.eTopology = eTopology;
+		}
+	}
+
+	void GraphicsSystem::PipelineBuilderSetBlendEnabled(RhiPipelineBuilderHandle uBuilder, bool bBlendEnabled)
+	{
+		PipelineBuilderEntry* pEntry = FindPipelineBuilder(uBuilder);
+		if (pEntry != nullptr)
+		{
+			pEntry->State.bBlendEnabled = bBlendEnabled;
+		}
+	}
+
+	void GraphicsSystem::PipelineBuilderSetPushConstantByteCount(
+		RhiPipelineBuilderHandle uBuilder,
+		uint32 uPushConstantByteCount)
+	{
+		PipelineBuilderEntry* pEntry = FindPipelineBuilder(uBuilder);
+		if (pEntry == nullptr)
+		{
+			return;
+		}
+
+		if (uPushConstantByteCount > k_nMaxPushConstantByteCount)
+		{
+			LOG_ERROR(kLogTag, "PipelineBuilderSetPushConstantByteCount: {} bytes exceed the {} byte limit.",
+				uPushConstantByteCount, k_nMaxPushConstantByteCount);
+			return;
+		}
+		pEntry->State.uPushConstantByteCount = uPushConstantByteCount;
+	}
+
+	RhiPipelineHandle GraphicsSystem::BuildPipelineFromBuilder(RhiPipelineBuilderHandle uBuilder)
+	{
+		PipelineBuilderEntry* pEntry = FindPipelineBuilder(uBuilder);
+		if (pEntry == nullptr)
+		{
+			LOG_ERROR(kLogTag, "BuildPipelineFromBuilder: the builder handle is not live.");
+			return k_nInvalidRhiHandle;
+		}
+
+		const RhiGraphicsPipelineState state = pEntry->State;
+		pEntry->bIsActive = false;
+		pEntry->State = RhiGraphicsPipelineState();
+
+		if (state.uVertexShader == k_nInvalidRhiHandle ||
+			state.uFragmentShader == k_nInvalidRhiHandle ||
+			state.uVertexStride == 0 ||
+			state.uVertexAttributeCount == 0)
+		{
+			LOG_ERROR(kLogTag, "BuildPipelineFromBuilder: shaders, vertex stride and at least one vertex attribute are required.");
+			return k_nInvalidRhiHandle;
+		}
+
+		return CreateGraphicsPipeline(state);
+	}
+
+	void GraphicsSystem::ClearPipelineBuilders()
+	{
+		m_PipelineBuilders.Clear();
+	}
+}
