@@ -1,15 +1,28 @@
+// -------------------------------------------------------------------------
+// HLSLCC - the engine's HLSL cross compiler.
+//
+// Compiles ONE HLSL file that holds the entry point of every stage (PassVertex
+// and PassFragment by default) into one SPIR-V module per stage plus a
+// reflection document. The compiler itself lives in the HLSLCC library, which
+// the engine also links, so offline and runtime compilation produce identical
+// results.
+//
+// See CommandLine.h for the accepted arguments.
+// -------------------------------------------------------------------------
 
-bool ProcessCommandLine(int argc, char* argv[])
-{
-    // Process command line arguments here
-    return true;
-}
+#include <cstdio>
+
+#include "CommandLine.h"
 
 int main(int argc, char* argv[])
 {
-    if (!ProcessCommandLine(argc, argv))
-    {
-        return 1;
-    }
-    return 0;
+	const Hlslcc::CommandLineOptions options = Hlslcc::CommandLine::Parse(argc, argv);
+
+	if (options.bShowHelp)
+	{
+		Hlslcc::CommandLine::PrintUsage();
+		return 0;
+	}
+
+	return Hlslcc::CommandLine::Run(options);
 }

@@ -96,6 +96,8 @@ namespace Vsp
 		m_GameObjects.Clear();
 		m_Transforms.Clear();
 		m_Components.Clear();
+		m_Shaders.Clear();
+		m_Materials.Clear();
 	}
 
 	// -------------------------------------------------------------------------
@@ -246,6 +248,81 @@ namespace Vsp
 	}
 
 	// -------------------------------------------------------------------------
+	// Shaders
+	// -------------------------------------------------------------------------
+
+	NativeObjectHandle Scene::CreateShader(const VspString& sShaderName)
+	{
+		Shader* pShader = AcquireObjectSlot(NativeObjectKind::Shader, m_Shaders, sShaderName);
+		if (pShader == nullptr)
+		{
+			LOG_ERROR(kLogTag, "Failed to acquire a shader slot.");
+			return k_nInvalidObjectHandle;
+		}
+
+		pShader->SetShaderName(sShaderName);
+		return pShader->GetHandle();
+	}
+
+	Shader* Scene::FindShader(NativeObjectHandle uShaderHandle)
+	{
+		return ResolveHandle(m_Shaders, uShaderHandle, NativeObjectKind::Shader);
+	}
+
+	const Shader* Scene::FindShader(NativeObjectHandle uShaderHandle) const
+	{
+		return ResolveHandle(m_Shaders, uShaderHandle, NativeObjectKind::Shader);
+	}
+
+	// -------------------------------------------------------------------------
+	// Materials
+	// -------------------------------------------------------------------------
+
+	NativeObjectHandle Scene::CreateMaterial(NativeObjectHandle uShaderHandle)
+	{
+		Shader* pShader = FindShader(uShaderHandle);
+		if (pShader == nullptr)
+		{
+			LOG_ERROR(kLogTag, "Cannot create a material: the shader handle is not live.");
+			return k_nInvalidObjectHandle;
+		}
+
+		Material* pMaterial = AcquireObjectSlot(NativeObjectKind::Material, m_Materials, pShader->GetShaderName());
+		if (pMaterial == nullptr)
+		{
+			LOG_ERROR(kLogTag, "Failed to acquire a material slot.");
+			return k_nInvalidObjectHandle;
+		}
+
+		pMaterial->SetShaderHandle(uShaderHandle);
+		pMaterial->InitializeFromShader(*pShader);
+		return pMaterial->GetHandle();
+	}
+
+	bool Scene::DestroyMaterial(NativeObjectHandle uMaterialHandle)
+	{
+		Material* pMaterial = FindMaterial(uMaterialHandle);
+		if (pMaterial == nullptr)
+		{
+			return false;
+		}
+
+		pMaterial->SetShaderHandle(k_nInvalidObjectHandle);
+		ReleaseObjectSlot(m_Materials, GetObjectHandleSlotIndex(uMaterialHandle));
+		return true;
+	}
+
+	Material* Scene::FindMaterial(NativeObjectHandle uMaterialHandle)
+	{
+		return ResolveHandle(m_Materials, uMaterialHandle, NativeObjectKind::Material);
+	}
+
+	const Material* Scene::FindMaterial(NativeObjectHandle uMaterialHandle) const
+	{
+		return ResolveHandle(m_Materials, uMaterialHandle, NativeObjectKind::Material);
+	}
+
+	// -------------------------------------------------------------------------
 	// Generic object access
 	// -------------------------------------------------------------------------
 
@@ -256,6 +333,8 @@ namespace Vsp
 		case NativeObjectKind::GameObject: return FindGameObject(uHandle) != nullptr;
 		case NativeObjectKind::Transform:  return FindTransform(uHandle) != nullptr;
 		case NativeObjectKind::Component:  return FindComponent(uHandle) != nullptr;
+		case NativeObjectKind::Shader:     return FindShader(uHandle) != nullptr;
+		case NativeObjectKind::Material:   return FindMaterial(uHandle) != nullptr;
 		default:                           return false;
 		}
 	}
@@ -279,6 +358,16 @@ namespace Vsp
 			const Component* pComponent = FindComponent(uHandle);
 			return pComponent != nullptr ? pComponent->GetName() : m_sEmptyName;
 		}
+		case NativeObjectKind::Shader:
+		{
+			const Shader* pShader = FindShader(uHandle);
+			return pShader != nullptr ? pShader->GetName() : m_sEmptyName;
+		}
+		case NativeObjectKind::Material:
+		{
+			const Material* pMaterial = FindMaterial(uHandle);
+			return pMaterial != nullptr ? pMaterial->GetName() : m_sEmptyName;
+		}
 		default:
 			return m_sEmptyName;
 		}
@@ -292,6 +381,8 @@ namespace Vsp
 		case NativeObjectKind::GameObject: pObject = FindGameObject(uHandle); break;
 		case NativeObjectKind::Transform:  pObject = FindTransform(uHandle); break;
 		case NativeObjectKind::Component:  pObject = FindComponent(uHandle); break;
+		case NativeObjectKind::Shader:     pObject = FindShader(uHandle); break;
+		case NativeObjectKind::Material:   pObject = FindMaterial(uHandle); break;
 		default: break;
 		}
 
@@ -382,6 +473,26 @@ namespace Vsp
 		for (size_t nSlotIndex = 0; nSlotIndex < m_Components.GetSize(); ++nSlotIndex)
 		{
 			uLiveCount += m_Components[nSlotIndex].IsValid() ? 1u : 0u;
+		}
+		return uLiveCount;
+	}
+
+	uint32 Scene::GetLiveShaderCount() const
+	{
+		uint32 uLiveCount = 0;
+		for (size_t nSlotIndex = 0; nSlotIndex < m_Shaders.GetSize(); ++nSlotIndex)
+		{
+			uLiveCount += m_Shaders[nSlotIndex].IsValid() ? 1u : 0u;
+		}
+		return uLiveCount;
+	}
+
+	uint32 Scene::GetLiveMaterialCount() const
+	{
+		uint32 uLiveCount = 0;
+		for (size_t nSlotIndex = 0; nSlotIndex < m_Materials.GetSize(); ++nSlotIndex)
+		{
+			uLiveCount += m_Materials[nSlotIndex].IsValid() ? 1u : 0u;
 		}
 		return uLiveCount;
 	}

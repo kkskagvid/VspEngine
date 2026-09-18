@@ -1,8 +1,6 @@
-using VspEngine.Rendering;
-
 namespace VspEngine
 {
-	/// <summary>Triangle color modes. The demo cycles Red -> Blue -> Green -> MultiColor.</summary>
+	/// <summary>Triangle color modes. The demo cycles Red -&gt; Blue -&gt; Green -&gt; MultiColor.</summary>
 	public enum ColorMode
 	{
 		Red = 0,
@@ -13,18 +11,55 @@ namespace VspEngine
 
 	/// <summary>
 	/// Per-object render state. The values live in the native scene (on the
-	/// component), so the render pipeline can read them while it builds the
-	/// frame without calling back into script code.
+	/// component and on the material it points at), so the render pipeline can
+	/// read them while it builds the frame without calling back into script code.
 	/// </summary>
 	public static class Renderer
 	{
-		/// <summary>Sets the color mode the render pipeline draws this component with.</summary>
-		public static void SetColorMode(Component component, ColorMode mode) =>
+		/// <summary>
+		/// The material this component draws with. The render pipeline gives
+		/// every renderable component a default material on the first frame, so
+		/// this returns null only before that happened.
+		/// </summary>
+		public static Material? GetMaterial(Component component)
+		{
+			uint materialHandle = NativeApi.VspComponent_GetMaterial(component.NativeHandle);
+			return materialHandle != 0 ? new Material(materialHandle) : null;
+		}
+
+		/// <summary>Makes the component draw with the given material.</summary>
+		public static void SetMaterial(Component component, Material material)
+		{
+			if (material == null)
+			{
+				throw new System.ArgumentNullException(nameof(material));
+			}
+			NativeApi.VspComponent_SetMaterial(component.NativeHandle, material.NativeHandle);
+		}
+
+		/// <summary>
+		/// Sets the color mode the render pipeline draws this component with.
+		/// The value lives on the component's material; a component that has none
+		/// yet keeps it until the pipeline hands it the default material.
+		/// </summary>
+		public static void SetColorMode(Component component, ColorMode mode)
+		{
 			NativeApi.VspComponent_SetColorMode(component.NativeHandle, (int)mode);
 
+			Material? material = GetMaterial(component);
+			material?.SetFloat(Material.ColorModePropertyName, (float)mode);
+		}
+
 		/// <summary>Reads the color mode the render pipeline draws this component with.</summary>
-		public static ColorMode GetColorMode(Component component) =>
-			(ColorMode)NativeApi.VspComponent_GetColorMode(component.NativeHandle);
+		public static ColorMode GetColorMode(Component component)
+		{
+			Material? material = GetMaterial(component);
+			if (material != null)
+			{
+				return (ColorMode)(int)material.GetFloat(Material.ColorModePropertyName, 3.0f);
+			}
+			return (ColorMode)NativeApi.VspComponent_GetColorMode(component.NativeHandle);
+		}
 
 		/// <summary>Whether this component contributes a triangle to the frame.</summary>
 		public static bool IsRenderable(Component component) =>

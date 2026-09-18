@@ -90,6 +90,16 @@ foreach ($candidate in $validationLayerCandidates) {
     }
 }
 
+# The shader half of the acceptance test: HLSLCC must turn the shader file that
+# holds both entry points into one SPIR-V binary per stage plus reflection.
+Write-Host ""
+& (Join-Path $PSScriptRoot "VerifyShaderCompilation.ps1") -Configuration $Configuration -Platform $Platform
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "The shader compilation checks failed."
+    exit 1
+}
+Write-Host ""
+
 Write-Host "Running the acceptance demo from $runDirectory ..."
 $process = Start-Process -FilePath (Join-Path $runDirectory "Launch.exe") -ArgumentList $acceptanceArguments -WorkingDirectory $runDirectory -Wait -PassThru
 if ($process.ExitCode -ne 0) {

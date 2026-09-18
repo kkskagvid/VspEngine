@@ -121,7 +121,8 @@ namespace VspEngine.Rendering
 				Vector3 position = new Vector3(positionXyzScratch[0], positionXyzScratch[1], positionXyzScratch[2]);
 
 				ColorMode colorMode = (ColorMode)NativeApi.VspComponent_GetColorMode(componentHandle);
-				frameDrawItems.Add(new RenderDrawItem(componentHandle, transformHandle, position, colorMode));
+				uint materialHandle = NativeApi.VspComponent_GetMaterial(componentHandle);
+				frameDrawItems.Add(new RenderDrawItem(componentHandle, transformHandle, position, colorMode, materialHandle));
 			}
 		}
 	}

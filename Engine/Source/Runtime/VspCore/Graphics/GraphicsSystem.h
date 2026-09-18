@@ -43,7 +43,11 @@ namespace Vsp
 		bool UpdateBuffer(RhiBufferHandle uBuffer, uint32 uByteOffset, const void* pData, uint32 uByteCount);
 
 		// -------- Shaders --------
-		RhiShaderHandle CreateShader(RhiShaderStage eStage, const void* pSpirvCode, uint32 uByteCount);
+		RhiShaderHandle CreateShader(
+			RhiShaderStage eStage,
+			const char* pEntryPointName,
+			const void* pSpirvCode,
+			uint32 uByteCount);
 		void DestroyShader(RhiShaderHandle uShader);
 
 		// -------- Textures (bindless slots) --------

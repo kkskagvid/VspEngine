@@ -4,7 +4,12 @@
     <Platform Name="x86" />
   </Configurations>
   <Folder Name="/Programs/">
-    <Project Path="Engine/Source/Programs/HLSLCC/HLSLCC.vcxproj" Id="999e2723-4324-4655-b4da-b165dd1e5a98" />
+    <Project Path="Engine/Source/Programs/HLSLCC/HLSLCC.vcxproj" Id="999e2723-4324-4655-b4da-b165dd1e5a98">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="Engine/Source/Programs/HLSLCC/HLSLCCLib.vcxproj" Id="c4e5a7b1-2d38-4f60-9a15-7b6e0d3c81a2">
+      <Platform Project="x64" />
+    </Project>
   </Folder>
   <Folder Name="/Runtime/">
     <Project Path="Engine/Source/Runtime/Launch/Launch.vcxproj" Id="7d9ae143-94ef-4137-9659-d25c0652c16e">
@@ -12,7 +17,10 @@
       <BuildDependency Project="Engine/Source/Runtime/VspEngine/VspEngine.csproj" />
       <Platform Project="x64" />
     </Project>
-    <Project Path="Engine/Source/Runtime/VspCore/VspCore.vcxproj" Id="b5752592-6d1c-4ca0-8ac5-45881dbfaffa" />
+    <Project Path="Engine/Source/Runtime/VspCore/VspCore.vcxproj" Id="b5752592-6d1c-4ca0-8ac5-45881dbfaffa">
+      <BuildDependency Project="Engine/Source/Programs/HLSLCC/HLSLCCLib.vcxproj" />
+      <Platform Project="x64" />
+    </Project>
     <Project Path="Engine/Source/Runtime/VspEngine/VspEngine.csproj">
       <Platform Project="x64" />
     </Project>

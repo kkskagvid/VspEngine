@@ -64,8 +64,8 @@ namespace Vsp
 		const VulkanContext& context,
 		VkRenderPass renderPass,
 		VkDescriptorSetLayout descriptorSetLayout,
-		VkShaderModule vertexShader,
-		VkShaderModule fragmentShader,
+		const PipelineShaderStage& vertexStage,
+		const PipelineShaderStage& fragmentStage,
 		const RhiGraphicsPipelineState& state)
 	{
 		if (IsValid())
@@ -73,10 +73,11 @@ namespace Vsp
 			LOG_ERROR(kLogTag, "VulkanPipeline is already created.");
 			return false;
 		}
-		if (vertexShader == VK_NULL_HANDLE || fragmentShader == VK_NULL_HANDLE ||
+		if (vertexStage.VkShader == VK_NULL_HANDLE || fragmentStage.VkShader == VK_NULL_HANDLE ||
+			vertexStage.pEntryPointName == nullptr || fragmentStage.pEntryPointName == nullptr ||
 			renderPass == VK_NULL_HANDLE || descriptorSetLayout == VK_NULL_HANDLE)
 		{
-			LOG_ERROR(kLogTag, "A graphics pipeline needs both shader modules, a render pass and a descriptor set layout.");
+			LOG_ERROR(kLogTag, "A graphics pipeline needs both shader stages (module and entry point), a render pass and a descriptor set layout.");
 			return false;
 		}
 
@@ -110,7 +111,7 @@ namespace Vsp
 		}
 
 		if (!CreateGraphicsPipeline(
-			device, renderPass, vertexShader, fragmentShader, m_VkPipelineLayout, state, m_VkPipeline))
+			device, renderPass, vertexStage, fragmentStage, m_VkPipelineLayout, state, m_VkPipeline))
 		{
 			vkDestroyPipelineLayout(device, m_VkPipelineLayout, nullptr);
 			m_VkPipelineLayout = VK_NULL_HANDLE;
@@ -122,22 +123,24 @@ namespace Vsp
 	bool VulkanPipeline::CreateGraphicsPipeline(
 		VkDevice device,
 		VkRenderPass renderPass,
-		VkShaderModule vertexShader,
-		VkShaderModule fragmentShader,
+		const PipelineShaderStage& vertexStage,
+		const PipelineShaderStage& fragmentStage,
 		VkPipelineLayout pipelineLayout,
 		const RhiGraphicsPipelineState& state,
 		VkPipeline& outPipeline)
 	{
+		// Each stage runs the entry point the shader module was compiled from,
+		// which is why the name travels with the module.
 		VkPipelineShaderStageCreateInfo shaderStages[2] = {};
 		shaderStages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		shaderStages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
-		shaderStages[0].module = vertexShader;
-		shaderStages[0].pName = "main";
+		shaderStages[0].module = vertexStage.VkShader;
+		shaderStages[0].pName = vertexStage.pEntryPointName;
 
 		shaderStages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		shaderStages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-		shaderStages[1].module = fragmentShader;
-		shaderStages[1].pName = "main";
+		shaderStages[1].module = fragmentStage.VkShader;
+		shaderStages[1].pName = fragmentStage.pEntryPointName;
 
 		// Vertex input comes from the state the managed render pipeline built.
 		VkVertexInputBindingDescription vertexBinding = {};

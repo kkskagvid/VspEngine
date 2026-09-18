@@ -442,6 +442,10 @@ static const StageFileEntry k_sStageFiles[] =
 	{ L"Assembly.pdb",            nullptr },
 	{ L"Assembly.deps.json",      nullptr },
 	{ L"vulkan-1.dll",            nullptr },
+	// The HLSL cross compiler travels with the run directory: the engine loads
+	// it at startup to compile shaders, and it doubles as the offline tool.
+	{ L"HLSLCC.exe",              nullptr },
+	{ L"HLSLCC.pdb",              nullptr },
 };
 static constexpr uint32 k_nStageFileCount =
 	static_cast<uint32>(sizeof(k_sStageFiles) / sizeof(k_sStageFiles[0]));
@@ -884,6 +888,44 @@ static bool EnsureDotNetRuntime(const BuildToolOptions& options, bool bListOnly)
 	return bAllSucceeded;
 }
 
+// Copies every HLSL shader the engine ships into <run directory>\Shaders, which
+// is where the render pipeline looks for its shader assets.
+static bool StageShaderAssets(const BuildToolOptions& options)
+{
+	// The shader sources live in the engine's source tree, next to the graphics
+	// code that uses them.
+	wchar_t sShaderSourceDirectory[k_nMaxPathLength] = {};
+	swprintf_s(sShaderSourceDirectory, k_nMaxPathLength,
+		L"%ls\\Engine\\Source\\Runtime\\VspCore\\Graphics\\Shaders",
+		options.sRootPath);
+
+	wchar_t sShaderOutputDirectory[k_nMaxPathLength] = {};
+	if (!JoinPath(sShaderOutputDirectory, k_nMaxPathLength, options.sOutputDirectory, L"Shaders"))
+	{
+		PrintError(L"the shader output path does not fit into the path buffer.");
+		return false;
+	}
+
+	if (!DirectoryExists(sShaderSourceDirectory))
+	{
+		PrintError(L"the shader source directory '%ls' does not exist.", sShaderSourceDirectory);
+		return false;
+	}
+
+	if (!EnsureDirectoryExists(sShaderOutputDirectory))
+	{
+		PrintError(L"failed to create the shader directory '%ls'.", sShaderOutputDirectory);
+		return false;
+	}
+
+	PrintLine(L"Staging HLSL shader assets:");
+	bool bAllSucceeded = true;
+	const uint32 uCopiedCount =
+		CopyDirectoryTree(sShaderSourceDirectory, sShaderOutputDirectory, options.bVerbose, bAllSucceeded);
+	PrintLine(L"  %d shader file(s) copied.", uCopiedCount);
+	return bAllSucceeded;
+}
+
 // Prints the whole staging plan without writing anything.
 static void PrintStagingPlan(const BuildToolOptions& options)
 {
@@ -908,6 +950,7 @@ static void PrintStagingPlan(const BuildToolOptions& options)
 		PrintLine(L"  [%ls] %ls", bHasSource ? L"stage" : L"skip ", entry.pFileName);
 	}
 
+	PrintLine(L"  [stage] Engine\\Source\\Runtime\\VspCore\\Graphics\\Shaders\\*.hlsl -> Shaders\\");
 	EnsureDotNetRuntime(options, true);
 }
 
@@ -1214,7 +1257,14 @@ int wmain(int nArgumentCount, wchar_t** pArguments)
 		return 1;
 	}
 
-	// 4. Make sure the C# runtime is reachable from the run directory.
+	// 4. Stage the HLSL shader assets the engine compiles at startup.
+	if (!StageShaderAssets(options))
+	{
+		PrintError(L"shader asset staging failed.");
+		return 1;
+	}
+
+	// 5. Make sure the C# runtime is reachable from the run directory.
 	if (!EnsureDotNetRuntime(options, false))
 	{
 		PrintError(L"C# runtime staging failed.");

@@ -23,12 +23,21 @@ namespace VspEngine.Rendering
 		/// <summary>Color mode the script assigned to the component.</summary>
 		public readonly ColorMode ColorMode;
 
-		public RenderDrawItem(uint componentHandle, uint transformHandle, Vector3 position, ColorMode colorMode)
+		/// <summary>Material the component draws with (0 when it has none yet).</summary>
+		public readonly uint MaterialHandle;
+
+		public RenderDrawItem(
+			uint componentHandle,
+			uint transformHandle,
+			Vector3 position,
+			ColorMode colorMode,
+			uint materialHandle)
 		{
 			ComponentHandle = componentHandle;
 			TransformHandle = transformHandle;
 			Position = position;
 			ColorMode = colorMode;
+			MaterialHandle = materialHandle;
 		}
 	}
 

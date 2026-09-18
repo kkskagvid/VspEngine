@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <Filter Include="源文件">
@@ -9,28 +9,28 @@
       <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
       <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
     </Filter>
-    <Filter Include="资源文件">
-      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
-      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
-    </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="HLSLCC.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
+    <ClCompile Include="CommandLine.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="Compiler.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="DxcCompilerApi.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="Result.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="ShaderOutputWriter.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="ShaderReflection.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="ShaderSourceInjector.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="SpirvReflectionReader.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="VspShaderFile.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="HLSLCC.cpp"><Filter>源文件</Filter></ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="ShaderReflection.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="Result.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="VspShaderFile.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="Compiler.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
+    <ClInclude Include="CommandLine.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="Compiler.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="DxcCompilerApi.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="Result.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="ShaderOutputWriter.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="ShaderReflection.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="ShaderSourceInjector.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="SpirvReflectionReader.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="VspShaderFile.h"><Filter>头文件</Filter></ClInclude>
   </ItemGroup>
 </Project>

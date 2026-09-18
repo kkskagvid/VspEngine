@@ -18,13 +18,6 @@ namespace VspEngine.Rendering
 		PointList = 2,
 	}
 
-	/// <summary>Shaders the engine ships as embedded SPIR-V.</summary>
-	public enum EmbeddedShader
-	{
-		TriangleBindlessVertex = 0,
-		TriangleBindlessFragment = 1,
-	}
-
 	/// <summary>
 	/// Shader stages a recorded push-constant block addresses. The values are
 	/// the native stage bits (VK_SHADER_STAGE_*), so they cross the interop
@@ -51,13 +44,6 @@ namespace VspEngine.Rendering
 	{
 		private const string LibraryName = "VspCore";
 
-		// ---- Embedded shaders ----
-		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
-		internal static extern int VspRhi_GetEmbeddedShaderByteCount(int embeddedShader);
-
-		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
-		internal static extern int VspRhi_GetEmbeddedShaderBytes(int embeddedShader, [Out] byte[] buffer, uint bufferCapacity);
-
 		// ---- Buffers ----
 		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
 		internal static extern uint VspRhi_CreateBuffer(uint byteSize, int isVertexBuffer, int isDynamic);
@@ -70,7 +56,11 @@ namespace VspEngine.Rendering
 
 		// ---- Shaders ----
 		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
-		internal static extern uint VspRhi_CreateShader(int stage, [In] byte[] spirvCode, uint byteCount);
+		internal static extern uint VspRhi_CreateShader(
+			int stage,
+			[MarshalAs(UnmanagedType.LPUTF8Str)] string entryPointName,
+			[In] byte[] spirvCode,
+			uint byteCount);
 
 		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
 		internal static extern void VspRhi_DestroyShader(uint shader);

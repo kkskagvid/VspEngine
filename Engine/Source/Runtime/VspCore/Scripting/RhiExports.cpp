@@ -4,7 +4,6 @@
 
 #include "Graphics/GraphicsSystem.h"
 #include "Graphics/RenderCore.h"
-#include "Graphics/Vulkan/Shaders/ShaderBinary.h"
 #include "Scripting/ScriptExport.h"
 
 // -------------------------------------------------------------------------
@@ -16,59 +15,6 @@
 // swapchain command buffer.
 // Everything is plain data in/out - no exceptions cross the boundary.
 // -------------------------------------------------------------------------
-
-namespace
-{
-	// The SPIR-V blobs the engine ships with its shaders. The managed render
-	// pipeline reads them through the two accessors below and hands them back
-	// to VspRhi_CreateShader, so shader creation uses the very same path a
-	// pipeline with its own SPIR-V would use.
-	const uint32* GetEmbeddedShaderWords(Vsp::RhiEmbeddedShader eShader, uint32& outWordCount)
-	{
-		switch (eShader)
-		{
-		case Vsp::RhiEmbeddedShader::TriangleBindlessVertex:
-			outWordCount = Vsp::Shaders::k_nTriangleBindless_vertSpvSize;
-			return Vsp::Shaders::k_TriangleBindless_vertSpv;
-
-		case Vsp::RhiEmbeddedShader::TriangleBindlessFragment:
-			outWordCount = Vsp::Shaders::k_nTriangleBindless_fragSpvSize;
-			return Vsp::Shaders::k_TriangleBindless_fragSpv;
-
-		default:
-			outWordCount = 0;
-			return nullptr;
-		}
-	}
-}
-
-// -------- Embedded shaders --------
-
-CSHARP_EXPORT int32 VspRhi_GetEmbeddedShaderByteCount(int32 nEmbeddedShader)
-{
-	uint32 uWordCount = 0;
-	GetEmbeddedShaderWords(static_cast<Vsp::RhiEmbeddedShader>(nEmbeddedShader), uWordCount);
-	return static_cast<int32>(uWordCount * sizeof(uint32));
-}
-
-CSHARP_EXPORT int32 VspRhi_GetEmbeddedShaderBytes(int32 nEmbeddedShader, void* pBuffer, uint32 uBufferCapacity)
-{
-	uint32 uWordCount = 0;
-	const uint32* pWords = GetEmbeddedShaderWords(static_cast<Vsp::RhiEmbeddedShader>(nEmbeddedShader), uWordCount);
-	if (pWords == nullptr || pBuffer == nullptr)
-	{
-		return 0;
-	}
-
-	const uint32 uByteCount = uWordCount * sizeof(uint32);
-	if (uByteCount > uBufferCapacity)
-	{
-		return 0;
-	}
-
-	memcpy(pBuffer, pWords, uByteCount);
-	return static_cast<int32>(uByteCount);
-}
 
 // -------- Buffers --------
 
@@ -93,10 +39,14 @@ CSHARP_EXPORT int32 VspRhi_UpdateBuffer(uint32 uBuffer, uint32 uByteOffset, cons
 
 // -------- Shaders --------
 
-CSHARP_EXPORT uint32 VspRhi_CreateShader(int32 nStage, const void* pSpirvCode, uint32 uByteCount)
+CSHARP_EXPORT uint32 VspRhi_CreateShader(
+	int32 nStage,
+	const char* pEntryPointNameUtf8,
+	const void* pSpirvCode,
+	uint32 uByteCount)
 {
 	return Vsp::GraphicsSystem::Get().CreateShader(
-		static_cast<Vsp::RhiShaderStage>(nStage), pSpirvCode, uByteCount);
+		static_cast<Vsp::RhiShaderStage>(nStage), pEntryPointNameUtf8, pSpirvCode, uByteCount);
 }
 
 CSHARP_EXPORT void VspRhi_DestroyShader(uint32 uShader)

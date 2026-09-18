@@ -57,6 +57,14 @@ namespace Vsp
 		uint32 uTextureIndex;      // offset 28 (fragment stage)
 	};
 
+	// One programmable stage of a graphics pipeline: the shader module and the
+	// named entry point inside it the stage runs.
+	struct PipelineShaderStage
+	{
+		VkShaderModule VkShader = VK_NULL_HANDLE;
+		const char* pEntryPointName = "main";
+	};
+
 	class VulkanPipeline
 	{
 	public:
@@ -80,8 +88,8 @@ namespace Vsp
 			const VulkanContext& context,
 			VkRenderPass renderPass,
 			VkDescriptorSetLayout descriptorSetLayout,
-			VkShaderModule vertexShader,
-			VkShaderModule fragmentShader,
+			const PipelineShaderStage& vertexStage,
+			const PipelineShaderStage& fragmentStage,
 			const RhiGraphicsPipelineState& state);
 
 		void Destroy(const VulkanContext& context);
@@ -97,8 +105,8 @@ namespace Vsp
 		static bool CreateGraphicsPipeline(
 			VkDevice device,
 			VkRenderPass renderPass,
-			VkShaderModule vertexShader,
-			VkShaderModule fragmentShader,
+			const PipelineShaderStage& vertexStage,
+			const PipelineShaderStage& fragmentStage,
 			VkPipelineLayout pipelineLayout,
 			const RhiGraphicsPipelineState& state,
 			VkPipeline& outPipeline);

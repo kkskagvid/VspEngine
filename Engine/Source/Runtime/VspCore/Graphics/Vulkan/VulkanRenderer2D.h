@@ -66,7 +66,11 @@ namespace Vsp
 		bool UpdateBuffer(RhiBufferHandle uBuffer, uint32 uByteOffset, const void* pData, uint32 uByteCount) override;
 
 		// -------- Wrapped graphics API: shaders --------
-		RhiShaderHandle CreateShader(RhiShaderStage eStage, const void* pSpirvCode, uint32 uByteCount) override;
+		RhiShaderHandle CreateShader(
+			RhiShaderStage eStage,
+			const char* pEntryPointName,
+			const void* pSpirvCode,
+			uint32 uByteCount) override;
 		void DestroyShader(RhiShaderHandle uShader) override;
 
 		// -------- Wrapped graphics API: textures (bindless slots) --------
@@ -97,12 +101,14 @@ namespace Vsp
 			VulkanBuffer Buffer;
 		};
 
-		// One compiled shader module created through the wrapped graphics API.
+		// One compiled shader module created through the wrapped graphics API,
+		// together with the entry point the stage will run.
 		struct ShaderEntry
 		{
 			bool bIsActive = false;
 			RhiShaderStage eStage = RhiShaderStage::Vertex;
 			VkShaderModule VkShader = VK_NULL_HANDLE;
+			char EntryPointName[k_nMaxShaderEntryPointNameLength] = {};
 		};
 
 		// One texture; uBindlessSlot is where the shaders find it.
@@ -153,7 +159,7 @@ namespace Vsp
 
 		// ---- Pipeline builders are resolved through GraphicsSystem, so the
 		// ---- backend only resolves its own handles here.
-		VkShaderModule GetShaderModule(RhiShaderHandle uShader, RhiShaderStage eStage) const;
+		bool GetPipelineShaderStage(RhiShaderHandle uShader, RhiShaderStage eStage, PipelineShaderStage& outStage) const;
 		uint32 AcquireBindlessTextureSlot() const;
 
 		// -------- Frame helpers --------

@@ -20,12 +20,10 @@ namespace Vsp
 		: m_VkImage(Other.m_VkImage)
 		, m_VkImageMemory(Other.m_VkImageMemory)
 		, m_VkImageView(Other.m_VkImageView)
-		, m_VkSampler(Other.m_VkSampler)
 	{
 		Other.m_VkImage = VK_NULL_HANDLE;
 		Other.m_VkImageMemory = VK_NULL_HANDLE;
 		Other.m_VkImageView = VK_NULL_HANDLE;
-		Other.m_VkSampler = VK_NULL_HANDLE;
 	}
 
 	VulkanImage& VulkanImage::operator=(VulkanImage&& Other) noexcept
@@ -35,12 +33,10 @@ namespace Vsp
 			m_VkImage = Other.m_VkImage;
 			m_VkImageMemory = Other.m_VkImageMemory;
 			m_VkImageView = Other.m_VkImageView;
-			m_VkSampler = Other.m_VkSampler;
 
 			Other.m_VkImage = VK_NULL_HANDLE;
 			Other.m_VkImageMemory = VK_NULL_HANDLE;
 			Other.m_VkImageView = VK_NULL_HANDLE;
-			Other.m_VkSampler = VK_NULL_HANDLE;
 		}
 		return *this;
 	}
@@ -201,31 +197,6 @@ namespace Vsp
 			return false;
 		}
 
-		// Sampler.
-		VkSamplerCreateInfo samplerCreateInfo = {};
-		samplerCreateInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-		samplerCreateInfo.magFilter = VK_FILTER_LINEAR;
-		samplerCreateInfo.minFilter = VK_FILTER_LINEAR;
-		samplerCreateInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-		samplerCreateInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-		samplerCreateInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-		samplerCreateInfo.anisotropyEnable = VK_FALSE;
-		samplerCreateInfo.maxAnisotropy = 1.0f;
-		samplerCreateInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-		samplerCreateInfo.unnormalizedCoordinates = VK_FALSE;
-		samplerCreateInfo.compareEnable = VK_FALSE;
-		samplerCreateInfo.compareOp = VK_COMPARE_OP_ALWAYS;
-		samplerCreateInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-		samplerCreateInfo.mipLodBias = 0.0f;
-		samplerCreateInfo.minLod = 0.0f;
-		samplerCreateInfo.maxLod = 0.0f;
-
-		if (vkCreateSampler(device, &samplerCreateInfo, nullptr, &m_VkSampler) != VK_SUCCESS)
-		{
-			LOG_ERROR(kLogTag, "vkCreateSampler failed.");
-			return false;
-		}
-
 		LOG_INFO(kLogTag, "Texture created ({}x{}).", uWidth, uHeight);
 		return true;
 	}
@@ -234,7 +205,6 @@ namespace Vsp
 	{
 		const VkDevice device = context.GetDevice();
 
-		if (m_VkSampler != VK_NULL_HANDLE) { vkDestroySampler(device, m_VkSampler, nullptr); m_VkSampler = VK_NULL_HANDLE; }
 		if (m_VkImageView != VK_NULL_HANDLE) { vkDestroyImageView(device, m_VkImageView, nullptr); m_VkImageView = VK_NULL_HANDLE; }
 		if (m_VkImageMemory != VK_NULL_HANDLE) { vkDestroyImage(device, m_VkImage, nullptr); vkFreeMemory(device, m_VkImageMemory, nullptr); m_VkImageMemory = VK_NULL_HANDLE; m_VkImage = VK_NULL_HANDLE; }
 	}

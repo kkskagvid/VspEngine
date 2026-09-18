@@ -53,11 +53,20 @@ namespace Vsp
 	// Shaders
 	// -------------------------------------------------------------------------
 
-	RhiShaderHandle GraphicsSystem::CreateShader(RhiShaderStage eStage, const void* pSpirvCode, uint32 uByteCount)
+	RhiShaderHandle GraphicsSystem::CreateShader(
+		RhiShaderStage eStage,
+		const char* pEntryPointName,
+		const void* pSpirvCode,
+		uint32 uByteCount)
 	{
 		if (m_pActiveBackend == nullptr)
 		{
 			LOG_ERROR(kLogTag, "CreateShader: no graphics backend is active.");
+			return k_nInvalidRhiHandle;
+		}
+		if (pEntryPointName == nullptr || *pEntryPointName == '\0')
+		{
+			LOG_ERROR(kLogTag, "CreateShader: the entry point name is empty.");
 			return k_nInvalidRhiHandle;
 		}
 		if (pSpirvCode == nullptr || uByteCount == 0 || (uByteCount % 4) != 0)
@@ -65,7 +74,7 @@ namespace Vsp
 			LOG_ERROR(kLogTag, "CreateShader: the SPIR-V blob must be non-empty and 4-byte aligned.");
 			return k_nInvalidRhiHandle;
 		}
-		return m_pActiveBackend->CreateShader(eStage, pSpirvCode, uByteCount);
+		return m_pActiveBackend->CreateShader(eStage, pEntryPointName, pSpirvCode, uByteCount);
 	}
 
 	void GraphicsSystem::DestroyShader(RhiShaderHandle uShader)

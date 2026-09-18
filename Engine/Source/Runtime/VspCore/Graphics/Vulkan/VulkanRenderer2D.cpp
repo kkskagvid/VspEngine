@@ -40,20 +40,26 @@ namespace Vsp
 			const_cast<ArrayList<EntryType>&>(Table), uHandle);
 	}
 
-	VkShaderModule VulkanRenderer2D::GetShaderModule(RhiShaderHandle uShader, RhiShaderStage eStage) const
+	bool VulkanRenderer2D::GetPipelineShaderStage(
+		RhiShaderHandle uShader,
+		RhiShaderStage eStage,
+		PipelineShaderStage& outStage) const
 	{
 		const ShaderEntry* pEntry = FindResource(m_Shaders, uShader);
 		if (pEntry == nullptr)
 		{
 			LOG_ERROR(kLogTag, "The shader handle {} is not live.", uShader);
-			return VK_NULL_HANDLE;
+			return false;
 		}
 		if (pEntry->eStage != eStage)
 		{
 			LOG_ERROR(kLogTag, "The shader handle {} was created for the other pipeline stage.", uShader);
-			return VK_NULL_HANDLE;
+			return false;
 		}
-		return pEntry->VkShader;
+
+		outStage.VkShader = pEntry->VkShader;
+		outStage.pEntryPointName = pEntry->EntryPointName;
+		return true;
 	}
 
 	uint32 VulkanRenderer2D::AcquireBindlessTextureSlot() const
@@ -381,11 +387,20 @@ namespace Vsp
 	// Wrapped graphics API: shaders
 	// -------------------------------------------------------------------------
 
-	RhiShaderHandle VulkanRenderer2D::CreateShader(RhiShaderStage eStage, const void* pSpirvCode, uint32 uByteCount)
+	RhiShaderHandle VulkanRenderer2D::CreateShader(
+		RhiShaderStage eStage,
+		const char* pEntryPointName,
+		const void* pSpirvCode,
+		uint32 uByteCount)
 	{
 		if (!m_bIsInitialized)
 		{
 			LOG_ERROR(kLogTag, "CreateShader: the renderer is not initialized.");
+			return k_nInvalidRhiHandle;
+		}
+		if (pEntryPointName == nullptr || *pEntryPointName == '\0')
+		{
+			LOG_ERROR(kLogTag, "CreateShader: the entry point name is empty.");
 			return k_nInvalidRhiHandle;
 		}
 
@@ -400,6 +415,7 @@ namespace Vsp
 		entry.bIsActive = true;
 		entry.eStage = eStage;
 		entry.VkShader = shaderModule;
+		strncpy_s(entry.EntryPointName, sizeof(entry.EntryPointName), pEntryPointName, _TRUNCATE);
 
 		for (size_t nEntryIndex = 0; nEntryIndex < m_Shaders.GetSize(); ++nEntryIndex)
 		{
@@ -463,8 +479,7 @@ namespace Vsp
 		// The descriptor sets are read by in-flight frames, so the update has
 		// to wait for the device to go idle.
 		m_Context.WaitIdle();
-		if (!m_BindlessDescriptors.WriteTextureSlot(
-			m_Context, uBindlessSlot, entry.Image.GetView(), entry.Image.GetSampler()))
+		if (!m_BindlessDescriptors.WriteTextureSlot(m_Context, uBindlessSlot, entry.Image.GetView()))
 		{
 			entry.Image.Destroy(m_Context);
 			return k_nInvalidRhiHandle;
@@ -514,9 +529,10 @@ namespace Vsp
 			return k_nInvalidRhiHandle;
 		}
 
-		const VkShaderModule vertexShader = GetShaderModule(state.uVertexShader, RhiShaderStage::Vertex);
-		const VkShaderModule fragmentShader = GetShaderModule(state.uFragmentShader, RhiShaderStage::Fragment);
-		if (vertexShader == VK_NULL_HANDLE || fragmentShader == VK_NULL_HANDLE)
+		PipelineShaderStage vertexStage;
+		PipelineShaderStage fragmentStage;
+		if (!GetPipelineShaderStage(state.uVertexShader, RhiShaderStage::Vertex, vertexStage) ||
+			!GetPipelineShaderStage(state.uFragmentShader, RhiShaderStage::Fragment, fragmentStage))
 		{
 			return k_nInvalidRhiHandle;
 		}
@@ -527,8 +543,8 @@ namespace Vsp
 			m_Context,
 			m_SwapChain.GetRenderPass(),
 			m_BindlessDescriptors.GetLayout(),
-			vertexShader,
-			fragmentShader,
+			vertexStage,
+			fragmentStage,
 			state))
 		{
 			return k_nInvalidRhiHandle;

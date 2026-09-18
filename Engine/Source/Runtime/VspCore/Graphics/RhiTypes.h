@@ -37,6 +37,11 @@ namespace Vsp
 	static constexpr uint32 k_nMaxPushConstantByteCount = 64;
 	static constexpr uint32 k_nMaxRecordedCommandCount = 4096;
 
+	// Function name an entry point of a compiled shader may have. HLSL shaders
+	// name their stages (PassVertex / PassFragment), so the name a shader was
+	// compiled from travels with it and ends up in the pipeline stage.
+	static constexpr uint32 k_nMaxShaderEntryPointNameLength = 64;
+
 	enum class RhiShaderStage : int32
 	{
 		Vertex = 0,
@@ -48,13 +53,6 @@ namespace Vsp
 		TriangleList = 0,
 		LineList = 1,
 		PointList = 2,
-	};
-
-	// Which shader the engine's embedded SPIR-V belongs to.
-	enum class RhiEmbeddedShader : int32
-	{
-		TriangleBindlessVertex = 0,
-		TriangleBindlessFragment = 1,
 	};
 
 	enum class RhiCommandType : uint32

@@ -44,6 +44,8 @@ namespace Vsp
 		GameObject = 1,
 		Transform = 2,
 		Component = 3,
+		Shader = 4,
+		Material = 5,
 	};
 
 	// Builds the handle of the object stored in slot uSlotIndex of its kind.

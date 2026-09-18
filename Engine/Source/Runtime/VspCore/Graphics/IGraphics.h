@@ -37,7 +37,13 @@ namespace Vsp
 		virtual bool UpdateBuffer(RhiBufferHandle uBuffer, uint32 uByteOffset, const void* pData, uint32 uByteCount) = 0;
 
 		// -------- Wrapped graphics API: shaders --------
-		virtual RhiShaderHandle CreateShader(RhiShaderStage eStage, const void* pSpirvCode, uint32 uByteCount) = 0;
+		// pEntryPointName names the function inside the module the stage runs;
+		// HLSL shaders call theirs PassVertex / PassFragment.
+		virtual RhiShaderHandle CreateShader(
+			RhiShaderStage eStage,
+			const char* pEntryPointName,
+			const void* pSpirvCode,
+			uint32 uByteCount) = 0;
 		virtual void DestroyShader(RhiShaderHandle uShader) = 0;
 
 		// -------- Wrapped graphics API: textures (bindless slots) --------

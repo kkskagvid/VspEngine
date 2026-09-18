@@ -10,9 +10,10 @@ namespace Assembly
 	/// W = move up, A = move left, S = move down, D = move right,
 	/// R = reset position, T = cycle color (red -> blue -> green -> multicolor).
 	///
-	/// The script owns no rendering state of its own: the transform, the color
-	/// mode and the render flag all live in the native scene, and the engine's
-	/// render pipeline reads them while it builds the frame.
+	/// The script owns no rendering state of its own: the transform lives in the
+	/// native scene, and the color is a property of the material the component
+	/// draws with - which is what the render pipeline reads while it builds the
+	/// frame.
 	/// </summary>
 	public sealed class TriangleController : ScriptBehaviour
 	{
@@ -29,7 +30,10 @@ namespace Assembly
 
 			Transform.Position = Vector2.Zero;
 			Renderer.SetColorMode(this, (ColorMode)colorCycle);
-			Debug.Log("TriangleController: OnInit (InstanceID = " + InstanceID + ", component handle = " + NativeHandle + ")");
+
+			Debug.Log("TriangleController: OnInit (InstanceID = " + InstanceID
+				+ ", component handle = " + NativeHandle + ")");
+			LogMaterialState();
 		}
 
 		public override void OnStart()
@@ -56,6 +60,8 @@ namespace Assembly
 			{
 				colorCycle = (colorCycle + 1) % 4;
 				Renderer.SetColorMode(this, (ColorMode)colorCycle);
+				Debug.Log("TriangleController: color mode -> " + (ColorMode)colorCycle
+					+ " (material _ColorMode = " + (int)Renderer.GetColorMode(this) + ")");
 			}
 
 			Transform.Position = new Vector2(positionX, positionY);
@@ -64,6 +70,32 @@ namespace Assembly
 		public override void OnDestroy()
 		{
 			Debug.Log("TriangleController: OnDestroy");
+		}
+
+		/// <summary>
+		/// Reports which shader the component's material draws with and which of
+		/// the shader's variants it selects - the whole chain a draw goes through.
+		/// A material only exists from the first frame on, so this may say so.
+		/// </summary>
+		private void LogMaterialState()
+		{
+			Material? material = Renderer.GetMaterial(this);
+			if (material == null)
+			{
+				Debug.Log("TriangleController: no material yet; the render pipeline assigns one on the first frame.");
+				return;
+			}
+
+			Shader? shader = material.Shader;
+			if (shader == null)
+			{
+				Debug.Log("TriangleController: the material has no shader.");
+				return;
+			}
+
+			Debug.Log("TriangleController: material draws with shader '" + shader.ShaderName
+				+ "' (" + shader.VariantCount + " variant(s), " + shader.PropertyCount + " propert(ies), "
+				+ shader.KeywordGroupCount + " keyword group(s)), variant " + material.ResolveVariantIndex() + ".");
 		}
 	}
 }

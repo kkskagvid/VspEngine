@@ -24,8 +24,9 @@ namespace Vsp
 	// -------------------------------------------------------------------------
 	struct ComponentRenderState
 	{
-		bool bIsRenderable = false;   // Script components contribute one triangle to the frame.
-		int32 nColorMode = 3;         // 0 red, 1 blue, 2 green, 3 multicolor.
+		bool bIsRenderable = false;              // Script components contribute one triangle to the frame.
+		int32 nColorMode = 3;                    // 0 red, 1 blue, 2 green, 3 multicolor.
+		NativeObjectHandle uMaterialHandle = k_nInvalidObjectHandle;   // Material the component draws with.
 	};
 
 	// -------------------------------------------------------------------------

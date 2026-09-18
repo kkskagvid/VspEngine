@@ -116,10 +116,12 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;_CONSOLE;_HAS_EXCEPTIONS=0;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
+      <ExceptionHandling>false</ExceptionHandling>
       <LanguageStandard_C>stdc11</LanguageStandard_C>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -135,10 +137,12 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE;_HAS_EXCEPTIONS=0;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
+      <ExceptionHandling>false</ExceptionHandling>
       <LanguageStandard_C>stdc11</LanguageStandard_C>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -152,10 +156,22 @@
     <ClCompile Include="HLSLCC.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="CommandLine.h" />
     <ClInclude Include="Compiler.h" />
+    <ClInclude Include="DxcCompilerApi.h" />
+    <ClInclude Include="FilePathUtility.h" />
+    <ClInclude Include="ShaderDefinition.h" />
     <ClInclude Include="Result.h" />
+    <ClInclude Include="ShaderOutputWriter.h" />
     <ClInclude Include="ShaderReflection.h" />
+    <ClInclude Include="ShaderSourceInjector.h" />
+    <ClInclude Include="SpirvReflectionReader.h" />
     <ClInclude Include="VspShaderFile.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="HLSLCCLib.vcxproj">
+      <Project>{c4e5a7b1-2d38-4f60-9a15-7b6e0d3c81a2}</Project>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

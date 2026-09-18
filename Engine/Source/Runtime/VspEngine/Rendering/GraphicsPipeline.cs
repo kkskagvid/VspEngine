@@ -69,15 +69,15 @@ namespace VspEngine.Rendering
 
 		public bool IsValid => nativeHandle != 0;
 
-		/// <summary>Sets the shader of one pipeline stage.</summary>
-		public GraphicsPipelineBuilder SetShader(ShaderStage stage, Shader shader)
+		/// <summary>Sets the shader module of one pipeline stage.</summary>
+		public GraphicsPipelineBuilder SetShader(ShaderStage stage, ShaderModule shaderModule)
 		{
-			if (shader == null)
+			if (shaderModule == null)
 			{
-				throw new ArgumentNullException(nameof(shader));
+				throw new ArgumentNullException(nameof(shaderModule));
 			}
 
-			RhiApi.VspRhi_PipelineBuilderSetShader(nativeHandle, (int)stage, shader.NativeHandle);
+			RhiApi.VspRhi_PipelineBuilderSetShader(nativeHandle, (int)stage, shaderModule.NativeHandle);
 			return this;
 		}
 

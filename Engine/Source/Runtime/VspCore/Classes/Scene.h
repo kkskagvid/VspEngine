@@ -2,7 +2,9 @@
 
 #include "Classes/Component.h"
 #include "Classes/GameObject.h"
+#include "Classes/Material.h"
 #include "Classes/Object.h"
+#include "Classes/Shader.h"
 #include "Classes/Transform.h"
 #include "Core/Core.h"
 #include "Core/String/VspString.h"
@@ -14,15 +16,19 @@ namespace Vsp
 	// Scene
 	// -------------------------------------------------------------------------
 	// The native object storage behind every managed engine class. Managed
-	// GameObjects, Transforms and Components are reference handles: they hold a
-	// NativeObjectHandle and forward every read and write to the tables owned
-	// by this class.
+	// GameObjects, Transforms, Components, Shaders and Materials are reference
+	// handles: they hold a NativeObjectHandle and forward every read and write to
+	// the tables owned by this class.
 	//
-	// The scene owns three append-only tables, one per object kind. A slot
-	// whose object was released is marked free and its generation is bumped, so
-	// handles into released objects stop resolving instead of addressing
-	// whichever object recycles the slot. Destroying a game object also
-	// releases its transform and every component attached to it.
+	// The scene owns one append-only table per object kind. A slot whose object
+	// was released is marked free and its generation is bumped, so handles into
+	// released objects stop resolving instead of addressing whichever object
+	// recycles the slot. Destroying a game object also releases its transform and
+	// every component attached to it.
+	//
+	// Game objects, transforms and components form the scene graph; shaders and
+	// materials are the assets that graph draws with. They share the registry
+	// because they share the handle scheme.
 	//
 	// Every function is a plain data operation on the tables; nothing throws
 	// and nothing allocates outside the table arrays.
@@ -70,6 +76,23 @@ namespace Vsp
 		Component* FindComponent(NativeObjectHandle uComponentHandle);
 		const Component* FindComponent(NativeObjectHandle uComponentHandle) const;
 
+		// -------- Shaders --------
+		// Creates an empty shader the ShaderLibrary fills in while it loads.
+		NativeObjectHandle CreateShader(const VspString& sShaderName);
+
+		Shader* FindShader(NativeObjectHandle uShaderHandle);
+		const Shader* FindShader(NativeObjectHandle uShaderHandle) const;
+
+		// -------- Materials --------
+		// Creates a material for the given shader; its property values start out
+		// as the shader's defaults.
+		NativeObjectHandle CreateMaterial(NativeObjectHandle uShaderHandle);
+
+		bool DestroyMaterial(NativeObjectHandle uMaterialHandle);
+
+		Material* FindMaterial(NativeObjectHandle uMaterialHandle);
+		const Material* FindMaterial(NativeObjectHandle uMaterialHandle) const;
+
 		// -------- Generic object access --------
 		// Serves the managed Object base class: one entry point resolves any
 		// handle regardless of its kind.
@@ -87,6 +110,8 @@ namespace Vsp
 		uint32 GetLiveGameObjectCount() const;
 		uint32 GetLiveTransformCount() const;
 		uint32 GetLiveComponentCount() const;
+		uint32 GetLiveShaderCount() const;
+		uint32 GetLiveMaterialCount() const;
 
 	private:
 		Scene() = default;
@@ -113,6 +138,8 @@ namespace Vsp
 		ArrayList<GameObject> m_GameObjects;
 		ArrayList<Transform> m_Transforms;
 		ArrayList<Component> m_Components;
+		ArrayList<Shader> m_Shaders;
+		ArrayList<Material> m_Materials;
 
 		// Returned by GetObjectName for handles that do not resolve.
 		VspString m_sEmptyName;
