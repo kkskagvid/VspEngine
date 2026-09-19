@@ -54,7 +54,6 @@
     <ClInclude Include="Graphics\RhiTypes.h" />
     <ClInclude Include="Graphics\GraphicsSystem.h" />
     <ClInclude Include="Graphics\ShaderBindings.h" />
-    <ClInclude Include="$(SolutionDir)Engine\Source\Shared\VsfoFormat.h" />
     <ClInclude Include="Graphics\ShaderContainer.h" />
     <ClInclude Include="Graphics\ShaderLibrary.h" />
     <ClInclude Include="Graphics\ShaderReflection.h" />

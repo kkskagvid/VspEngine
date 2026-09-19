@@ -4,7 +4,7 @@
 #include <cstring>
 
 #include "ShaderOutputWriter.h"
-#include "Shared/VsfoFormat.h"
+#include "VsfoFormat.h"
 
 namespace Hlslcc
 {

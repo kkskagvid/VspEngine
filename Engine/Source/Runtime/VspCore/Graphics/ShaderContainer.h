@@ -7,7 +7,7 @@
 #include "Core/String/VspString.h"
 #include "Core/Templates/ArrayList.h"
 #include "Graphics/ShaderReflection.h"
-#include "Shared/VsfoFormat.h"
+#include "Common/VsfoFormat.h"
 
 namespace Vsp
 {
