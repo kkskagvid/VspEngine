@@ -1,0 +1,64 @@
+// ---------------------------------------------------------------------------
+// MultiPassTest - a shader whose Shader block holds TWO Pass blocks.
+//
+// The acceptance run compiles it to prove that a Shader block may carry several
+// Pass blocks and that every one of them is compiled on its own.
+// ---------------------------------------------------------------------------
+
+Properties
+{
+    _ColorMode ("Color Mode", Float) = 3
+    _Tint ("Tint", Color) = (1, 1, 1, 1)
+}
+
+Shader "Vsp/MultiPassTest"
+{
+    Queue = "Geometry"
+
+    Pass "Forward"
+    {
+        #pragma vertex PassVertex
+        #pragma fragment PassFragment
+
+        #include "Triangle2DCommon.hlsl"
+
+        PassVertexOutput PassVertex(PassVertexInput input)
+        {
+            PassVertexOutput output;
+            output.Position = mul(ViewProjectionMatrix, float4(input.Position + PushConstants.PositionOffset, 0.0, 1.0));
+            output.Color = input.Color;
+            output.Uv = input.Uv;
+            return output;
+        }
+
+        float4 PassFragment(PassFragmentInput input) : SV_Target0
+        {
+            float4 baseColor = (PushConstants.ColorMode == 3) ? input.Color : PushConstants.OverrideColor;
+            return baseColor;
+        }
+    }
+
+    Pass "Tinted"
+    {
+        #pragma vertex PassVertex
+        #pragma fragment PassFragment
+        #pragma variant _TINT_ENABLED
+
+        #include "Triangle2DCommon.hlsl"
+
+        PassVertexOutput PassVertex(PassVertexInput input)
+        {
+            PassVertexOutput output;
+            output.Position = mul(ViewProjectionMatrix, float4(input.Position + PushConstants.PositionOffset, 0.0, 1.0));
+            output.Color = input.Color;
+            output.Uv = input.Uv;
+            return output;
+        }
+
+        float4 PassFragment(PassFragmentInput input) : SV_Target0
+        {
+            float4 baseColor = (PushConstants.ColorMode == 3) ? input.Color : PushConstants.OverrideColor;
+            return baseColor * PushConstants.TintColor;
+        }
+    }
+}

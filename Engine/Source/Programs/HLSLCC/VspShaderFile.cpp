@@ -125,101 +125,6 @@ namespace Hlslcc
 			}
 		}
 
-		// Finds the block name that starts at nOffset, then its '{' and matching
-		// '}'. Braces inside strings and comments are ignored, which is what lets a
-		// Pass block hold arbitrary HLSL.
-		bool FindBlock(
-			const std::string& sText,
-			size_t nStartOffset,
-			size_t& outBodyOffset,
-			size_t& outBodyEndOffset)
-		{
-			size_t nIndex = nStartOffset;
-			while (nIndex < sText.size() && sText[nIndex] != '{')
-			{
-				++nIndex;
-			}
-			if (nIndex >= sText.size())
-			{
-				return false;
-			}
-			outBodyOffset = nIndex + 1;
-
-			uint32_t uDepth = 1;
-			bool bInLineComment = false;
-			bool bInBlockComment = false;
-			bool bInString = false;
-			bool bInCharacter = false;
-
-			for (size_t nCursor = outBodyOffset; nCursor < sText.size(); ++nCursor)
-			{
-				const char cCharacter = sText[nCursor];
-				const char cNextCharacter = (nCursor + 1 < sText.size()) ? sText[nCursor + 1] : '\0';
-
-				if (bInLineComment)
-				{
-					if (cCharacter == '\n')
-					{
-						bInLineComment = false;
-					}
-					continue;
-				}
-				if (bInBlockComment)
-				{
-					if (cCharacter == '*' && cNextCharacter == '/')
-					{
-						bInBlockComment = false;
-						++nCursor;
-					}
-					continue;
-				}
-				if (bInString)
-				{
-					if (cCharacter == '\\')
-					{
-						++nCursor;
-						continue;
-					}
-					if (cCharacter == '"')
-					{
-						bInString = false;
-					}
-					continue;
-				}
-				if (bInCharacter)
-				{
-					if (cCharacter == '\\')
-					{
-						++nCursor;
-						continue;
-					}
-					if (cCharacter == '\'')
-					{
-						bInCharacter = false;
-					}
-					continue;
-				}
-
-				if (cCharacter == '/' && cNextCharacter == '/') { bInLineComment = true; ++nCursor; continue; }
-				if (cCharacter == '/' && cNextCharacter == '*') { bInBlockComment = true; ++nCursor; continue; }
-				if (cCharacter == '"') { bInString = true; continue; }
-				if (cCharacter == '\'') { bInCharacter = true; continue; }
-
-				if (cCharacter == '{') { ++uDepth; continue; }
-				if (cCharacter == '}')
-				{
-					--uDepth;
-					if (uDepth == 0)
-					{
-						outBodyEndOffset = nCursor;
-						return true;
-					}
-				}
-			}
-
-			return false;
-		}
-
 		// True when the character can start a block keyword at this position.
 		bool MatchesKeywordAt(const std::string& sText, size_t nOffset, const char* pKeyword)
 		{
@@ -266,23 +171,49 @@ namespace Hlslcc
 		// The absolute path keeps the #include base directory valid no matter
 		// which directory the tool was started from.
 		m_sFilePath = FilePathUtility::GetAbsolutePath(sFilePath);
-		return LoadFromSource(sSourceText, m_sFilePath);
+		return LoadFromSource(sSourceText, m_sFilePath, outErrorText);
 	}
 
-	HlslccResult ShaderFile::LoadFromSource(const std::string& sSourceText, const std::string& sDisplayName)
+	HlslccResult ShaderFile::LoadFromSource(
+		const std::string& sSourceText,
+		const std::string& sDisplayName,
+		std::string& outErrorText)
 	{
+		outErrorText.clear();
+
 		m_sSourceText = sSourceText;
 		m_sDisplayName = sDisplayName.empty() ? std::string("<memory>") : sDisplayName;
 		m_sShaderName = m_sDisplayName;
 		m_uRenderQueue = 2000;
+		m_bHasShaderBlock = false;
 		m_Properties.clear();
 		m_KeywordGroups.clear();
 		m_Passes.clear();
 
 		ParseBlocks();
 
-		// A file without any Pass block is plain HLSL: the whole text is the code.
-		if (m_Passes.empty())
+		if (m_bHasShaderBlock && m_Passes.empty())
+		{
+			outErrorText = "the Shader block of '" + m_sDisplayName + "' holds no Pass block";
+			if (FindBlockKeywordInFile("Pass"))
+			{
+				outErrorText += " (a Pass block outside the Shader block is not part of the shader; "
+					"Pass blocks belong INSIDE the Shader block)";
+			}
+			return HlslccResult::FailInvalidArgument;
+		}
+
+		if (!m_bHasShaderBlock && FindBlockKeywordInFile("Pass"))
+		{
+			outErrorText = "the shader file '" + m_sDisplayName +
+				"' has a Pass block but no Shader block; Pass blocks belong INSIDE the Shader block";
+			return HlslccResult::FailInvalidArgument;
+		}
+
+		// Plain HLSL - no Shader block, no Pass block, no Properties block - is the
+		// source the engine's runtime compiler hands over; the whole text is the
+		// code of one pass.
+		if (!m_bHasShaderBlock && m_Passes.empty())
 		{
 			ShaderPass implicitPass;
 			CopyName("Pass0", implicitPass.Name, k_nMaxShaderKeywordLength);
@@ -381,100 +312,419 @@ namespace Hlslcc
 		return true;
 	}
 
-	void ShaderFile::ParseBlocks()
-	{
-		static const char* const k_pBlockKeywords[] = { "Properties", "Shader", "Pass" };
+	// -------------------------------------------------------------------------
+	// Structural scan
+	// -------------------------------------------------------------------------
 
-		size_t nOffset = 0;
-		while (nOffset < m_sSourceText.size())
+	namespace
+	{
+		// Replaces the contents of every comment and string literal with spaces,
+		// keeping the byte offsets and the line structure intact. All keyword and
+		// brace scanning runs on this copy, so a "Pass" inside a comment or a brace
+		// inside a string can never be mistaken for structure.
+		std::string BuildMaskedSourceText(const std::string& sSourceText)
 		{
-			// Find the next block keyword at the start of a token.
-			size_t nKeywordOffset = std::string::npos;
-			const char* pKeyword = nullptr;
-			for (const char* pCandidate : k_pBlockKeywords)
+			std::string sMaskedText = sSourceText;
+
+			bool bInLineComment = false;
+			bool bInBlockComment = false;
+			bool bInString = false;
+			bool bInCharacter = false;
+
+			for (size_t nIndex = 0; nIndex < sSourceText.size(); ++nIndex)
 			{
-				size_t nSearchOffset = nOffset;
-				while (nSearchOffset < m_sSourceText.size())
+				const char cCharacter = sSourceText[nIndex];
+				const char cNextCharacter = (nIndex + 1 < sSourceText.size()) ? sSourceText[nIndex + 1] : '\0';
+
+				if (bInLineComment)
 				{
-					const size_t nFoundOffset = m_sSourceText.find(pCandidate, nSearchOffset);
-					if (nFoundOffset == std::string::npos)
+					if (cCharacter == '\n') { bInLineComment = false; }
+					else { sMaskedText[nIndex] = ' '; }
+					continue;
+				}
+				if (bInBlockComment)
+				{
+					if (cCharacter == '*' && cNextCharacter == '/')
 					{
-						break;
+						sMaskedText[nIndex] = ' ';
+						sMaskedText[nIndex + 1] = ' ';
+						++nIndex;
+						bInBlockComment = false;
 					}
-					if (!MatchesKeywordAt(m_sSourceText, nFoundOffset, pCandidate))
+					else if (cCharacter != '\n')
 					{
-						nSearchOffset = nFoundOffset + 1;
+						sMaskedText[nIndex] = ' ';
+					}
+					continue;
+				}
+				if (bInString || bInCharacter)
+				{
+					if (cCharacter == '\\' && nIndex + 1 < sSourceText.size())
+					{
+						sMaskedText[nIndex] = ' ';
+						sMaskedText[nIndex + 1] = ' ';
+						++nIndex;
 						continue;
 					}
 
-					// A keyword outside a block only counts when it opens one.
-					size_t nLookAhead = nFoundOffset + std::strlen(pCandidate);
-					while (nLookAhead < m_sSourceText.size() && IsWhitespace(m_sSourceText[nLookAhead]))
+					const bool bIsTerminator = bInString ? (cCharacter == '"') : (cCharacter == '\'');
+					if (bIsTerminator)
 					{
-						++nLookAhead;
+						bInString = false;
+						bInCharacter = false;
+						continue;
 					}
-					if (nLookAhead < m_sSourceText.size() &&
-						(m_sSourceText[nLookAhead] == '{' || m_sSourceText[nLookAhead] == '"' ||
-							IsIdentifierCharacter(m_sSourceText[nLookAhead])))
+
+					if (cCharacter != '\n')
 					{
-						if (nFoundOffset < nKeywordOffset)
-						{
-							nKeywordOffset = nFoundOffset;
-							pKeyword = pCandidate;
-						}
+						sMaskedText[nIndex] = ' ';
 					}
-					break;
+					continue;
 				}
+
+				if (cCharacter == '/' && cNextCharacter == '/') { bInLineComment = true; sMaskedText[nIndex] = ' '; continue; }
+				if (cCharacter == '/' && cNextCharacter == '*') { bInBlockComment = true; sMaskedText[nIndex] = ' '; sMaskedText[nIndex + 1] = ' '; ++nIndex; continue; }
+				if (cCharacter == '"') { bInString = true; continue; }
+				if (cCharacter == '\'') { bInCharacter = true; continue; }
 			}
 
-			if (pKeyword == nullptr || nKeywordOffset == std::string::npos)
-			{
-				break;
-			}
+			return sMaskedText;
+		}
 
-			// Optional name after the keyword ("Shader \"Name\"", "Pass Name").
-			const size_t nAfterKeywordOffset = nKeywordOffset + std::strlen(pKeyword);
-			std::string sBlockName;
+		// True when only whitespace stands between the start of the line and
+		// nOffset, so a block keyword written inside an expression never counts.
+		bool IsFirstTokenOnLine(const std::string& sText, size_t nOffset)
+		{
+			size_t nCursor = nOffset;
+			while (nCursor > 0)
 			{
-				size_t nCursor = nAfterKeywordOffset;
-				while (nCursor < m_sSourceText.size() && IsWhitespace(m_sSourceText[nCursor]))
+				const char cCharacter = sText[nCursor - 1];
+				if (cCharacter == '\n')
+				{
+					return true;
+				}
+				if (!IsWhitespace(cCharacter))
+				{
+					return false;
+				}
+				--nCursor;
+			}
+			return true;
+		}
+
+		// Finds the next occurrence of a block keyword that starts its own line and
+		// opens a block ("{", or a name followed by one).
+		size_t FindBlockKeyword(const std::string& sMaskedText, size_t nStartOffset, const char* pKeyword)
+		{
+			const size_t nKeywordLength = std::strlen(pKeyword);
+			size_t nSearchOffset = nStartOffset;
+
+			while (nSearchOffset < sMaskedText.size())
+			{
+				const size_t nFoundOffset = sMaskedText.find(pKeyword, nSearchOffset);
+				if (nFoundOffset == std::string::npos)
+				{
+					return std::string::npos;
+				}
+				nSearchOffset = nFoundOffset + 1;
+
+				if (!MatchesKeywordAt(sMaskedText, nFoundOffset, pKeyword))
+				{
+					continue;
+				}
+				if (!IsFirstTokenOnLine(sMaskedText, nFoundOffset))
+				{
+					continue;
+				}
+
+				size_t nCursor = nFoundOffset + nKeywordLength;
+				while (nCursor < sMaskedText.size() && IsWhitespace(sMaskedText[nCursor]))
 				{
 					++nCursor;
 				}
-				if (nCursor < m_sSourceText.size() && m_sSourceText[nCursor] == '"')
+				if (nCursor >= sMaskedText.size())
 				{
-					const size_t nNameEndOffset = m_sSourceText.find('"', nCursor + 1);
-					if (nNameEndOffset != std::string::npos)
+					continue;
+				}
+				if (sMaskedText[nCursor] == '{' || sMaskedText[nCursor] == '"' ||
+					IsIdentifierCharacter(sMaskedText[nCursor]))
+				{
+					return nFoundOffset;
+				}
+			}
+			return std::string::npos;
+		}
+
+		// Reads the optional name after a block keyword: "Shader \"Name\"",
+		// "Pass Second". The name is read from the ORIGINAL text, because the
+		// masked copy has string contents blanked out.
+		std::string ReadBlockName(const std::string& sSourceText, size_t nAfterKeywordOffset)
+		{
+			size_t nCursor = nAfterKeywordOffset;
+			while (nCursor < sSourceText.size() && IsWhitespace(sSourceText[nCursor]))
+			{
+				++nCursor;
+			}
+			if (nCursor >= sSourceText.size())
+			{
+				return std::string();
+			}
+
+			if (sSourceText[nCursor] == '"')
+			{
+				const size_t nNameEndOffset = sSourceText.find('"', nCursor + 1);
+				return (nNameEndOffset == std::string::npos)
+					? std::string()
+					: sSourceText.substr(nCursor + 1, nNameEndOffset - nCursor - 1);
+			}
+
+			if (!IsIdentifierCharacter(sSourceText[nCursor]))
+			{
+				return std::string();
+			}
+
+			size_t nNameEndOffset = nCursor;
+			while (nNameEndOffset < sSourceText.size() && IsIdentifierCharacter(sSourceText[nNameEndOffset]))
+			{
+				++nNameEndOffset;
+			}
+			return sSourceText.substr(nCursor, nNameEndOffset - nCursor);
+		}
+
+		// Finds the "{ ... }" body that follows nStartOffset. The masked text has
+		// no comments and no string contents left, so plain brace counting is exact.
+		bool FindBlockBody(
+			const std::string& sMaskedText,
+			size_t nStartOffset,
+			size_t& outBodyOffset,
+			size_t& outBodyEndOffset)
+		{
+			const size_t nOpenOffset = sMaskedText.find('{', nStartOffset);
+			if (nOpenOffset == std::string::npos)
+			{
+				return false;
+			}
+			outBodyOffset = nOpenOffset + 1;
+
+			uint32_t uDepth = 1;
+			for (size_t nCursor = outBodyOffset; nCursor < sMaskedText.size(); ++nCursor)
+			{
+				if (sMaskedText[nCursor] == '{')
+				{
+					++uDepth;
+				}
+				else if (sMaskedText[nCursor] == '}')
+				{
+					--uDepth;
+					if (uDepth == 0)
 					{
-						sBlockName = m_sSourceText.substr(nCursor + 1, nNameEndOffset - nCursor - 1);
+						outBodyEndOffset = nCursor;
+						return true;
 					}
 				}
-				else if (nCursor < m_sSourceText.size() && IsIdentifierCharacter(m_sSourceText[nCursor]))
+			}
+			return false;
+		}
+	}
+
+	void ShaderFile::ParseBlocks()
+	{
+		// Every structural decision is made on the masked copy; the blocks
+		// themselves are cut out of the original text, so the HLSL keeps its
+		// comments, its strings and its #include directives.
+		const std::string sMaskedSourceText = BuildMaskedSourceText(m_sSourceText);
+
+		size_t nOffset = 0;
+		while (nOffset < sMaskedSourceText.size())
+		{
+			// The top level holds the Properties block and the one Shader block;
+			// the Pass blocks live inside the Shader block.
+			size_t nKeywordOffset = std::string::npos;
+			const char* pKeyword = nullptr;
+
+			for (const char* pCandidate : { "Properties", "Shader" })
+			{
+				const size_t nFoundOffset = FindBlockKeyword(sMaskedSourceText, nOffset, pCandidate);
+				if (nFoundOffset != std::string::npos &&
+					(nKeywordOffset == std::string::npos || nFoundOffset < nKeywordOffset))
 				{
-					size_t nNameEndOffset = nCursor;
-					while (nNameEndOffset < m_sSourceText.size() && IsIdentifierCharacter(m_sSourceText[nNameEndOffset]))
-					{
-						++nNameEndOffset;
-					}
-					sBlockName = m_sSourceText.substr(nCursor, nNameEndOffset - nCursor);
+					nKeywordOffset = nFoundOffset;
+					pKeyword = pCandidate;
 				}
 			}
 
-			size_t nBodyOffset = 0;
-			size_t nBodyEndOffset = 0;
-			if (!FindBlock(m_sSourceText, nAfterKeywordOffset, nBodyOffset, nBodyEndOffset))
+			if (pKeyword == nullptr)
 			{
 				break;
 			}
 
-			const std::string sBody = m_sSourceText.substr(nBodyOffset, nBodyEndOffset - nBodyOffset);
-			const std::string sKeyword(pKeyword);
+			const std::string sBlockName =
+				ReadBlockName(m_sSourceText, nKeywordOffset + std::strlen(pKeyword));
 
-			if (sKeyword == "Properties")      { ParsePropertiesBlock(sBody); }
-			else if (sKeyword == "Shader")     { ParseShaderBlock(sBody); if (!sBlockName.empty()) { m_sShaderName = sBlockName; } }
-			else if (sKeyword == "Pass")       { ParsePassBlock(sBlockName, sBody); }
+			size_t nBodyOffset = 0;
+			size_t nBodyEndOffset = 0;
+			if (!FindBlockBody(sMaskedSourceText, nKeywordOffset, nBodyOffset, nBodyEndOffset))
+			{
+				break;
+			}
+
+			if (std::strcmp(pKeyword, "Properties") == 0)
+			{
+				ParsePropertiesBlock(m_sSourceText.substr(nBodyOffset, nBodyEndOffset - nBodyOffset));
+			}
+			else
+			{
+				m_bHasShaderBlock = true;
+				if (!sBlockName.empty())
+				{
+					m_sShaderName = sBlockName;
+				}
+				ParseShaderBlock(sMaskedSourceText, nBodyOffset, nBodyEndOffset);
+			}
 
 			nOffset = nBodyEndOffset + 1;
+		}
+	}
+
+	void ShaderFile::ParseShaderBlock(
+		const std::string& sMaskedSourceText,
+		size_t nBodyOffset,
+		size_t nBodyEndOffset)
+	{
+		// Walk the Shader block from top to bottom: the text between two nested
+		// blocks holds its settings, and every nested block is either a Pass or a
+		// Properties block.
+		size_t nOffset = nBodyOffset;
+		while (nOffset < nBodyEndOffset)
+		{
+			size_t nNextKeywordOffset = std::string::npos;
+			const char* pKeyword = nullptr;
+
+			for (const char* pCandidate : { "Pass", "Properties" })
+			{
+				const size_t nFoundOffset = FindBlockKeyword(sMaskedSourceText, nOffset, pCandidate);
+				if (nFoundOffset != std::string::npos && nFoundOffset < nBodyEndOffset &&
+					(nNextKeywordOffset == std::string::npos || nFoundOffset < nNextKeywordOffset))
+				{
+					nNextKeywordOffset = nFoundOffset;
+					pKeyword = pCandidate;
+				}
+			}
+
+			if (pKeyword == nullptr)
+			{
+				ParseShaderSettingLines(m_sSourceText.substr(nOffset, nBodyEndOffset - nOffset));
+				break;
+			}
+
+			// Everything in front of the nested block is a setting line.
+			ParseShaderSettingLines(m_sSourceText.substr(nOffset, nNextKeywordOffset - nOffset));
+
+			const std::string sBlockName =
+				ReadBlockName(m_sSourceText, nNextKeywordOffset + std::strlen(pKeyword));
+
+			size_t nInnerBodyOffset = 0;
+			size_t nInnerBodyEndOffset = 0;
+			if (!FindBlockBody(sMaskedSourceText, nNextKeywordOffset, nInnerBodyOffset, nInnerBodyEndOffset) ||
+				nInnerBodyEndOffset > nBodyEndOffset)
+			{
+				break;
+			}
+
+			const std::string sInnerBody =
+				m_sSourceText.substr(nInnerBodyOffset, nInnerBodyEndOffset - nInnerBodyOffset);
+
+			if (std::strcmp(pKeyword, "Pass") == 0)
+			{
+				ParsePassBlock(sBlockName, sInnerBody);
+			}
+			else
+			{
+				ParsePropertiesBlock(sInnerBody);
+			}
+
+			nOffset = nInnerBodyEndOffset + 1;
+		}
+	}
+
+	bool ShaderFile::FindBlockKeywordInFile(const char* pKeyword) const
+	{
+		const std::string sMaskedSourceText = BuildMaskedSourceText(m_sSourceText);
+		return FindBlockKeyword(sMaskedSourceText, 0, pKeyword) != std::string::npos;
+	}
+
+	void ShaderFile::ParseShaderSettingLines(const std::string& sText)
+	{
+		std::vector<std::string> sLines;
+		SplitLines(sText, sLines);
+
+		for (const std::string& sRawLine : sLines)
+		{
+			// A line that only holds a brace or a comment carries no setting.
+			const std::string sLine = TrimLine(sRawLine);
+			if (sLine.empty() || sLine[0] == '/' || sLine[0] == '#' || sLine[0] == '{' || sLine[0] == '}')
+			{
+				continue;
+			}
+
+			std::vector<std::string> sTokens;
+			SplitTokens(sLine, sTokens);
+			if (sTokens.empty())
+			{
+				continue;
+			}
+
+			// "Queue = 2000" and "Queue = \"Geometry\""
+			if (sTokens[0] == "Queue")
+			{
+				for (size_t nTokenIndex = 1; nTokenIndex < sTokens.size(); ++nTokenIndex)
+				{
+					if (sTokens[nTokenIndex] == "=")
+					{
+						continue;
+					}
+
+					std::string sQueueValue = sTokens[nTokenIndex];
+					if (sQueueValue.size() >= 2 && sQueueValue.front() == '"' && sQueueValue.back() == '"')
+					{
+						const std::string sQueueName = sQueueValue.substr(1, sQueueValue.size() - 2);
+						if (sQueueName == "Background")       { m_uRenderQueue = 1000; }
+						else if (sQueueName == "Geometry")    { m_uRenderQueue = 2000; }
+						else if (sQueueName == "AlphaTest")   { m_uRenderQueue = 2450; }
+						else if (sQueueName == "Transparent") { m_uRenderQueue = 3000; }
+						else if (sQueueName == "Overlay")     { m_uRenderQueue = 4000; }
+						else { m_uRenderQueue = static_cast<uint32_t>(std::atoi(sQueueName.c_str())); }
+					}
+					else
+					{
+						m_uRenderQueue = static_cast<uint32_t>(std::atoi(sQueueValue.c_str()));
+					}
+					break;
+				}
+				continue;
+			}
+
+			// "Variant _A", "VariantLocal = _A _B", ...
+			ShaderKeywordKind eKeywordKind;
+			if (!ParseKeywordKind(sTokens[0], eKeywordKind))
+			{
+				continue;
+			}
+
+			std::vector<std::string> sKeywordNames;
+			for (size_t nTokenIndex = 1; nTokenIndex < sTokens.size(); ++nTokenIndex)
+			{
+				if (sTokens[nTokenIndex] == "=")
+				{
+					continue;
+				}
+				sKeywordNames.push_back(sTokens[nTokenIndex]);
+			}
+
+			if (!sKeywordNames.empty())
+			{
+				AddOrReplaceKeywordGroup(BuildKeywordGroup(sKeywordNames, eKeywordKind));
+			}
 		}
 	}
 
@@ -565,80 +815,6 @@ namespace Hlslcc
 			if (property.Name[0] != '\0')
 			{
 				m_Properties.push_back(property);
-			}
-		}
-	}
-
-	void ShaderFile::ParseShaderBlock(const std::string& sBody)
-	{
-		std::vector<std::string> sLines;
-		SplitLines(sBody, sLines);
-
-		for (const std::string& sRawLine : sLines)
-		{
-			const std::string sLine = TrimLine(sRawLine);
-			if (sLine.empty() || sLine[0] == '/' || sLine[0] == '#')
-			{
-				continue;
-			}
-
-			std::vector<std::string> sTokens;
-			SplitTokens(sLine, sTokens);
-			if (sTokens.empty())
-			{
-				continue;
-			}
-
-			// "Queue = 2000" and "Queue = \"Geometry\""
-			if (sTokens[0] == "Queue")
-			{
-				for (size_t nTokenIndex = 1; nTokenIndex < sTokens.size(); ++nTokenIndex)
-				{
-					if (sTokens[nTokenIndex] == "=")
-					{
-						continue;
-					}
-
-					std::string sQueueValue = sTokens[nTokenIndex];
-					if (sQueueValue.size() >= 2 && sQueueValue.front() == '"' && sQueueValue.back() == '"')
-					{
-						const std::string sQueueName = sQueueValue.substr(1, sQueueValue.size() - 2);
-						if (sQueueName == "Background")       { m_uRenderQueue = 1000; }
-						else if (sQueueName == "Geometry")    { m_uRenderQueue = 2000; }
-						else if (sQueueName == "AlphaTest")   { m_uRenderQueue = 2450; }
-						else if (sQueueName == "Transparent") { m_uRenderQueue = 3000; }
-						else if (sQueueName == "Overlay")     { m_uRenderQueue = 4000; }
-						else { m_uRenderQueue = static_cast<uint32_t>(std::atoi(sQueueName.c_str())); }
-					}
-					else
-					{
-						m_uRenderQueue = static_cast<uint32_t>(std::atoi(sQueueValue.c_str()));
-					}
-					break;
-				}
-				continue;
-			}
-
-			// "Variant _A", "VariantLocal = _A _B", ...
-			ShaderKeywordKind eKeywordKind;
-			if (!ParseKeywordKind(sTokens[0], eKeywordKind))
-			{
-				continue;
-			}
-
-			std::vector<std::string> sKeywordNames;
-			for (size_t nTokenIndex = 1; nTokenIndex < sTokens.size(); ++nTokenIndex)
-			{
-				if (sTokens[nTokenIndex] == "=")
-				{
-					continue;
-				}
-				sKeywordNames.push_back(sTokens[nTokenIndex]);
-			}
-
-			if (!sKeywordNames.empty())
-			{
-				AddOrReplaceKeywordGroup(BuildKeywordGroup(sKeywordNames, eKeywordKind));
 			}
 		}
 	}

@@ -20,7 +20,7 @@ namespace Vsp
 
 	struct LaunchOptions
 	{
-		VspString sWindowTitle = "Vsp Engine - Triangle Demo";
+		VspString sWindowTitle = "Vsp Engine";
 		uint32 uWindowWidth = 1280;
 		uint32 uWindowHeight = 720;
 		uint32 uMaxFrameCount = 0;             // 0 = unlimited

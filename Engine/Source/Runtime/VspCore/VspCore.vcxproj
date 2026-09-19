@@ -53,6 +53,9 @@
     <ClInclude Include="Core\Input\InputManager.h" />
     <ClInclude Include="Graphics\RhiTypes.h" />
     <ClInclude Include="Graphics\GraphicsSystem.h" />
+    <ClInclude Include="Graphics\ShaderBindings.h" />
+    <ClInclude Include="$(SolutionDir)Engine\Source\Shared\VsfoFormat.h" />
+    <ClInclude Include="Graphics\ShaderContainer.h" />
     <ClInclude Include="Graphics\ShaderLibrary.h" />
     <ClInclude Include="Graphics\ShaderReflection.h" />
     <ClInclude Include="Graphics\RenderCore.h" />
@@ -65,7 +68,6 @@
     <ClInclude Include="Graphics\Vulkan\VulkanRHI.h" />
     <ClInclude Include="Graphics\Vulkan\VulkanSwapChain.h" />
     <ClInclude Include="Graphics\Vulkan\VulkanRenderer2D.h" />
-    <ClInclude Include="Shader\ShaderCompiler.h" />
     <ClInclude Include="Scripting\ScriptCore.h" />
     <ClInclude Include="Scripting\ScriptEngine.h" />
     <ClInclude Include="Core\Window.h" />
@@ -107,7 +109,9 @@
     <ClCompile Include="Core\Output\OutputDevice.cpp" />
     <ClCompile Include="Core\Json\JsonReader.cpp" />
     <ClCompile Include="Graphics\GraphicsSystem.cpp" />
+    <ClCompile Include="Graphics\ShaderContainer.cpp" />
     <ClCompile Include="Graphics\ShaderLibrary.cpp" />
+    <ClCompile Include="Graphics\ShaderReflection.cpp" />
     <ClCompile Include="Graphics\RenderCore.cpp" />
     <ClCompile Include="Graphics\Vulkan\VulkanInstance.cpp" />
     <ClCompile Include="Graphics\Vulkan\VulkanDevice.cpp" />
@@ -119,11 +123,9 @@
     <ClCompile Include="Graphics\Vulkan\VulkanSwapChain.cpp" />
     <ClCompile Include="Graphics\Vulkan\VulkanRenderer2D.cpp" />
     <ClCompile Include="Scripting\NativeExports.cpp" />
-    <ClCompile Include="Scripting\ShaderExports.cpp" />
     <ClCompile Include="Scripting\AssetExports.cpp" />
     <ClCompile Include="Scripting\SceneExports.cpp" />
     <ClCompile Include="Scripting\RhiExports.cpp" />
-    <ClCompile Include="Shader\ShaderCompiler.cpp" />
     <ClCompile Include="Scripting\ScriptCore.cpp" />
     <ClCompile Include="Scripting\ScriptEngine.cpp" />
     <ClCompile Include="Scripting\ScriptBehaviour.cpp" />
@@ -223,10 +225,6 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <PostBuildEvent>
-      <Command>powershell -NoProfile -ExecutionPolicy Bypass -File "$(SolutionDir)Engine\Tools\Build\CompileShaders.ps1" -SolutionDir "$(SolutionDir)." -Configuration $(Configuration) -Platform $(Platform)</Command>
-      <Message>Staging the HLSL shader assets</Message>
-    </PostBuildEvent>
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
@@ -236,7 +234,7 @@
       <ExceptionHandling>false</ExceptionHandling>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>RuntimePCH.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(SolutionDir)Engine\Source\Runtime\VspCore;$(SolutionDir)Engine\Source\Runtime\VspCore\Common;$(SolutionDir)Engine\Source\Programs\HLSLCC;$(SolutionDir)Engine\Source\Thirdparty\fmt\include;$(SolutionDir)Engine\Source\Thirdparty\glm;$(SolutionDir)Engine\Source\Thirdparty\Vulkan\Include;$(VULKAN_SDK)\Include;$(SolutionDir)Engine\Source\Thirdparty\FreeType2\freetype-2.14.3\include;$(SolutionDir)Engine\Source\Thirdparty\HarfBuzz\harfbuzz-14.2.0\src;$(SolutionDir)Engine\Source\Thirdparty\dotnet\runtime10.0.10\</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)Engine\Source;$(SolutionDir)Engine\Source\Runtime\VspCore;$(SolutionDir)Engine\Source\Runtime\VspCore\Common;$(SolutionDir)Engine\Source\Thirdparty\fmt\include;$(SolutionDir)Engine\Source\Thirdparty\glm;$(SolutionDir)Engine\Source\Thirdparty\Vulkan\Include;$(VULKAN_SDK)\Include;$(SolutionDir)Engine\Source\Thirdparty\FreeType2\freetype-2.14.3\include;$(SolutionDir)Engine\Source\Thirdparty\HarfBuzz\harfbuzz-14.2.0\src;$(SolutionDir)Engine\Source\Thirdparty\dotnet\runtime10.0.10\</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <LanguageStandard_C>stdc11</LanguageStandard_C>
       <CompileAs>CompileAsCpp</CompileAs>
@@ -250,10 +248,6 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <PostBuildEvent>
-      <Command>powershell -NoProfile -ExecutionPolicy Bypass -File "$(SolutionDir)Engine\Tools\Build\CompileShaders.ps1" -SolutionDir "$(SolutionDir)." -Configuration $(Configuration) -Platform $(Platform)</Command>
-      <Message>Staging the HLSL shader assets</Message>
-    </PostBuildEvent>
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <FunctionLevelLinking>true</FunctionLevelLinking>
@@ -265,7 +259,7 @@
       <ExceptionHandling>false</ExceptionHandling>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>RuntimePCH.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(SolutionDir)Engine\Source\Runtime\VspCore;$(SolutionDir)Engine\Source\Runtime\VspCore\Common;$(SolutionDir)Engine\Source\Programs\HLSLCC;$(SolutionDir)Engine\Source\Thirdparty\fmt\include;$(SolutionDir)Engine\Source\Thirdparty\glm;$(SolutionDir)Engine\Source\Thirdparty\Vulkan\Include;$(VULKAN_SDK)\Include;$(SolutionDir)Engine\Source\Thirdparty\FreeType2\freetype-2.14.3\include;$(SolutionDir)Engine\Source\Thirdparty\HarfBuzz\harfbuzz-14.2.0\src;$(SolutionDir)Engine\Source\Thirdparty\dotnet\runtime10.0.10\</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)Engine\Source;$(SolutionDir)Engine\Source\Runtime\VspCore;$(SolutionDir)Engine\Source\Runtime\VspCore\Common;$(SolutionDir)Engine\Source\Thirdparty\fmt\include;$(SolutionDir)Engine\Source\Thirdparty\glm;$(SolutionDir)Engine\Source\Thirdparty\Vulkan\Include;$(VULKAN_SDK)\Include;$(SolutionDir)Engine\Source\Thirdparty\FreeType2\freetype-2.14.3\include;$(SolutionDir)Engine\Source\Thirdparty\HarfBuzz\harfbuzz-14.2.0\src;$(SolutionDir)Engine\Source\Thirdparty\dotnet\runtime10.0.10\</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <LanguageStandard_C>stdc11</LanguageStandard_C>
       <Optimization>MaxSpeed</Optimization>
@@ -279,11 +273,6 @@
       <AdditionalDependencies>icu.lib;mimalloc.lib;freetype.lib;harfbuzz.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\..\Programs\HLSLCC\HLSLCCLib.vcxproj">
-      <Project>{c4e5a7b1-2d38-4f60-9a15-7b6e0d3c81a2}</Project>
-    </ProjectReference>
-  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

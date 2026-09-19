@@ -40,4 +40,18 @@
         <ProjectReference Include="..\Engine\Source\Runtime\VspEngine\VspEngine.csproj" />
     </ItemGroup>
 
+    <!--
+      The game owns its shaders. HLSLCC compiles every .vsf of the Shaders folder
+      into the run directory's Shaders folder as SPIR-V plus a shader manifest -
+      which is all the engine loads; the engine never compiles HLSL.
+
+      The step is skipped (without failing the build) while HLSLCC.exe has not
+      been built yet, and the acceptance run compiles the shaders explicitly, so
+      the build works in any project order.
+    -->
+    <Target Name="CompileGameShaders" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true'">
+        <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\Engine\Tools\Build\CompileShaders.ps1&quot; -ShaderSourceDirectory &quot;$(MSBuildProjectDirectory)\Shaders&quot; -OutputDirectory &quot;$(EngineIntermediateRoot)\Binaries\$(Configuration)_$(Platform)\Shaders&quot;"
+              ContinueOnError="true" />
+    </Target>
+
 </Project>

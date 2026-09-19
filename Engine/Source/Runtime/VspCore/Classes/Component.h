@@ -18,14 +18,17 @@ namespace Vsp
 	// -------------------------------------------------------------------------
 	// ComponentRenderState
 	// -------------------------------------------------------------------------
-	// The per-object state a render pipeline reads when it builds a frame.
-	// It lives on the component because the component is what a pipeline
-	// actually draws in this engine iteration (the demo triangle of a script).
+	// The per-object state a render pipeline reads when it builds a frame. It
+	// lives on the component because the component is what a pipeline draws.
+	//
+	// The engine keeps only what every pipeline needs: whether the component
+	// takes part in the frame and which material it draws with. How a game's
+	// shader turns that material into pixels is the game's business - anything
+	// else a pipeline reads is a property of the material.
 	// -------------------------------------------------------------------------
 	struct ComponentRenderState
 	{
-		bool bIsRenderable = false;              // Script components contribute one triangle to the frame.
-		int32 nColorMode = 3;                    // 0 red, 1 blue, 2 green, 3 multicolor.
+		bool bIsRenderable = false;                                    // True when a pipeline should draw this component.
 		NativeObjectHandle uMaterialHandle = k_nInvalidObjectHandle;   // Material the component draws with.
 	};
 

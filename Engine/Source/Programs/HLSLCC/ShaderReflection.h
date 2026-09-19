@@ -90,7 +90,7 @@ namespace Hlslcc
 		ShaderResourceKind eKind = ShaderResourceKind::Unknown;
 		uint32_t uDescriptorSet = 0;
 		uint32_t uBinding = 0;
-		uint32_t uDescriptorCount = 1;   // > 1 for (runtime) arrays.
+		uint32_t uDescriptorCount = 1;   // > 1 for arrays; 0 for an unsized runtime array.
 		uint32_t uElementByteSize = 0;
 	};
 
@@ -100,6 +100,34 @@ namespace Hlslcc
 		char Name[k_nMaxShaderVariableNameLength] = {};
 		uint32_t uByteOffset = 0;
 		uint32_t uByteSize = 0;
+	};
+
+	// -------------------------------------------------------------------------
+	// Resource variables of a compiled module
+	// -------------------------------------------------------------------------
+	// One descriptor variable of a SPIR-V module, together with the word of the
+	// module that holds its descriptor set and its binding number. The compiler
+	// uses these to apply the ENGINE's binding rules to the module, and then to
+	// read the finished module back for reflection.
+	//
+	// A word index of k_nNoDecorationWordIndex means the module carries no such
+	// decoration for that variable.
+	// -------------------------------------------------------------------------
+	static constexpr uint32_t k_nNoDecorationWordIndex = 0xFFFFFFFFu;
+
+	struct SpirvResourceVariable
+	{
+		uint32_t uVariableId = 0;
+		ShaderResourceKind eKind = ShaderResourceKind::Unknown;
+
+		// Name of the variable. Two stages that declare the same resource share it,
+		// which is what lets one binding number serve the whole pass.
+		char Name[k_nMaxShaderVariableNameLength] = {};
+
+		// Module words holding the decoration operands, so a caller can rewrite
+		// them in place.
+		uint32_t uDescriptorSetWordIndex = k_nNoDecorationWordIndex;
+		uint32_t uBindingWordIndex = k_nNoDecorationWordIndex;
 	};
 
 	// Everything reflection knows about one compiled stage.

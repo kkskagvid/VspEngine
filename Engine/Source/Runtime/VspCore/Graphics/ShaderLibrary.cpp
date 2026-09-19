@@ -6,11 +6,63 @@
 #include "Common/PlatformMisc.h"
 #include "Core/Json/JsonReader.h"
 #include "Core/Logging/Log.h"
+#include "Graphics/ShaderBindings.h"
+#include "Graphics/ShaderContainer.h"
 #include "Graphics/ShaderLibrary.h"
 
 namespace Vsp
 {
 	static constexpr const char* kLogTag = "ShaderLibrary";
+
+	// -------------------------------------------------------------------------
+	// Binding check
+	// -------------------------------------------------------------------------
+	// The engine owns the descriptor set (see Graphics/ShaderBindings.h): each
+	// resource kind has exactly one binding, and HLSLCC numbers a shader's
+	// resources to match. A shader that asks for a binding the engine does not
+	// provide cannot be drawn with, so it is rejected here, by name, instead of
+	// failing later inside the driver.
+	// -------------------------------------------------------------------------
+	static bool ValidateStageBindings(
+		const VspString& sShaderName,
+		const char* pStageName,
+		const Shader::StageModule& stage,
+		VspString& outErrorText)
+	{
+		char sMessage[512] = {};
+
+		for (uint32 uResourceIndex = 0; uResourceIndex < stage.uResourceCount; ++uResourceIndex)
+		{
+			const Shader::ResourceBinding& resource = stage.Resources[uResourceIndex];
+
+			uint32 uExpectedBinding = 0;
+			switch (resource.eKind)
+			{
+			case ShaderResourceKind::UniformBuffer: uExpectedBinding = ShaderBindings::k_nCameraUniformBuffer; break;
+			case ShaderResourceKind::SampledImage:  uExpectedBinding = ShaderBindings::k_nBindlessTextures;   break;
+			case ShaderResourceKind::Sampler:       uExpectedBinding = ShaderBindings::k_nBindlessSampler;    break;
+			default:
+				snprintf(sMessage, sizeof(sMessage),
+					"the shader '%s' reads '%s' (%s) in its %s stage, which the engine cannot provide",
+					sShaderName.GetData(), resource.Name, ToShaderResourceKindName(resource.eKind), pStageName);
+				outErrorText = sMessage;
+				return false;
+			}
+
+			if (resource.uDescriptorSet != ShaderBindings::k_nDescriptorSet || resource.uBinding != uExpectedBinding)
+			{
+				snprintf(sMessage, sizeof(sMessage),
+					"the shader '%s' reads '%s' (%s) in its %s stage at set %u binding %u, "
+					"but the engine provides it at set %u binding %u",
+					sShaderName.GetData(), resource.Name, ToShaderResourceKindName(resource.eKind), pStageName,
+					resource.uDescriptorSet, resource.uBinding,
+					ShaderBindings::k_nDescriptorSet, uExpectedBinding);
+				outErrorText = sMessage;
+				return false;
+			}
+		}
+		return true;
+	}
 
 	ShaderLibrary& ShaderLibrary::Get()
 	{
@@ -38,61 +90,70 @@ namespace Vsp
 	// -------------------------------------------------------------------------
 	// Loading
 	// -------------------------------------------------------------------------
-
-	bool ShaderLibrary::LoadStageModule(
-		const VspString& sModulePath,
-		Shader::StageModule& outStage,
-		VspString& outErrorText) const
+	// A module says which variant and which pass it belongs to by index, and the
+	// container may hand them over in any order, so a module looks both up - and
+	// creates them when it is the first one to name them.
+	// -------------------------------------------------------------------------
+	static Shader::VariantModule* FindOrAddVariant(Shader& shader, uint32 uVariantIndex)
 	{
-		FILE* pFile = nullptr;
-		fopen_s(&pFile, sModulePath.GetData(), "rb");
-		if (pFile == nullptr)
+		for (uint32 uVariantSlot = 0; uVariantSlot < shader.GetVariantCount(); ++uVariantSlot)
 		{
-			outErrorText = "cannot read the shader module '" + sModulePath + "'";
-			return false;
+			Shader::VariantModule* pVariant = shader.GetMutableVariant(uVariantSlot);
+			if (pVariant != nullptr && pVariant->uVariantIndex == uVariantIndex)
+			{
+				return pVariant;
+			}
 		}
 
-		std::vector<uint8> moduleBytes;
-		uint8 sBuffer[4096];
-		size_t nReadByteCount = 0;
-		while ((nReadByteCount = fread(sBuffer, 1, sizeof(sBuffer), pFile)) > 0)
+		Shader::VariantModule* pAddedVariant = shader.AddVariant();
+		if (pAddedVariant != nullptr)
 		{
-			moduleBytes.insert(moduleBytes.end(), sBuffer, sBuffer + nReadByteCount);
+			pAddedVariant->uVariantIndex = uVariantIndex;
 		}
-		fclose(pFile);
+		return pAddedVariant;
+	}
 
-		if (moduleBytes.size() < 5u * sizeof(uint32) || (moduleBytes.size() % sizeof(uint32)) != 0)
+	static Shader::PassModule* FindOrAddPass(Shader::VariantModule& variant, uint32 uPassIndex)
+	{
+		for (uint32 uPassSlot = 0; uPassSlot < variant.uPassCount; ++uPassSlot)
 		{
-			outErrorText = "the shader module '" + sModulePath + "' is not a SPIR-V module";
-			return false;
+			if (variant.Passes[uPassSlot].uPassIndex == uPassIndex)
+			{
+				return &variant.Passes[uPassSlot];
+			}
 		}
 
-		outStage.SpirvWords.resize(moduleBytes.size() / sizeof(uint32));
-		memcpy(outStage.SpirvWords.data(), moduleBytes.data(), moduleBytes.size());
-
-		// Every SPIR-V module starts with the magic number 0x07230203.
-		if (outStage.SpirvWords[0] != 0x07230203u)
+		if (variant.uPassCount >= Shader::k_nMaxPassCount)
 		{
-			outErrorText = "the shader module '" + sModulePath + "' does not start with the SPIR-V magic number";
-			return false;
+			return nullptr;
 		}
-		return true;
+
+		Shader::PassModule& pass = variant.Passes[variant.uPassCount];
+		pass.uPassIndex = uPassIndex;
+		snprintf(pass.Name, sizeof(pass.Name), "Pass%u", uPassIndex);
+		++variant.uPassCount;
+		return &pass;
 	}
 
 	NativeObjectHandle ShaderLibrary::LoadShader(const VspString& sShaderName, VspString& outErrorText)
 	{
 		outErrorText = nullptr;
 
-		const VspString sManifestPath = m_sShaderDirectory + "\\" + sShaderName + ".shader.json";
+		// The shader is ONE file: the container HLSLCC wrote, holding every
+		// module of every kept variant together with its reflection. The engine
+		// reads nothing else, so a game ships a single asset per shader.
+		const VspString sContainerPath = m_sShaderDirectory + "\\" + sShaderName + Vsfo::k_sFileExtension;
 
-		JsonValue manifest;
-		if (!JsonReader::ParseFile(sManifestPath, manifest, outErrorText))
+		ShaderContainer container;
+		if (!container.Load(sContainerPath, outErrorText))
 		{
 			return k_nInvalidObjectHandle;
 		}
 
+		const JsonValue& metadata = container.GetMetadata();
+
 		Scene& scene = Scene::Get();
-		const NativeObjectHandle uShaderHandle = scene.CreateShader(manifest.GetMemberString("name", sShaderName.GetData()));
+		const NativeObjectHandle uShaderHandle = scene.CreateShader(metadata.GetMemberString("name", sShaderName.GetData()));
 		if (uShaderHandle == k_nInvalidObjectHandle)
 		{
 			outErrorText = "the scene refused a shader slot for '" + sShaderName + "'";
@@ -106,10 +167,10 @@ namespace Vsp
 			return k_nInvalidObjectHandle;
 		}
 
-		pShader->SetRenderQueue(manifest.GetMemberUInt32("renderQueue", 2000));
+		pShader->SetRenderQueue(metadata.GetMemberUInt32("renderQueue", 2000));
 
 		// ---- Properties ----
-		const JsonValue& properties = manifest["properties"];
+		const JsonValue& properties = metadata["properties"];
 		for (uint32 uPropertyIndex = 0; uPropertyIndex < properties.GetElementCount(); ++uPropertyIndex)
 		{
 			const JsonValue& propertyJson = properties.GetElement(uPropertyIndex);
@@ -136,7 +197,7 @@ namespace Vsp
 		}
 
 		// ---- Keyword groups ----
-		const JsonValue& keywordGroups = manifest["keywordGroups"];
+		const JsonValue& keywordGroups = metadata["keywordGroups"];
 		for (uint32 uGroupIndex = 0; uGroupIndex < keywordGroups.GetElementCount(); ++uGroupIndex)
 		{
 			const JsonValue& groupJson = keywordGroups.GetElement(uGroupIndex);
@@ -163,8 +224,11 @@ namespace Vsp
 			pShader->AddKeywordGroup(group);
 		}
 
-		// ---- Variants ----
-		const JsonValue& variants = manifest["variants"];
+		// ---- Variants, from the identity the metadata carries ----
+		// The modules below arrive variant by variant; this is what gives a
+		// variant its keyword key and the state each group is in, which is how a
+		// material picks one.
+		const JsonValue& variants = metadata["variants"];
 		for (uint32 uVariantJsonIndex = 0; uVariantJsonIndex < variants.GetElementCount(); ++uVariantJsonIndex)
 		{
 			const JsonValue& variantJson = variants.GetElement(uVariantJsonIndex);
@@ -188,51 +252,83 @@ namespace Vsp
 			{
 				pVariant->uKeywordStateIndices[uGroupIndex] = stateIndices.GetElement(uGroupIndex).GetUInt32();
 			}
+		}
 
-			const JsonValue& passes = variantJson["passes"];
-			for (uint32 uPassJsonIndex = 0; uPassJsonIndex < passes.GetElementCount(); ++uPassJsonIndex)
+		// ---- The modules, straight out of the container's index table ----
+		for (uint32 uEntryIndex = 0; uEntryIndex < container.GetEntryCount(); ++uEntryIndex)
+		{
+			const ShaderContainer::Entry* pEntry = container.GetEntry(uEntryIndex);
+			if (pEntry == nullptr || pEntry->uStageIndex >= k_nShaderStageCount)
 			{
-				if (pVariant->uPassCount >= Shader::k_nMaxPassCount)
+				continue;
+			}
+
+			Shader::VariantModule* pVariant = FindOrAddVariant(*pShader, pEntry->uVariantIndex);
+			if (pVariant == nullptr)
+			{
+				outErrorText = "the shader '" + sShaderName + "' describes more variants than the engine keeps";
+				return k_nInvalidObjectHandle;
+			}
+
+			const uint32 uPassIndex = pEntry->uPassIndex;
+			Shader::PassModule* pPass = FindOrAddPass(*pVariant, uPassIndex);
+			if (pPass == nullptr)
+			{
+				outErrorText = "the shader '" + sShaderName + "' describes more passes than the engine keeps";
+				return k_nInvalidObjectHandle;
+			}
+
+			strncpy_s(pPass->Name, sizeof(pPass->Name), pEntry->PassName, _TRUNCATE);
+
+			Shader::StageModule& stage = pPass->Stages[pEntry->uStageIndex];
+			strncpy_s(stage.EntryPointName, sizeof(stage.EntryPointName), pEntry->EntryPointName, _TRUNCATE);
+
+			stage.uInputCount = pEntry->uInputCount;
+			stage.uOutputCount = pEntry->uOutputCount;
+			stage.uPushConstantByteSize = pEntry->uPushConstantByteSize;
+			stage.uPushConstantMemberCount = pEntry->uPushConstantMemberCount;
+
+			stage.SpirvWords.assign(pEntry->pSpirvWords, pEntry->pSpirvWords + pEntry->uSpirvWordCount);
+			if (stage.SpirvWords[0] != 0x07230203u)
+			{
+				outErrorText = "the '" + sShaderName + "' container holds a module that is not SPIR-V";
+				return k_nInvalidObjectHandle;
+			}
+
+			// The bindings HLSLCC assigned to this stage. Every stage of every
+			// variant carries them, so a shader that does not fit the engine's
+			// set is rejected no matter which variant is drawn.
+			for (uint32 uResourceIndex = 0; uResourceIndex < pEntry->uResourceCount; ++uResourceIndex)
+			{
+				const Vsfo::Resource& containerResource = pEntry->pResources[uResourceIndex];
+
+				Shader::ResourceBinding resource;
+				strncpy_s(resource.Name, sizeof(resource.Name), containerResource.Name, _TRUNCATE);
+				resource.eKind = static_cast<ShaderResourceKind>(containerResource.uKind);
+				resource.uDescriptorSet = containerResource.uDescriptorSet;
+				resource.uBinding = containerResource.uBinding;
+				resource.uDescriptorCount = containerResource.uDescriptorCount;
+
+				if (!stage.AddResource(resource))
 				{
-					break;
+					char sMessage[256] = {};
+					snprintf(sMessage, sizeof(sMessage),
+						"the shader '%s' declares more than %u resources in its %s stage",
+						sShaderName.GetData(), Shader::k_nMaxStageResourceCount, pEntry->StageName);
+					outErrorText = sMessage;
+					return k_nInvalidObjectHandle;
 				}
+			}
 
-				const JsonValue& passJson = passes.GetElement(uPassJsonIndex);
-				Shader::PassModule& pass = pVariant->Passes[pVariant->uPassCount];
-				pass.uPassIndex = passJson.GetMemberUInt32("index", uPassJsonIndex);
-				strncpy_s(pass.Name, sizeof(pass.Name), passJson.GetMemberString("name", "Pass").GetData(), _TRUNCATE);
-
-				const JsonValue& stages = passJson["stages"];
-				for (uint32 uStageJsonIndex = 0; uStageJsonIndex < stages.GetElementCount(); ++uStageJsonIndex)
-				{
-					const JsonValue& stageJson = stages.GetElement(uStageJsonIndex);
-
-					const VspString sStageName = stageJson.GetMemberString("stage", "vertex");
-					const uint32 uStageIndex = sStageName.Equals("fragment") ? 1u : 0u;
-					Shader::StageModule& stage = pass.Stages[uStageIndex];
-
-					strncpy_s(stage.EntryPointName, sizeof(stage.EntryPointName),
-						stageJson.GetMemberString("entryPoint", "").GetData(), _TRUNCATE);
-					stage.uInputCount = stageJson.GetMemberUInt32("inputCount", 0);
-					stage.uOutputCount = stageJson.GetMemberUInt32("outputCount", 0);
-					stage.uResourceCount = stageJson.GetMemberUInt32("resourceCount", 0);
-					stage.uPushConstantByteSize = stageJson.GetMemberUInt32("pushConstantByteSize", 0);
-
-					const VspString sModulePath =
-						m_sShaderDirectory + "\\" + stageJson.GetMemberString("file", "").GetData();
-					if (!LoadStageModule(sModulePath, stage, outErrorText))
-					{
-						return k_nInvalidObjectHandle;
-					}
-				}
-
-				++pVariant->uPassCount;
+			if (!ValidateStageBindings(sShaderName, pEntry->StageName, stage, outErrorText))
+			{
+				return k_nInvalidObjectHandle;
 			}
 		}
 
 		if (!pShader->IsValid())
 		{
-			outErrorText = "the shader '" + sShaderName + "' manifest lists no variant";
+			outErrorText = "the shader '" + sShaderName + "' container holds no module";
 			return k_nInvalidObjectHandle;
 		}
 
@@ -248,6 +344,7 @@ namespace Vsp
 			pShader->GetKeywordGroupCount());
 		return uShaderHandle;
 	}
+
 
 	NativeObjectHandle ShaderLibrary::FindOrLoadShader(const VspString& sShaderName, VspString& outErrorText)
 	{

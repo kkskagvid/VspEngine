@@ -888,16 +888,16 @@ static bool EnsureDotNetRuntime(const BuildToolOptions& options, bool bListOnly)
 	return bAllSucceeded;
 }
 
-// Copies every HLSL shader the engine ships into <run directory>\Shaders, which
-// is where the render pipeline looks for its shader assets.
+// Copies the compiled shaders into the run directory. The game Assembly's build
+// runs HLSLCC over its .vsf files and writes the SPIR-V modules and the shader
+// manifest into the binaries directory; this stages that folder next to the
+// executable the engine loads it from.
 static bool StageShaderAssets(const BuildToolOptions& options)
 {
-	// The shader sources live in the engine's source tree, next to the graphics
-	// code that uses them.
 	wchar_t sShaderSourceDirectory[k_nMaxPathLength] = {};
 	swprintf_s(sShaderSourceDirectory, k_nMaxPathLength,
-		L"%ls\\Engine\\Source\\Runtime\\VspCore\\Graphics\\Shaders",
-		options.sRootPath);
+		L"%ls\\Engine\\Intermediate\\Binaries\\%ls_%ls\\Shaders",
+		options.sRootPath, options.sConfiguration, options.sPlatform);
 
 	wchar_t sShaderOutputDirectory[k_nMaxPathLength] = {};
 	if (!JoinPath(sShaderOutputDirectory, k_nMaxPathLength, options.sOutputDirectory, L"Shaders"))
@@ -908,8 +908,19 @@ static bool StageShaderAssets(const BuildToolOptions& options)
 
 	if (!DirectoryExists(sShaderSourceDirectory))
 	{
-		PrintError(L"the shader source directory '%ls' does not exist.", sShaderSourceDirectory);
-		return false;
+		PrintLine(L"  no compiled shaders at %ls; the build compiles them.", sShaderSourceDirectory);
+		return true;
+	}
+
+	// Staging into the directory the shaders already live in is a no-op.
+	wchar_t sResolvedSource[k_nMaxPathLength] = {};
+	wchar_t sResolvedOutput[k_nMaxPathLength] = {};
+	ResolveFullPath(sResolvedSource, k_nMaxPathLength, sShaderSourceDirectory);
+	ResolveFullPath(sResolvedOutput, k_nMaxPathLength, sShaderOutputDirectory);
+	if (_wcsicmp(sResolvedSource, sResolvedOutput) == 0)
+	{
+		PrintLine(L"  compiled shaders already in place: %ls", sResolvedOutput);
+		return true;
 	}
 
 	if (!EnsureDirectoryExists(sShaderOutputDirectory))
@@ -918,7 +929,7 @@ static bool StageShaderAssets(const BuildToolOptions& options)
 		return false;
 	}
 
-	PrintLine(L"Staging HLSL shader assets:");
+	PrintLine(L"Staging compiled shaders:");
 	bool bAllSucceeded = true;
 	const uint32 uCopiedCount =
 		CopyDirectoryTree(sShaderSourceDirectory, sShaderOutputDirectory, options.bVerbose, bAllSucceeded);
@@ -950,7 +961,7 @@ static void PrintStagingPlan(const BuildToolOptions& options)
 		PrintLine(L"  [%ls] %ls", bHasSource ? L"stage" : L"skip ", entry.pFileName);
 	}
 
-	PrintLine(L"  [stage] Engine\\Source\\Runtime\\VspCore\\Graphics\\Shaders\\*.hlsl -> Shaders\\");
+	PrintLine(L"  [stage] Engine\\Intermediate\\Binaries\\<config>_<platform>\\Shaders -> Shaders\\");
 	EnsureDotNetRuntime(options, true);
 }
 

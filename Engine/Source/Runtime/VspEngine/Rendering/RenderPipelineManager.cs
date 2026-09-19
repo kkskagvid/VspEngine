@@ -11,9 +11,12 @@ namespace VspEngine.Rendering
 	/// frame in the wrapped graphics API, hands the context to the active
 	/// pipeline and makes sure the frame gets closed.
 	///
-	/// The active pipeline is replaceable at any time; when none was set, the
-	/// manager creates one through the default pipeline factory (the engine's
-	/// forward 2D pipeline unless a game assembly installed its own).
+	/// The engine ships NO pipeline of its own: rendering, and with it every
+	/// shader load, belongs to the game assembly, which installs its pipeline
+	/// through <see cref="ActivePipeline"/> or
+	/// <see cref="SetDefaultPipelineFactory"/>. Until a game installs one, a
+	/// frame is opened and closed without any draw command, which leaves the
+	/// window cleared.
 	/// </summary>
 	public static class RenderPipelineManager
 	{
@@ -25,12 +28,16 @@ namespace VspEngine.Rendering
 		private static readonly float[] positionXyzScratch = new float[3];
 
 		private static RenderPipeline? activePipeline;
-		private static Func<RenderPipeline> defaultPipelineFactory = () => new Pipelines.Forward2DRenderPipeline();
+		private static Func<RenderPipeline>? defaultPipelineFactory;
 
-		/// <summary>The pipeline the next frame runs; the default one until a game sets its own.</summary>
-		public static RenderPipeline ActivePipeline
+		/// <summary>
+		/// The pipeline the next frame runs; null until a game installs one. The
+		/// getter builds the pipeline the game registered as its default, so a
+		/// game can keep a fresh pipeline per graphics device.
+		/// </summary>
+		public static RenderPipeline? ActivePipeline
 		{
-			get => activePipeline ??= defaultPipelineFactory();
+			get => activePipeline ??= defaultPipelineFactory?.Invoke();
 			set
 			{
 				if (!ReferenceEquals(activePipeline, value))
@@ -42,17 +49,18 @@ namespace VspEngine.Rendering
 		}
 
 		/// <summary>
-		/// Replaces the factory used while no pipeline was set explicitly. A game
-		/// assembly calls this during startup to install its own default.
+		/// Sets the factory used while no pipeline was installed explicitly. A game
+		/// assembly calls this during startup to install its own default; the
+		/// engine never installs one by itself.
 		/// </summary>
-		public static void SetDefaultPipelineFactory(Func<RenderPipeline> pipelineFactory)
+		public static void SetDefaultPipelineFactory(Func<RenderPipeline>? pipelineFactory)
 		{
-			if (pipelineFactory == null)
-			{
-				throw new ArgumentNullException(nameof(pipelineFactory));
-			}
-
 			defaultPipelineFactory = pipelineFactory;
+			if (activePipeline != null)
+			{
+				activePipeline.Dispose();
+				activePipeline = null;
+			}
 		}
 
 		/// <summary>
@@ -67,18 +75,23 @@ namespace VspEngine.Rendering
 			// Every frame is a fresh command list in the wrapped graphics API.
 			RhiApi.VspRhi_BeginFrame();
 
-			RenderPipeline pipeline = ActivePipeline;
-			try
+			RenderPipeline? pipeline = ActivePipeline;
+			if (pipeline != null)
 			{
-				pipeline.Render(renderContext);
-			}
-			catch (Exception exception)
-			{
-				// A broken pipeline must not tear the process down: report the
-				// failure and let the frame close with whatever was recorded.
-				Debug.LogError("RenderPipeline: " + exception.Message);
+				try
+				{
+					pipeline.Render(renderContext);
+				}
+				catch (Exception exception)
+				{
+					// A broken pipeline must not tear the process down: report the
+					// failure and let the frame close with whatever was recorded.
+					Debug.LogError("RenderPipeline: " + exception.Message);
+				}
 			}
 
+			// Without a pipeline (or after one failed) the frame closes empty and
+			// the window keeps showing the cleared background.
 			renderContext.Submit();
 		}
 
@@ -120,9 +133,8 @@ namespace VspEngine.Rendering
 				NativeApi.VspTransform_GetLocalPosition(transformHandle, positionXyzScratch);
 				Vector3 position = new Vector3(positionXyzScratch[0], positionXyzScratch[1], positionXyzScratch[2]);
 
-				ColorMode colorMode = (ColorMode)NativeApi.VspComponent_GetColorMode(componentHandle);
 				uint materialHandle = NativeApi.VspComponent_GetMaterial(componentHandle);
-				frameDrawItems.Add(new RenderDrawItem(componentHandle, transformHandle, position, colorMode, materialHandle));
+				frameDrawItems.Add(new RenderDrawItem(componentHandle, transformHandle, position, materialHandle));
 			}
 		}
 	}

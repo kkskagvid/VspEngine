@@ -3,8 +3,11 @@
 #include <atomic>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
+#include <sstream>
 
 #include "FilePathUtility.h"
+#include "ShaderSourceInjector.h"
 
 #if defined(_WIN32)
 	#define WIN32_LEAN_AND_MEAN
@@ -176,6 +179,12 @@ namespace Hlslcc
 						continue;
 					}
 
+					// An included file decides, just like the shader itself, whether
+					// the pass manages its own bindings. Reading the text here is
+					// what makes a binding written inside an include visible to the
+					// compiler, which otherwise only sees the .vsf text.
+					NoteIncludedSource(sCandidatePath);
+
 					std::wstring sWideCandidatePath;
 					if (WidenText(FilePathUtility::GetAbsolutePath(sCandidatePath), sWideCandidatePath))
 					{
@@ -187,7 +196,33 @@ namespace Hlslcc
 				return E_FAIL;
 			}
 
+			// True when any file resolved through this handler named a descriptor
+			// binding of its own.
+			bool DidAnyIncludeSpecifyBindings() const { return m_bIncludedSourceSpecifiesBindings; }
+
 		private:
+			// Reads an included file and remembers whether it names its own
+			// bindings. A file that cannot be read is not reported here: the
+			// compiler reports it through its own diagnostics.
+			void NoteIncludedSource(const std::string& sFilePath)
+			{
+				if (m_bIncludedSourceSpecifiesBindings)
+				{
+					return;
+				}
+
+				std::ifstream sourceStream(sFilePath, std::ios::binary);
+				if (!sourceStream.is_open())
+				{
+					return;
+				}
+
+				std::ostringstream sourceText;
+				sourceText << sourceStream.rdbuf();
+				m_bIncludedSourceSpecifiesBindings =
+					ShaderSourceInjector::SourceTextSpecifiesBindings(sourceText.str());
+			}
+
 			~FileIncludeHandler()
 			{
 				if (m_pUtils != nullptr)
@@ -212,6 +247,7 @@ namespace Hlslcc
 			std::atomic<ULONG> m_nReferenceCount{ 1 };
 			IDxcUtils* m_pUtils = nullptr;
 			std::vector<std::string> m_sSearchDirectories;
+			bool m_bIncludedSourceSpecifiesBindings = false;
 		};
 #endif
 	}
@@ -489,6 +525,7 @@ namespace Hlslcc
 			pIncludeHandler,
 			IID_PPV_ARGS(&pResult));
 
+		outOutput.bSourceSpecifiesBindings = pIncludeHandler->DidAnyIncludeSpecifyBindings();
 		pIncludeHandler->Release();
 
 		if (FAILED(hCompileResult) || pResult == nullptr)

@@ -55,6 +55,15 @@ namespace Hlslcc
 		bool bInjectVulkanNamespace = true;
 		bool bInjectEngineAttributeShorthands = true;
 
+		// Let the ENGINE decide the descriptor bindings instead of the shader.
+		// When this is on (the default) every resource of the compiled module is
+		// renumbered by the engine's rules (see SpirvBindingAssigner), so a shader
+		// never writes [[vk::binding]].
+		//
+		// A shader that DOES write [[vk::binding]] manages its own bindings and is
+		// left alone: the flag only applies to shaders that specify none.
+		bool bAutoAssignBindings = true;
+
 		// Compile without optimisation and keep debug information.
 		bool bDebugInfo = false;
 
@@ -71,6 +80,10 @@ namespace Hlslcc
 		std::vector<uint32_t> SpirvWords;
 		ShaderStageReflection Reflection;
 		std::string Diagnostics;
+
+		// True when the source compiled for this stage - the stage itself or any
+		// file it includes - named its own descriptor bindings.
+		bool bSourceSpecifiesBindings = false;
 
 		// True once a non-empty SPIR-V module was produced.
 		bool IsValid() const { return SpirvWords.size() >= 5; }
@@ -174,6 +187,17 @@ namespace Hlslcc
 			const ShaderFile& shaderFile,
 			const CompileOptions& options,
 			CompiledShader& outShader,
+			std::string& outErrorText);
+
+		// True when the pass names its own descriptor bindings ([[vk::binding]] or
+		// "register(...)"), in which case the engine leaves them alone.
+		static bool DoesPassSpecifyBindings(const ShaderPass& pass);
+
+		// Applies the engine's binding rules to a compiled pass.
+		static bool AssignPassBindings(
+			const ShaderPass& pass,
+			const CompileOptions& options,
+			CompiledPass& outPass,
 			std::string& outErrorText);
 
 		// Compiles both stages of one pass for one variant.

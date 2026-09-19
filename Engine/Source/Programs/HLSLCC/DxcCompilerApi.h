@@ -40,6 +40,11 @@ namespace Hlslcc
 	{
 		std::vector<uint32_t> SpirvWords;   // Complete SPIR-V module.
 		std::string Diagnostics;            // Warnings/errors the compiler produced.
+
+		// True when the shader named its own descriptor bindings, in the compiled
+		// text or in any file it includes (see
+		// ShaderSourceInjector::SourceTextSpecifiesBindings).
+		bool bSourceSpecifiesBindings = false;
 	};
 
 	class DxcCompilerApi

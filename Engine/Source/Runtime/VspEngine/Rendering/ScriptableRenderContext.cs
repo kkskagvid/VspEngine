@@ -5,9 +5,13 @@ namespace VspEngine.Rendering
 {
 	/// <summary>
 	/// One drawable the render pipeline may submit: the script component that
-	/// requested rendering, its transform and the color mode a script set on it.
-	/// The list is built once per frame from the native scene, so a pipeline
-	/// never walks the scene itself.
+	/// requested rendering, its transform and the material it draws with. The
+	/// list is built once per frame from the native scene, so a pipeline never
+	/// walks the scene itself.
+	///
+	/// The engine reports where a drawable IS and what it draws WITH; what that
+	/// means for the pixels is a property of the material and therefore entirely
+	/// the game's business.
 	/// </summary>
 	public readonly struct RenderDrawItem
 	{
@@ -17,11 +21,8 @@ namespace VspEngine.Rendering
 		/// <summary>Native handle of that component's transform.</summary>
 		public readonly uint TransformHandle;
 
-		/// <summary>World-space position of the transform.</summary>
+		/// <summary>Position of the transform.</summary>
 		public readonly Vector3 Position;
-
-		/// <summary>Color mode the script assigned to the component.</summary>
-		public readonly ColorMode ColorMode;
 
 		/// <summary>Material the component draws with (0 when it has none yet).</summary>
 		public readonly uint MaterialHandle;
@@ -30,14 +31,31 @@ namespace VspEngine.Rendering
 			uint componentHandle,
 			uint transformHandle,
 			Vector3 position,
-			ColorMode colorMode,
 			uint materialHandle)
 		{
 			ComponentHandle = componentHandle;
 			TransformHandle = transformHandle;
 			Position = position;
-			ColorMode = colorMode;
 			MaterialHandle = materialHandle;
+		}
+
+		/// <summary>
+		/// The material the component draws with, or null before a pipeline gave
+		/// it one.
+		/// </summary>
+		public Material? Material => MaterialHandle != 0 ? new Material(MaterialHandle) : null;
+
+		/// <summary>
+		/// Makes the drawable render with the given material from the next frame
+		/// on. A pipeline calls this when it hands a drawable its default.
+		/// </summary>
+		public void AssignMaterial(Material material)
+		{
+			if (material == null)
+			{
+				throw new System.ArgumentNullException(nameof(material));
+			}
+			NativeApi.VspComponent_SetMaterial(ComponentHandle, material.NativeHandle);
 		}
 	}
 

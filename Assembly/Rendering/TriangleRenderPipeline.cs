@@ -3,15 +3,18 @@ using System.Collections.Generic;
 using System.Numerics;
 using System.Runtime.InteropServices;
 
-namespace VspEngine.Rendering.Pipelines
+using VspEngine;
+using VspEngine.Rendering;
+
+namespace Assembly.Rendering
 {
 	/// <summary>
-	/// The push-constant block the engine's 2D shader declares: the color
-	/// override, the material tint, the per-draw position offset, the color mode
-	/// and the bindless texture slot. The field order and the explicit offsets
-	/// must stay identical to the PassPushConstants block in
-	/// Graphics/Shaders/Triangle2DCommon.hlsl - the reflection HLSLCC produces for
-	/// that block is what the pipeline checks itself against.
+	/// The push-constant block the game's 2D shader declares: the color override,
+	/// the material tint, the per-draw position offset, the color mode and the
+	/// bindless texture slot. The field order and the explicit offsets must stay
+	/// identical to the PassPushConstants block in the shader's include file
+	/// (Assembly/Shaders/Triangle2DCommon.hlsl) - the reflection HLSLCC produced
+	/// for that block is what the pipeline reads back from the loaded shader.
 	/// </summary>
 	[StructLayout(LayoutKind.Sequential, Pack = 4)]
 	internal struct TrianglePushConstants
@@ -31,37 +34,36 @@ namespace VspEngine.Rendering.Pipelines
 	}
 
 	/// <summary>
-	/// The engine's default render pipeline: one forward pass that clears the
-	/// background and draws every drawable the manager gathered as a colored
-	/// triangle.
+	/// The game's forward pipeline: one pass that clears the background and draws
+	/// every drawable the engine gathered as a triangle.
 	///
-	/// The shader is NOT written here: it is the SPIR-V HLSLCC produced from
-	/// Shaders/Triangle2D.vsf, which the engine loads from disk. The pipeline
-	/// builds one graphics pipeline per shader VARIANT and picks between them
-	/// from the material each drawable carries - the same way a game pipeline
-	/// would.
+	/// This is GAME code. The engine ships no pipeline of its own, so rendering -
+	/// and with it every shader load - starts here: the pipeline calls
+	/// <see cref="Shader.Load"/> for the game's compiled shader, builds one
+	/// graphics pipeline per shader VARIANT and picks between them from the
+	/// material each drawable carries.
 	///
-	/// It is a normal <see cref="RenderPipeline"/>, so a game assembly can study
-	/// it and replace it with its own flow; nothing about it is privileged.
+	/// The shader is not written here and is not compiled here either: it is the
+	/// SPIR-V HLSLCC produced from Assembly/Shaders/Triangle2D.vsf at build time.
 	/// </summary>
-	public sealed class Forward2DRenderPipeline : RenderPipeline
+	public sealed class TriangleRenderPipeline : RenderPipeline
 	{
 		/// <summary>Background the frame clears to.</summary>
 		public static readonly Color BackgroundColor = new Color(0.06f, 0.06f, 0.10f, 1.0f);
 
+		/// <summary>Name of the compiled shader this pipeline draws with.</summary>
+		public const string ShaderName = "Triangle2D";
+
 		private const int TriangleVertexCount = 3;
 		private const uint DefaultTextureSize = 8;
 
-		/// <summary>Base name of the compiled shader this pipeline draws with.</summary>
-		public const string DefaultShaderName = "Triangle2D";
-
 		// The acceptance triangle: one vertex per corner, distinct vertex colors.
-		private static readonly Vertex2D[] TriangleVertices =
+		private static readonly TriangleVertex[] TriangleVertices =
 		{
 			// bottom-left (red)    bottom-right (green)  top (blue)
-			new Vertex2D(new Vector2(-0.5f, -0.45f), new Vector4(1.0f, 0.0f, 0.0f, 1.0f), new Vector2(0.0f, 0.0f)),
-			new Vertex2D(new Vector2( 0.5f, -0.45f), new Vector4(0.0f, 1.0f, 0.0f, 1.0f), new Vector2(1.0f, 0.0f)),
-			new Vertex2D(new Vector2( 0.0f,  0.55f), new Vector4(0.0f, 0.0f, 1.0f, 1.0f), new Vector2(0.5f, 1.0f)),
+			new TriangleVertex(new Vector2(-0.5f, -0.45f), new Vector4(1.0f, 0.0f, 0.0f, 1.0f), new Vector2(0.0f, 0.0f)),
+			new TriangleVertex(new Vector2( 0.5f, -0.45f), new Vector4(0.0f, 1.0f, 0.0f, 1.0f), new Vector2(1.0f, 0.0f)),
+			new TriangleVertex(new Vector2( 0.0f,  0.55f), new Vector4(0.0f, 0.0f, 1.0f, 1.0f), new Vector2(0.5f, 1.0f)),
 		};
 
 		private Shader? shader;
@@ -149,9 +151,9 @@ namespace VspEngine.Rendering.Pipelines
 		}
 
 		/// <summary>
-		/// Loads the compiled shader and creates the resources one frame needs,
-		/// on first use - which is also the first frame after the graphics backend
-		/// came up.
+		/// Loads the game's compiled shader and creates the resources one frame
+		/// needs, on first use - which is also the first frame after the graphics
+		/// backend came up.
 		/// </summary>
 		private void EnsureResources()
 		{
@@ -160,12 +162,13 @@ namespace VspEngine.Rendering.Pipelines
 				return;
 			}
 
-			// The shader is what HLSLCC compiled from the .vsf file: one SPIR-V
-			// module per stage, for every variant the build kept.
-			shader = Shader.Load(DefaultShaderName);
+			// The shader is what HLSLCC compiled from this game's .vsf file: one
+			// SPIR-V module per stage, for every variant the build kept, packaged
+			// in the shader container the engine reads.
+			shader = Shader.Load(ShaderName);
 			if (shader == null || !shader.IsValid)
 			{
-				FailResourceCreation("the compiled shader '" + DefaultShaderName + "' could not be loaded");
+				FailResourceCreation("the compiled shader '" + ShaderName + "' could not be loaded");
 				return;
 			}
 
@@ -176,8 +179,8 @@ namespace VspEngine.Rendering.Pipelines
 				return;
 			}
 
-			triangleVertexBuffer = new VertexBuffer((uint)(TriangleVertices.Length * Vertex2D.Stride));
-			if (!triangleVertexBuffer.IsValid || !triangleVertexBuffer.Update<Vertex2D>(TriangleVertices))
+			triangleVertexBuffer = new VertexBuffer((uint)(TriangleVertices.Length * TriangleVertex.Stride));
+			if (!triangleVertexBuffer.IsValid || !triangleVertexBuffer.Update<TriangleVertex>(TriangleVertices))
 			{
 				FailResourceCreation("the triangle vertex buffer could not be filled");
 				return;
@@ -193,7 +196,7 @@ namespace VspEngine.Rendering.Pipelines
 			}
 
 			resourcesReady = true;
-			Debug.LogInfo("Forward2DRenderPipeline: shader '" + shader.ShaderName + "' ready ("
+			Debug.LogInfo("TriangleRenderPipeline: shader '" + shader.ShaderName + "' ready ("
 				+ shader.VariantCount + " variant(s), queue " + shader.RenderQueue + ").");
 
 			for (int variantIndex = 0; variantIndex < shader.VariantCount; ++variantIndex)
@@ -216,16 +219,16 @@ namespace VspEngine.Rendering.Pipelines
 		/// </summary>
 		private Material ResolveMaterial(RenderDrawItem drawItem)
 		{
-			if (drawItem.MaterialHandle != 0)
+			Material? drawMaterial = drawItem.Material;
+			if (drawMaterial != null)
 			{
-				return new Material(drawItem.MaterialHandle);
+				return drawMaterial;
 			}
 
-			// First frame of this drawable: give it the default material and carry
-			// over the color mode the script may already have set.
-			defaultMaterial!.SetFloat(Material.ColorModePropertyName, (float)drawItem.ColorMode);
-			NativeApi.VspComponent_SetMaterial(drawItem.ComponentHandle, defaultMaterial.NativeHandle);
-			return defaultMaterial;
+			// First frame of this drawable: give it the default material.
+			Material fallbackMaterial = defaultMaterial!;
+			drawItem.AssignMaterial(fallbackMaterial);
+			return fallbackMaterial;
 		}
 
 		/// <summary>
@@ -279,7 +282,7 @@ namespace VspEngine.Rendering.Pipelines
 					.SetShader(ShaderStage.Vertex, vertexShader)
 					.SetShader(ShaderStage.Fragment, fragmentShader)
 					.SetVertexLayout(
-						Vertex2D.Stride,
+						TriangleVertex.Stride,
 						new VertexAttribute(0, 2, 0),    // position
 						new VertexAttribute(1, 4, 8),    // color
 						new VertexAttribute(2, 2, 24))   // uv
@@ -296,7 +299,7 @@ namespace VspEngine.Rendering.Pipelines
 
 			if (pipeline == null || !pipeline.IsValid)
 			{
-				Debug.LogError("Forward2DRenderPipeline: the pipeline of shader variant " + variantIndex + " could not be created.");
+				Debug.LogError("TriangleRenderPipeline: the pipeline of shader variant " + variantIndex + " could not be created.");
 				return null;
 			}
 
@@ -313,35 +316,24 @@ namespace VspEngine.Rendering.Pipelines
 			int byteCount = shader!.GetStageSpirvSize(variantIndex, stage);
 			if (byteCount <= 0)
 			{
-				Debug.LogError("Forward2DRenderPipeline: variant " + variantIndex + " has no " + stage + " module.");
+				Debug.LogError("TriangleRenderPipeline: variant " + variantIndex + " has no " + stage + " module.");
 				return null;
 			}
 
 			byte[] spirvCode = new byte[byteCount];
 			if (!shader.CopyStageSpirv(variantIndex, stage, spirvCode))
 			{
-				Debug.LogError("Forward2DRenderPipeline: the " + stage + " module of variant " + variantIndex + " could not be read.");
+				Debug.LogError("TriangleRenderPipeline: the " + stage + " module of variant " + variantIndex + " could not be read.");
 				return null;
 			}
 
 			ShaderModule compiledStageShader = new ShaderModule(stage, shader.GetEntryPointName(variantIndex, stage), spirvCode);
 			if (!compiledStageShader.IsValid)
 			{
-				Debug.LogError("Forward2DRenderPipeline: the backend rejected the " + stage + " module of variant " + variantIndex + ".");
+				Debug.LogError("TriangleRenderPipeline: the backend rejected the " + stage + " module of variant " + variantIndex + ".");
 				return null;
 			}
 			return compiledStageShader;
-		}
-
-		/// <summary>
-		/// Directory the build stages the compiled shaders into: a "Shaders"
-		/// folder next to the executable.
-		/// </summary>
-		public static string GetShaderAssetDirectory()
-		{
-			byte[] directoryBuffer = new byte[1024];
-			NativeApi.VspPlatform_GetExecutableDirectoryUtf8(directoryBuffer, directoryBuffer.Length);
-			return System.IO.Path.Combine(Shader.ReadText(directoryBuffer), "Shaders");
 		}
 
 		/// <summary>
@@ -353,7 +345,7 @@ namespace VspEngine.Rendering.Pipelines
 			if (!resourceCreationFailed)
 			{
 				resourceCreationFailed = true;
-				Debug.LogError("Forward2DRenderPipeline: " + reason + "; frames fall back to a plain clear.");
+				Debug.LogError("TriangleRenderPipeline: " + reason + "; frames fall back to a plain clear.");
 			}
 		}
 
@@ -367,36 +359,24 @@ namespace VspEngine.Rendering.Pipelines
 			Material material,
 			uint textureIndex)
 		{
+			TriangleColorMode colorMode = (TriangleColorMode)(int)material.GetFloat(
+				TriangleMaterial.ColorModePropertyName, (float)TriangleColorMode.MultiColor);
+
 			TrianglePushConstants pushConstants = default;
 			pushConstants.PositionOffsetX = drawItem.Position.X;
 			pushConstants.PositionOffsetY = drawItem.Position.Y;
-			pushConstants.ColorMode = (int)drawItem.ColorMode;
+			pushConstants.ColorMode = (int)colorMode;
 			pushConstants.TextureIndex = textureIndex;
 			pushConstants.OverrideColorA = 1.0f;
 
 			// MultiColor keeps the vertex colors, so its override stays zero and
 			// the fragment stage ignores it (uColorMode == 3).
-			switch (drawItem.ColorMode)
-			{
-			case ColorMode.Red:
-				pushConstants.OverrideColorR = 1.0f;
-				break;
-
-			case ColorMode.Blue:
-				pushConstants.OverrideColorB = 1.0f;
-				break;
-
-			case ColorMode.Green:
-				pushConstants.OverrideColorG = 1.0f;
-				break;
-
-			default:
-				break;
-			}
+			TriangleMaterial.GetOverrideColor(
+				colorMode, out pushConstants.OverrideColorR, out pushConstants.OverrideColorG, out pushConstants.OverrideColorB);
 
 			// The material's tint; it reaches the image only in the variants that
 			// declare the _TINT_ENABLED keyword, and white leaves it unchanged.
-			Vector4 tint = material.GetVector(Material.TintPropertyName, Vector4.One);
+			Vector4 tint = material.GetVector(TriangleMaterial.TintPropertyName, Vector4.One);
 			pushConstants.TintColorR = tint.X;
 			pushConstants.TintColorG = tint.Y;
 			pushConstants.TintColorB = tint.Z;

@@ -1,5 +1,7 @@
 using System.Numerics;
 
+using Assembly.Rendering;
+
 using VspEngine;
 
 namespace Assembly
@@ -12,8 +14,8 @@ namespace Assembly
 	///
 	/// The script owns no rendering state of its own: the transform lives in the
 	/// native scene, and the color is a property of the material the component
-	/// draws with - which is what the render pipeline reads while it builds the
-	/// frame.
+	/// draws with - which is what the game's render pipeline reads while it
+	/// builds the frame.
 	/// </summary>
 	public sealed class TriangleController : ScriptBehaviour
 	{
@@ -21,7 +23,7 @@ namespace Assembly
 
 		private float positionX;
 		private float positionY;
-		private int colorCycle = (int)ColorMode.MultiColor; // 0 red, 1 blue, 2 green, 3 multicolor
+		private int colorCycle = (int)TriangleColorMode.MultiColor;
 
 		public override void OnInit()
 		{
@@ -29,7 +31,10 @@ namespace Assembly
 			positionY = 0.0f;
 
 			Transform.Position = Vector2.Zero;
-			Renderer.SetColorMode(this, (ColorMode)colorCycle);
+
+			// The component has no material until the pipeline's first frame, so
+			// the color it starts with is the shader's own default (multicolor).
+			TriangleMaterial.SetColorMode(this, (TriangleColorMode)colorCycle);
 
 			Debug.Log("TriangleController: OnInit (InstanceID = " + InstanceID
 				+ ", component handle = " + NativeHandle + ")");
@@ -59,9 +64,10 @@ namespace Assembly
 			if (Input.GetKeyDown(KeyCode.T))
 			{
 				colorCycle = (colorCycle + 1) % 4;
-				Renderer.SetColorMode(this, (ColorMode)colorCycle);
-				Debug.Log("TriangleController: color mode -> " + (ColorMode)colorCycle
-					+ " (material _ColorMode = " + (int)Renderer.GetColorMode(this) + ")");
+				TriangleMaterial.SetColorMode(this, (TriangleColorMode)colorCycle);
+				Debug.Log("TriangleController: color mode -> " + (TriangleColorMode)colorCycle
+					+ " (material " + TriangleMaterial.ColorModePropertyName + " = "
+					+ (int)TriangleMaterial.GetColorMode(this) + ")");
 			}
 
 			Transform.Position = new Vector2(positionX, positionY);

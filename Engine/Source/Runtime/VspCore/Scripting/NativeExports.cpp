@@ -1,5 +1,8 @@
 #include "RuntimePCH.h"
 
+#include <cstring>
+
+#include "Common/PlatformMisc.h"
 #include "Core/Input/InputManager.h"
 #include "Core/Logging/Log.h"
 #include "Scripting/ScriptCore.h"
@@ -87,6 +90,30 @@ CSHARP_EXPORT float VspTime_GetDeltaTime()
 CSHARP_EXPORT float VspTime_GetElapsedTime()
 {
 	return Vsp::ScriptCore::Get().GetElapsedTime();
+}
+
+// -------- Engine paths --------
+
+// Directory the executable lives in, as UTF-8. Managed code uses it to find the
+// assets that are staged next to the executable - the compiled shaders above all.
+CSHARP_EXPORT int32 VspPlatform_GetExecutableDirectoryUtf8(char* pBufferUtf8, int32 nBufferCapacityBytes)
+{
+	if (pBufferUtf8 == nullptr || nBufferCapacityBytes <= 0)
+	{
+		return 0;
+	}
+
+	const Vsp::VspString sExecutableDirectory = Vsp::PlatformMisc::GetExecutableDirectoryPath();
+	const size_t nTextByteCount = strlen(sExecutableDirectory.GetData());
+	const size_t nMaxCopyByteCount = static_cast<size_t>(nBufferCapacityBytes) - 1u;
+	const size_t nCopyByteCount = nTextByteCount < nMaxCopyByteCount ? nTextByteCount : nMaxCopyByteCount;
+
+	if (nCopyByteCount > 0)
+	{
+		memcpy(pBufferUtf8, sExecutableDirectory.GetData(), nCopyByteCount);
+	}
+	pBufferUtf8[nCopyByteCount] = '\0';
+	return static_cast<int32>(nCopyByteCount);
 }
 
 // -------- Logging --------

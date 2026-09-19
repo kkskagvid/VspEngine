@@ -1,0 +1,86 @@
+// ---------------------------------------------------------------------------
+// Triangle2D - the engine's built-in 2D shader (.vsf).
+//
+// A .vsf file holds everything one shader needs:
+//   Properties  the values the editor shows,
+//   Shader      the shader itself: its settings, and one or more Pass blocks,
+//   Pass        the shader code - HLSL, with #include and with the entry points
+//               named by #pragma vertex / #pragma fragment.
+//
+// The Pass blocks live INSIDE the Shader block, and a Shader block may hold
+// several of them.
+//
+// HLSLCC turns this file into
+//   Triangle2D.vert.spv / Triangle2D.frag.spv     the default variant
+//   Triangle2D.<variant>.vert.spv / .frag.spv     the other kept variants
+//   Triangle2D.shader.json                        what the engine loads
+//   Triangle2D.reflection.json                    the full reflection
+// ---------------------------------------------------------------------------
+
+Properties
+{
+    _ColorMode ("Color Mode", Float) = 3
+    _Tint ("Tint", Color) = (1, 1, 1, 1)
+}
+
+Shader "Vsp/Triangle2D"
+{
+    Queue = "Geometry"
+
+    // A strippable keyword group declared in the Shader block: the build keeps
+    // only the states it reports as used, so a shader whose _TINT_ENABLED
+    // variant nobody uses ships without it.
+    Variant _TINT_ENABLED
+
+    Pass
+    {
+        // Both stage entry points live in this one file.
+        #pragma vertex PassVertex
+        #pragma fragment PassFragment
+
+        // An "always kept" keyword group: both states are compiled and stay in
+        // the build whether they are used or not.
+        #pragma multi_variant_local _FLAT_COLOR
+
+        #include "Triangle2DCommon.hlsl"
+
+        // -------------------------------------------------------------------
+        // Entry point: vertex stage
+        // -------------------------------------------------------------------
+        PassVertexOutput PassVertex(PassVertexInput input)
+        {
+            PassVertexOutput output;
+            output.Position = mul(ViewProjectionMatrix, float4(input.Position + PushConstants.PositionOffset, 0.0, 1.0));
+            output.Color = input.Color;
+            output.Uv = input.Uv;
+            return output;
+        }
+
+        // -------------------------------------------------------------------
+        // Entry point: fragment stage
+        // -------------------------------------------------------------------
+        float4 PassFragment(PassFragmentInput input) : SV_Target0
+        {
+        #if defined(_FLAT_COLOR)
+            // The "always kept" variant: every pixel gets the same color.
+            float4 baseColor = PushConstants.TintColor;
+        #else
+            // MultiColor keeps the per-vertex colors; every other mode replaces
+            // them with the flat override color.
+            float4 baseColor = (PushConstants.ColorMode == 3) ? input.Color : PushConstants.OverrideColor;
+        #endif
+
+        #if defined(_TINT_ENABLED)
+            // The strippable variant: the material's tint multiplies the result.
+            baseColor *= PushConstants.TintColor;
+        #endif
+
+            // The demo texture is white, so multiplying by it keeps the colors
+            // exact while the bindless lookup - through the builtin library - is
+            // exercised on every pixel.
+            float3 sampledColor = VspSampleTexture(PushConstants.TextureIndex, input.Uv).rgb;
+
+            return float4(baseColor.rgb * sampledColor, baseColor.a);
+        }
+    }
+}

@@ -112,8 +112,10 @@ namespace Vsp
 		// Alpha blending (src alpha / one minus src alpha) - the 2D default.
 		bool bBlendEnabled = true;
 
-		// Size of the push-constant block every draw may set.
-		uint32 uPushConstantByteCount = 32;
+		// Size in bytes of the push-constant block every draw may set. The
+		// render pipeline states it (the shader reflection reports it), so the
+		// engine assumes no layout of its own.
+		uint32 uPushConstantByteCount = 0;
 	};
 
 	// One recorded command of a frame. A tagged value with a fixed payload, so

@@ -32,5 +32,14 @@ namespace Hlslcc
 			ShaderStage eStage,
 			ShaderStageReflection& outReflection,
 			std::string& outErrorText);
+
+		// Lists the descriptor variables of a module in declaration order, with the
+		// words that hold their descriptor set and binding numbers. The compiler
+		// uses it to apply the engine's binding rules before it reads the module
+		// back for reflection.
+		static HlslccResult CollectResources(
+			const std::vector<uint32_t>& spirvWords,
+			std::vector<SpirvResourceVariable>& outResources,
+			std::string& outErrorText);
 	};
 }

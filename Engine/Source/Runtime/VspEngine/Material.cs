@@ -10,14 +10,12 @@ namespace VspEngine
 	/// One shader can be drawn many different ways, so a material is what a
 	/// renderable component actually points at.
 	/// </summary>
+	/// <remarks>
+	/// The engine only moves these values around: which properties a shader has
+	/// and what they mean is written in the shader, so a game names them itself.
+	/// </remarks>
 	public sealed class Material : Object
 	{
-		/// <summary>Property the demo scripts use to pick the triangle's color.</summary>
-		public const string ColorModePropertyName = "_ColorMode";
-
-		/// <summary>Property that tints whatever the shader outputs.</summary>
-		public const string TintPropertyName = "_Tint";
-
 		internal Material(uint nativeHandle)
 		{
 			NativeHandle = nativeHandle;

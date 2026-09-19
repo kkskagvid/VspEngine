@@ -130,6 +130,11 @@
     <Manifest>
       <EnableSegmentHeap>true</EnableSegmentHeap>
     </Manifest>
+    <PostBuildEvent>
+      <Command>if not exist "$(OutDir)Builtin\Vsp" mkdir "$(OutDir)Builtin\Vsp"
+xcopy /Y /D /Q "$(SolutionDir)Engine\Shaders\Builtin\Vsp\*.hlsl" "$(OutDir)Builtin\Vsp\" &gt;nul</Command>
+      <Message>Staging the HLSL builtin library next to HLSLCC.exe</Message>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -151,9 +156,27 @@
     <Manifest>
       <EnableSegmentHeap>true</EnableSegmentHeap>
     </Manifest>
+    <PostBuildEvent>
+      <Command>if not exist "$(OutDir)Builtin\Vsp" mkdir "$(OutDir)Builtin\Vsp"
+xcopy /Y /D /Q "$(SolutionDir)Engine\Shaders\Builtin\Vsp\*.hlsl" "$(OutDir)Builtin\Vsp\" &gt;nul</Command>
+      <Message>Staging the HLSL builtin library next to HLSLCC.exe</Message>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="CommandLine.cpp" />
+    <ClCompile Include="Compiler.cpp" />
+    <ClCompile Include="DxcCompilerApi.cpp" />
+    <ClCompile Include="FilePathUtility.cpp" />
     <ClCompile Include="HLSLCC.cpp" />
+    <ClCompile Include="Result.cpp" />
+    <ClCompile Include="ShaderDefinition.cpp" />
+    <ClCompile Include="ShaderOutputWriter.cpp" />
+    <ClCompile Include="ShaderReflection.cpp" />
+    <ClCompile Include="ShaderSourceInjector.cpp" />
+    <ClCompile Include="SpirvBindingAssigner.cpp" />
+    <ClCompile Include="SpirvReflectionReader.cpp" />
+    <ClCompile Include="VsfoWriter.cpp" />
+    <ClCompile Include="VspShaderFile.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="CommandLine.h" />
@@ -165,8 +188,10 @@
     <ClInclude Include="ShaderOutputWriter.h" />
     <ClInclude Include="ShaderReflection.h" />
     <ClInclude Include="ShaderSourceInjector.h" />
+    <ClInclude Include="SpirvBindingAssigner.h" />
     <ClInclude Include="SpirvReflectionReader.h" />
     <ClInclude Include="VspShaderFile.h" />
+    <ClInclude Include="VsfoWriter.h" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="HLSLCCLib.vcxproj">

@@ -1,0 +1,34 @@
+// ---------------------------------------------------------------------------
+// ExplicitBindingTest - a shader that names its own descriptor bindings.
+//
+// The engine numbers the resources of a shader that names NONE. This one writes
+// [[vk::binding]] inside the file its Pass includes, which is exactly the case a
+// scan of the .vsf text alone cannot see, so the acceptance run proves that
+// HLSLCC leaves the shader's own numbers alone instead of overwriting them.
+// ---------------------------------------------------------------------------
+
+Shader "Vsp/ExplicitBindingTest"
+{
+    Queue = "Geometry"
+
+    Pass
+    {
+        #pragma vertex PassVertex
+        #pragma fragment PassFragment
+
+        #include "ExplicitBindingTest.hlsl"
+
+        ExplicitFragmentInput PassVertex(ExplicitVertexInput input)
+        {
+            ExplicitFragmentInput output;
+            output.Position = mul(ViewProjectionMatrix, float4(input.Position, 1.0));
+            output.Color = input.Color;
+            return output;
+        }
+
+        float4 PassFragment(ExplicitFragmentInput input) : SV_Target0
+        {
+            return input.Color;
+        }
+    }
+}

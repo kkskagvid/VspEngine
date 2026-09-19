@@ -278,74 +278,143 @@ namespace Hlslcc
 		return HlslccResult::Success;
 	}
 
+	namespace
+	{
+		// Everything a shader says about itself: what it is called, where it came
+		// from, what a material can set on it and which keyword groups select its
+		// variants. The manifest file and the container's metadata section both
+		// start with this, so a reader parses one shape either way.
+		// bIncludeVariantKeys adds the light variant list (index, keyword names
+		// and the keyword state each group is in) a container needs to resolve
+		// the variant a material selects. The manifest file does not need it: it
+		// lists its variants in full right after.
+		void AppendShaderDescriptionJson(
+			std::string& sJson,
+			const CompiledShader& shader,
+			const std::string& sBaseName,
+			bool bIncludeVariantKeys)
+		{
+			char sNumberBuffer[768] = {};
+
+			sJson += "  \"version\": 1,\n";
+			sJson += "  \"name\": \"" + EscapeJsonText(shader.ShaderName.c_str()) + "\",\n";
+			sJson += "  \"source\": \"" + EscapeJsonText(shader.SourceName.c_str()) + "\",\n";
+			sJson += "  \"baseName\": \"" + EscapeJsonText(sBaseName.c_str()) + "\",\n";
+
+			std::snprintf(sNumberBuffer, sizeof(sNumberBuffer), "  \"renderQueue\": %u,\n", shader.uRenderQueue);
+			sJson += sNumberBuffer;
+
+			// ---- Properties ----
+			sJson += "  \"properties\": [\n";
+			for (size_t nPropertyIndex = 0; nPropertyIndex < shader.Properties.size(); ++nPropertyIndex)
+			{
+				const ShaderProperty& property = shader.Properties[nPropertyIndex];
+				std::snprintf(sNumberBuffer, sizeof(sNumberBuffer),
+					"    { \"name\": \"%s\", \"displayName\": \"%s\", \"type\": \"%s\", "
+					"\"defaults\": [%g, %g, %g, %g] }",
+					EscapeJsonText(property.Name).c_str(),
+					EscapeJsonText(property.DisplayName).c_str(),
+					ToPropertyTypeName(property.eType),
+					property.fDefaultValues[0], property.fDefaultValues[1],
+					property.fDefaultValues[2], property.fDefaultValues[3]);
+				sJson += sNumberBuffer;
+				sJson += (nPropertyIndex + 1u < shader.Properties.size()) ? ",\n" : "\n";
+			}
+			sJson += "  ],\n";
+
+			// ---- Keyword groups ----
+			sJson += "  \"keywordGroups\": [\n";
+			for (size_t nGroupIndex = 0; nGroupIndex < shader.KeywordGroups.size(); ++nGroupIndex)
+			{
+				const ShaderKeywordGroup& group = shader.KeywordGroups[nGroupIndex];
+				sJson += "    { \"name\": \"" + EscapeJsonText(group.Name) + "\", ";
+				sJson += "\"kind\": \"" + std::string(ToKeywordKindName(group.eKind)) + "\", ";
+				sJson += std::string("\"strippable\": ") + (group.IsStrippable() ? "true" : "false") + ", ";
+				sJson += std::string("\"local\": ") + (IsKeywordKindLocal(group.eKind) ? "true" : "false") + ", ";
+				sJson += "\"states\": [";
+				for (uint32_t uStateIndex = 0; uStateIndex < group.uKeywordStateCount; ++uStateIndex)
+				{
+					sJson += "\"" + EscapeJsonText(group.KeywordStates[uStateIndex]) + "\"";
+					if (uStateIndex + 1u < group.uKeywordStateCount)
+					{
+						sJson += ", ";
+					}
+				}
+				sJson += "] }";
+				sJson += (nGroupIndex + 1u < shader.KeywordGroups.size()) ? ",\n" : "\n";
+			}
+			sJson += "  ],\n";
+
+			// ---- Passes and variants ----
+			const uint32_t uPassCount = shader.GetDefaultVariant() != nullptr
+				? static_cast<uint32_t>(shader.GetDefaultVariant()->Passes.size())
+				: 0u;
+
+			std::snprintf(sNumberBuffer, sizeof(sNumberBuffer), "  \"passCount\": %u,\n", uPassCount);
+			sJson += sNumberBuffer;
+			std::snprintf(sNumberBuffer, sizeof(sNumberBuffer), "  \"variantCount\": %u,\n",
+				static_cast<uint32_t>(shader.Variants.size()));
+			sJson += sNumberBuffer;
+
+			// ---- Variants, by identity only ----
+			if (bIncludeVariantKeys)
+			{
+				sJson += "  \"variants\": [\n";
+				for (size_t nVariantIndex = 0; nVariantIndex < shader.Variants.size(); ++nVariantIndex)
+				{
+					const CompiledVariant& variant = shader.Variants[nVariantIndex];
+					std::snprintf(sNumberBuffer, sizeof(sNumberBuffer), "    { \"index\": %u, \"key\": \"%s\", \"keywordStateIndices\": [",
+						variant.uVariantIndex,
+						EscapeJsonText(variant.Key.KeyText.c_str()).c_str());
+					sJson += sNumberBuffer;
+
+					for (size_t nGroupIndex = 0; nGroupIndex < shader.KeywordGroups.size(); ++nGroupIndex)
+					{
+						std::snprintf(sNumberBuffer, sizeof(sNumberBuffer), "%u",
+							variant.Key.uKeywordStateIndices[nGroupIndex]);
+						sJson += sNumberBuffer;
+						if (nGroupIndex + 1u < shader.KeywordGroups.size())
+						{
+							sJson += ", ";
+						}
+					}
+					sJson += "] }";
+					sJson += (nVariantIndex + 1u < shader.Variants.size()) ? ",\n" : "\n";
+				}
+
+				// This is the last member of the container's metadata, but the
+				// manifest continues with its full variant list - so only the
+				// manifest needs the separating comma.
+				sJson += bIncludeVariantKeys ? "  ]\n" : "  ],\n";
+			}
+		}
+	}
+
+	std::string ShaderOutputWriter::BuildShaderMetadataJson(
+		const CompiledShader& shader,
+		const std::string& sBaseName)
+	{
+		std::string sJson = "{\n";
+		AppendShaderDescriptionJson(sJson, shader, sBaseName, true);
+		sJson += "}\n";
+		return sJson;
+	}
+
 	std::string ShaderOutputWriter::BuildShaderManifestJson(
 		const CompiledShader& shader,
 		const std::string& sBaseName)
 	{
 		char sNumberBuffer[768] = {};
-		std::string sJson;
+		std::string sJson = "{\n";
+		AppendShaderDescriptionJson(sJson, shader, sBaseName, false);
 
-		sJson += "{\n";
-		sJson += "  \"version\": 1,\n";
-		sJson += "  \"name\": \"" + EscapeJsonText(shader.ShaderName.c_str()) + "\",\n";
-		sJson += "  \"source\": \"" + EscapeJsonText(shader.SourceName.c_str()) + "\",\n";
-		sJson += "  \"baseName\": \"" + EscapeJsonText(sBaseName.c_str()) + "\",\n";
-
-		std::snprintf(sNumberBuffer, sizeof(sNumberBuffer), "  \"renderQueue\": %u,\n", shader.uRenderQueue);
-		sJson += sNumberBuffer;
-
-		// ---- Properties ----
-		sJson += "  \"properties\": [\n";
-		for (size_t nPropertyIndex = 0; nPropertyIndex < shader.Properties.size(); ++nPropertyIndex)
-		{
-			const ShaderProperty& property = shader.Properties[nPropertyIndex];
-			std::snprintf(sNumberBuffer, sizeof(sNumberBuffer),
-				"    { \"name\": \"%s\", \"displayName\": \"%s\", \"type\": \"%s\", "
-				"\"defaults\": [%g, %g, %g, %g] }",
-				EscapeJsonText(property.Name).c_str(),
-				EscapeJsonText(property.DisplayName).c_str(),
-				ToPropertyTypeName(property.eType),
-				property.fDefaultValues[0], property.fDefaultValues[1],
-				property.fDefaultValues[2], property.fDefaultValues[3]);
-			sJson += sNumberBuffer;
-			sJson += (nPropertyIndex + 1u < shader.Properties.size()) ? ",\n" : "\n";
-		}
-		sJson += "  ],\n";
-
-		// ---- Keyword groups ----
-		sJson += "  \"keywordGroups\": [\n";
-		for (size_t nGroupIndex = 0; nGroupIndex < shader.KeywordGroups.size(); ++nGroupIndex)
-		{
-			const ShaderKeywordGroup& group = shader.KeywordGroups[nGroupIndex];
-			sJson += "    { \"name\": \"" + EscapeJsonText(group.Name) + "\", ";
-			sJson += "\"kind\": \"" + std::string(ToKeywordKindName(group.eKind)) + "\", ";
-			sJson += std::string("\"strippable\": ") + (group.IsStrippable() ? "true" : "false") + ", ";
-			sJson += std::string("\"local\": ") + (IsKeywordKindLocal(group.eKind) ? "true" : "false") + ", ";
-			sJson += "\"states\": [";
-			for (uint32_t uStateIndex = 0; uStateIndex < group.uKeywordStateCount; ++uStateIndex)
-			{
-				sJson += "\"" + EscapeJsonText(group.KeywordStates[uStateIndex]) + "\"";
-				if (uStateIndex + 1u < group.uKeywordStateCount)
-				{
-					sJson += ", ";
-				}
-			}
-			sJson += "] }";
-			sJson += (nGroupIndex + 1u < shader.KeywordGroups.size()) ? ",\n" : "\n";
-		}
-		sJson += "  ],\n";
-
-		// ---- Passes and variants ----
+		// The module file names below carry the pass name only when a Pass has
+		// to be told apart from its siblings.
 		const uint32_t uPassCount = shader.GetDefaultVariant() != nullptr
 			? static_cast<uint32_t>(shader.GetDefaultVariant()->Passes.size())
 			: 0u;
 
-		std::snprintf(sNumberBuffer, sizeof(sNumberBuffer), "  \"passCount\": %u,\n", uPassCount);
-		sJson += sNumberBuffer;
-		std::snprintf(sNumberBuffer, sizeof(sNumberBuffer), "  \"variantCount\": %u,\n",
-			static_cast<uint32_t>(shader.Variants.size()));
-		sJson += sNumberBuffer;
-
+		// ---- Variants ----
 		sJson += "  \"variants\": [\n";
 		for (size_t nVariantIndex = 0; nVariantIndex < shader.Variants.size(); ++nVariantIndex)
 		{
@@ -404,19 +473,48 @@ namespace Hlslcc
 					sModuleFileName += BuildVariantFileSuffix(variant);
 					sModuleFileName += "." + std::string(ToStageFileExtension(stage.eStage)) + ".spv";
 
-					sJson += "            { ";
-					sJson += "\"stage\": \"" + std::string(ToStageName(stage.eStage)) + "\", ";
-					sJson += "\"entryPoint\": \"" + EscapeJsonText(stage.EntryPointName.c_str()) + "\", ";
-					sJson += "\"file\": \"" + EscapeJsonText(sModuleFileName.c_str()) + "\", ";
+					sJson += "            {\n";
+					sJson += "              \"stage\": \"" + std::string(ToStageName(stage.eStage)) + "\",\n";
+					sJson += "              \"entryPoint\": \"" + EscapeJsonText(stage.EntryPointName.c_str()) + "\",\n";
+					sJson += "              \"file\": \"" + EscapeJsonText(sModuleFileName.c_str()) + "\",\n";
 					std::snprintf(sNumberBuffer, sizeof(sNumberBuffer),
-						"\"byteCount\": %u, \"inputCount\": %u, \"outputCount\": %u, \"resourceCount\": %u, "
-						"\"pushConstantByteSize\": %u }",
+						"              \"byteCount\": %u,\n              \"inputCount\": %u,\n"
+						"              \"outputCount\": %u,\n              \"resourceCount\": %u,\n"
+						"              \"pushConstantByteSize\": %u,\n",
 						stage.GetSpirvByteCount(),
 						stage.Reflection.uInputCount,
 						stage.Reflection.uOutputCount,
 						stage.Reflection.uResourceCount,
 						stage.Reflection.uPushConstantByteSize);
 					sJson += sNumberBuffer;
+
+					// The descriptor bindings the ENGINE assigned to this stage. The
+					// engine checks them against its own set before it builds a
+					// pipeline, so a shader that does not fit it is rejected by name
+					// instead of failing inside the driver.
+					sJson += "              \"resources\": [";
+					if (stage.Reflection.uResourceCount == 0)
+					{
+						sJson += "]\n";
+					}
+					else
+					{
+						sJson += "\n";
+						for (uint32_t uResourceIndex = 0; uResourceIndex < stage.Reflection.uResourceCount; ++uResourceIndex)
+						{
+							const ShaderResourceBinding& binding = stage.Reflection.Resources[uResourceIndex];
+							sJson += "                { \"name\": \"" + EscapeJsonText(binding.Name) + "\", ";
+							sJson += "\"kind\": \"" + std::string(ToResourceKindName(binding.eKind)) + "\", ";
+							std::snprintf(sNumberBuffer, sizeof(sNumberBuffer),
+								"\"set\": %u, \"binding\": %u, \"descriptorCount\": %u }",
+								binding.uDescriptorSet, binding.uBinding, binding.uDescriptorCount);
+							sJson += sNumberBuffer;
+							sJson += (uResourceIndex + 1u < stage.Reflection.uResourceCount) ? ",\n" : "\n";
+						}
+						sJson += "              ]\n";
+					}
+
+					sJson += "            }";
 					bHasWrittenStage = true;
 				}
 
@@ -565,6 +663,22 @@ namespace Hlslcc
 						stage.Reflection.uResourceCount,
 						stage.Reflection.uPushConstantByteSize);
 					sSummary += sBuffer;
+
+					// Where the engine put each resource of this stage. A shader
+					// writes none of these numbers itself.
+					for (uint32_t uResourceIndex = 0;
+						uResourceIndex < stage.Reflection.uResourceCount;
+						++uResourceIndex)
+					{
+						const ShaderResourceBinding& binding = stage.Reflection.Resources[uResourceIndex];
+						std::snprintf(sBuffer, sizeof(sBuffer),
+							"             '%s' %s, set %u binding %u\n",
+							binding.Name,
+							ToResourceKindName(binding.eKind),
+							binding.uDescriptorSet,
+							binding.uBinding);
+						sSummary += sBuffer;
+					}
 				}
 			}
 		}

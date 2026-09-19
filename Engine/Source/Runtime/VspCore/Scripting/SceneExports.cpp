@@ -257,21 +257,6 @@ CSHARP_EXPORT void VspComponent_SetRenderable(uint32 uComponentHandle, int32 bIs
 	}
 }
 
-CSHARP_EXPORT int32 VspComponent_GetColorMode(uint32 uComponentHandle)
-{
-	const Vsp::Component* pComponent = Vsp::Scene::Get().FindComponent(uComponentHandle);
-	return pComponent != nullptr ? pComponent->GetRenderState().nColorMode : 3;
-}
-
-CSHARP_EXPORT void VspComponent_SetColorMode(uint32 uComponentHandle, int32 nColorMode)
-{
-	Vsp::Component* pComponent = Vsp::Scene::Get().FindComponent(uComponentHandle);
-	if (pComponent != nullptr)
-	{
-		pComponent->GetMutableRenderState().nColorMode = nColorMode;
-	}
-}
-
 // -------- Frame iteration (the draw list source) --------
 
 CSHARP_EXPORT uint32 VspComponent_GetRenderableCount()

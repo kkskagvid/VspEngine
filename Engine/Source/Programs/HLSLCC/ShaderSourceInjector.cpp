@@ -55,6 +55,17 @@ namespace Hlslcc
 			sSourceText.find(k_sVulkanNamespaceGuardMacro) != std::string::npos;
 	}
 
+	bool ShaderSourceInjector::SourceTextSpecifiesBindings(const std::string& sSourceText)
+	{
+		// The spellings a shader can name a binding with: the vk:: attribute, the
+		// DXC register annotation and the shorthand this injector defines. A file
+		// that uses the shorthand is caught by the shorthand, and a file that
+		// defines it is caught by the attribute inside the definition.
+		return sSourceText.find("vk::binding") != std::string::npos ||
+			sSourceText.find("register(") != std::string::npos ||
+			sSourceText.find("VSP_VK_BINDING") != std::string::npos;
+	}
+
 	size_t ShaderSourceInjector::FindPrologueInsertOffset(const std::string& sSourceText)
 	{
 		// Walk the leading run of blank lines, line comments, block comments and

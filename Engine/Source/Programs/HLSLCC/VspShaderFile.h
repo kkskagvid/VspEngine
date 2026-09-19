@@ -21,32 +21,37 @@ namespace Hlslcc
 	//       _ColorMode ("Color Mode", Float) = 3
 	//   }
 	//
-	//   Shader "Vsp/Triangle2D"     settings: the render queue and the shader's
-	//   {                           variant keyword groups
+	//   Shader "Vsp/Triangle2D"     the shader: its settings and its passes
+	//   {
 	//       Queue = "Geometry"
 	//       Variant _TINT_ENABLED
+	//
+	//       Pass                    the shader code; HLSL, with #include allowed
+	//       {                       and the entry points named by pragma
+	//           #pragma vertex PassVertex
+	//           #pragma fragment PassFragment
+	//           #pragma multi_variant_local _FLAT_COLOR
+	//           #include "Triangle2DCommon.hlsl"
+	//           ... HLSL ...
+	//       }
+	//
+	//       Pass "Second"           a Shader block may hold SEVERAL Pass blocks;
+	//       {                       each one is compiled on its own, against the
+	//           ...                 shader's variants
+	//       }
 	//   }
 	//
-	//   Pass                        the shader code itself; HLSL, with #include
-	//   {                           allowed and the entry points named by pragma
-	//       #pragma vertex PassVertex
-	//       #pragma fragment PassFragment
-	//       #pragma variant _TINT_ENABLED
-	//       #pragma multi_variant_local _FLAT_COLOR
-	//       #include "Triangle2DCommon.hlsl"
-	//       ... HLSL ...
-	//   }
-	//
-	// The four variant pragmas are:
+	// The Pass blocks live INSIDE the Shader block. The four variant pragmas are:
 	//   #pragma variant             ...  strippable, global keyword
 	//   #pragma variant_local       ...  strippable, local keyword
 	//   #pragma multi_variant       ...  always kept, global keyword
 	//   #pragma multi_variant_local ...  always kept, local keyword
-	// (see ShaderDefinition.h for what "strippable" means).
+	// (see ShaderDefinition.h for what "strippable" means). They may be written in
+	// a Pass block or in the Shader block itself.
 	//
-	// A file WITHOUT a Pass block is treated as one pass holding the whole text,
-	// which keeps plain HLSL shaders (and the engine's runtime compiler) working
-	// unchanged.
+	// A file WITHOUT a Shader block is treated as plain HLSL: the whole text
+	// becomes one pass, which keeps the engine's runtime compiler working for
+	// shader source it is handed directly.
 	// -------------------------------------------------------------------------
 
 	// One Pass block of a shader file.
@@ -68,9 +73,12 @@ namespace Hlslcc
 		// when it cannot be read.
 		HlslccResult LoadFromFile(const std::string& sFilePath, std::string& outErrorText);
 
-		// Parses source text that is already in memory. Plain HLSL without any
-		// block is accepted and becomes a single pass.
-		HlslccResult LoadFromSource(const std::string& sSourceText, const std::string& sDisplayName);
+		// Parses source text that is already in memory. Plain HLSL without a
+		// Shader block is accepted and becomes a single pass.
+		HlslccResult LoadFromSource(
+			const std::string& sSourceText,
+			const std::string& sDisplayName,
+			std::string& outErrorText);
 
 		const std::string& GetSourceText() const { return m_sSourceText; }
 		const std::string& GetDisplayName() const { return m_sDisplayName; }
@@ -110,23 +118,31 @@ namespace Hlslcc
 		bool HasEntryPoint(ShaderStage eStage) const;
 
 	private:
-		// Splits the source into the blocks and fills every table above.
+		// Scans the whole file: the top-level blocks and, inside the Shader block,
+		// the settings and every Pass block.
 		void ParseBlocks();
 
 		// Parses one "Properties { ... }" body.
 		void ParsePropertiesBlock(const std::string& sBody);
 
-		// Parses one "Shader { ... }" body.
-		void ParseShaderBlock(const std::string& sBody);
+		// Parses one "Shader { ... }" body: its settings lines and its Pass blocks.
+		void ParseShaderBlock(const std::string& sMaskedSourceText, size_t nBodyOffset, size_t nBodyEndOffset);
+
+		// Parses the "Queue = ..., Variant ..., ..." lines of a Shader block.
+		void ParseShaderSettingLines(const std::string& sText);
 
 		// Parses one "Pass { ... }" body.
 		void ParsePassBlock(const std::string& sPassName, const std::string& sBody);
+
+		// True when the file contains a block-opening keyword somewhere.
+		bool FindBlockKeywordInFile(const char* pKeyword) const;
 
 		std::string m_sSourceText;
 		std::string m_sDisplayName;
 		std::string m_sFilePath;
 
 		std::string m_sShaderName;
+		bool m_bHasShaderBlock = false;
 		uint32_t m_uRenderQueue = 2000;   // Geometry.
 		std::vector<ShaderProperty> m_Properties;
 		std::vector<ShaderKeywordGroup> m_KeywordGroups;

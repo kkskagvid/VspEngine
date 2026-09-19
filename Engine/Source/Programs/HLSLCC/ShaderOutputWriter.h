@@ -65,6 +65,13 @@ namespace Hlslcc
 			const CompiledShader& shader,
 			const std::string& sBaseName);
 
+		// Renders what a shader says about itself, WITHOUT its modules: the
+		// metadata section of the shader container (VsfoWriter). The manifest
+		// above starts with the same text before it lists the variants.
+		static std::string BuildShaderMetadataJson(
+			const CompiledShader& shader,
+			const std::string& sBaseName);
+
 		// Writes the manifest.
 		static HlslccResult WriteShaderManifest(
 			const std::string& sFilePath,

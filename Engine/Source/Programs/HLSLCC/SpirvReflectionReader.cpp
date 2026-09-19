@@ -108,6 +108,11 @@ namespace Hlslcc
 			std::unordered_map<uint32_t, uint32_t> LocationByTarget;
 			std::unordered_map<uint32_t, uint32_t> BindingByTarget;
 			std::unordered_map<uint32_t, uint32_t> DescriptorSetByTarget;
+
+			// Word of the module that holds the decoration's value, so a caller can
+			// rewrite the binding of a variable in place.
+			std::unordered_map<uint32_t, uint32_t> BindingWordByTarget;
+			std::unordered_map<uint32_t, uint32_t> DescriptorSetWordByTarget;
 			std::unordered_map<uint32_t, uint32_t> BuiltInByTarget;
 			std::unordered_map<uint32_t, uint32_t> ArrayStrideByTarget;
 			std::unordered_map<uint32_t, uint32_t> MatrixStrideByTarget;
@@ -300,11 +305,21 @@ namespace Hlslcc
 						const uint32_t uTarget = pOperands[0];
 						const SpvDecoration eDecoration = static_cast<SpvDecoration>(pOperands[1]);
 						const uint32_t uValue = (uOperandCount >= 3) ? pOperands[2] : 0;
+						// OpDecorate: word 0 is the instruction header, then the
+						// target, the decoration and the value.
+						const uint32_t uValueWordIndex = static_cast<uint32_t>(nWordIndex + 3);
+
 						switch (eDecoration)
 						{
 						case SpvDecoration::Location:      LocationByTarget[uTarget] = uValue; break;
-						case SpvDecoration::Binding:       BindingByTarget[uTarget] = uValue; break;
-						case SpvDecoration::DescriptorSet: DescriptorSetByTarget[uTarget] = uValue; break;
+						case SpvDecoration::Binding:
+							BindingByTarget[uTarget] = uValue;
+							BindingWordByTarget[uTarget] = uValueWordIndex;
+							break;
+						case SpvDecoration::DescriptorSet:
+							DescriptorSetByTarget[uTarget] = uValue;
+							DescriptorSetWordByTarget[uTarget] = uValueWordIndex;
+							break;
 						case SpvDecoration::BuiltIn:       BuiltInByTarget[uTarget] = uValue; break;
 						case SpvDecoration::ArrayStride:   ArrayStrideByTarget[uTarget] = uValue; break;
 						case SpvDecoration::MatrixStride:  MatrixStrideByTarget[uTarget] = uValue; break;
@@ -604,6 +619,83 @@ namespace Hlslcc
 				break;
 			}
 		}
+	}
+
+	HlslccResult SpirvReflectionReader::CollectResources(
+		const std::vector<uint32_t>& spirvWords,
+		std::vector<SpirvResourceVariable>& outResources,
+		std::string& outErrorText)
+	{
+		outErrorText.clear();
+		outResources.clear();
+
+		ModuleReader reader(spirvWords);
+		if (!reader.ReadHeader(outErrorText))
+		{
+			return HlslccResult::FailReflection;
+		}
+		reader.CollectInstructions();
+
+		// Declaration order is what the engine's binding rules number by, so the
+		// variables are sorted by their result id instead of iterating the map.
+		std::vector<std::pair<uint32_t, const VariableRecord*>> resourceVariables;
+		for (const auto& variableEntry : reader.Variables)
+		{
+			const VariableRecord& variable = variableEntry.second;
+			if (variable.eStorageClass == SpvStorageClass::UniformConstant ||
+				variable.eStorageClass == SpvStorageClass::Uniform ||
+				variable.eStorageClass == SpvStorageClass::StorageBuffer)
+			{
+				resourceVariables.emplace_back(variableEntry.first, &variable);
+			}
+		}
+
+		std::sort(
+			resourceVariables.begin(),
+			resourceVariables.end(),
+			[](const std::pair<uint32_t, const VariableRecord*>& left,
+				const std::pair<uint32_t, const VariableRecord*>& right)
+			{
+				return left.first < right.first;
+			});
+
+		for (const auto& variableEntry : resourceVariables)
+		{
+			const uint32_t uVariableId = variableEntry.first;
+			const VariableRecord& variable = *variableEntry.second;
+			const uint32_t uPointeeTypeId = reader.ResolvePointeeType(variable.uPointerTypeId);
+
+			SpirvResourceVariable resource;
+			resource.uVariableId = uVariableId;
+
+			const std::string& sResourceName = reader.FindName(uVariableId);
+			const size_t nNameByteCount = sResourceName.size() < (k_nMaxShaderVariableNameLength - 1u)
+				? sResourceName.size()
+				: (k_nMaxShaderVariableNameLength - 1u);
+			if (nNameByteCount > 0)
+			{
+				std::memcpy(resource.Name, sResourceName.data(), nNameByteCount);
+			}
+			resource.Name[nNameByteCount] = '\0';
+
+			ShaderVariableClass eVariableClass = ShaderVariableClass::Unknown;
+			resource.eKind = reader.ClassifyResourceKind(uPointeeTypeId, eVariableClass);
+
+			const auto setWordIterator = reader.DescriptorSetWordByTarget.find(uVariableId);
+			if (setWordIterator != reader.DescriptorSetWordByTarget.end())
+			{
+				resource.uDescriptorSetWordIndex = setWordIterator->second;
+			}
+			const auto bindingWordIterator = reader.BindingWordByTarget.find(uVariableId);
+			if (bindingWordIterator != reader.BindingWordByTarget.end())
+			{
+				resource.uBindingWordIndex = bindingWordIterator->second;
+			}
+
+			outResources.push_back(resource);
+		}
+
+		return HlslccResult::Success;
 	}
 
 	HlslccResult SpirvReflectionReader::Read(

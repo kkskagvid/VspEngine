@@ -135,12 +135,6 @@ namespace VspEngine
 		internal static extern void VspComponent_SetRenderable(uint componentHandle, int isRenderable);
 
 		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
-		internal static extern int VspComponent_GetColorMode(uint componentHandle);
-
-		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
-		internal static extern void VspComponent_SetColorMode(uint componentHandle, int colorMode);
-
-		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
 		internal static extern uint VspComponent_GetRenderableCount();
 
 		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
@@ -267,44 +261,6 @@ namespace VspEngine
 
 		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
 		internal static extern void VspComponent_SetMaterial(uint componentHandle, uint materialHandle);
-
-		// ---- Shader compilation (HLSLCC) ----
-		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
-		internal static extern int VspShader_IsCompilerAvailable(byte[] errorBufferUtf8, int errorBufferCapacityBytes);
-
-		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
-		internal static extern int VspShader_CompileFromSource(
-			[MarshalAs(UnmanagedType.LPUTF8Str)] string sourceUtf8,
-			[MarshalAs(UnmanagedType.LPUTF8Str)] string sourceNameUtf8,
-			byte[] errorBufferUtf8,
-			int errorBufferCapacityBytes);
-
-		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
-		internal static extern int VspShader_CompileFromFile(
-			[MarshalAs(UnmanagedType.LPUTF8Str)] string filePathUtf8,
-			byte[] errorBufferUtf8,
-			int errorBufferCapacityBytes);
-
-		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
-		internal static extern int VspShader_GetCompiledStageCount();
-
-		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
-		internal static extern int VspShader_GetStageSpirvByteCount(int stage);
-
-		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
-		internal static extern int VspShader_CopyStageSpirv(int stage, [Out] byte[] buffer, uint bufferCapacity);
-
-		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
-		internal static extern int VspShader_GetStageEntryPointName(int stage, byte[] bufferUtf8, int bufferCapacityBytes);
-
-		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
-		internal static extern int VspShader_GetStageReflectionSummary(int stage, [Out] uint[] outValues);
-
-		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
-		internal static extern int VspShader_GetReflectionJson(byte[] bufferUtf8, int bufferCapacityBytes);
-
-		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
-		internal static extern void VspShader_ClearCompiledShader();
 
 		// ---- Engine paths ----
 		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]

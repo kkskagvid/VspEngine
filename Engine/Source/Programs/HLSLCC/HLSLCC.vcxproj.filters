@@ -11,26 +11,88 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="CommandLine.cpp"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="Compiler.cpp"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="DxcCompilerApi.cpp"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="Result.cpp"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="ShaderOutputWriter.cpp"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="ShaderReflection.cpp"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="ShaderSourceInjector.cpp"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="SpirvReflectionReader.cpp"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="VspShaderFile.cpp"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="HLSLCC.cpp"><Filter>源文件</Filter></ClCompile>
+    <ClCompile Include="HLSLCC.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="CommandLine.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Compiler.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="DxcCompilerApi.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="FilePathUtility.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Result.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="ShaderDefinition.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="ShaderOutputWriter.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="ShaderReflection.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="ShaderSourceInjector.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="SpirvBindingAssigner.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="SpirvReflectionReader.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="VsfoWriter.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="VspShaderFile.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="CommandLine.h"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="Compiler.h"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="DxcCompilerApi.h"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="Result.h"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="ShaderOutputWriter.h"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="ShaderReflection.h"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="ShaderSourceInjector.h"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="SpirvReflectionReader.h"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="VspShaderFile.h"><Filter>头文件</Filter></ClInclude>
+    <ClInclude Include="CommandLine.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Compiler.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="DxcCompilerApi.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Result.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="ShaderOutputWriter.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="ShaderReflection.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="ShaderSourceInjector.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="SpirvReflectionReader.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="VspShaderFile.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="FilePathUtility.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="ShaderDefinition.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="SpirvBindingAssigner.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="VsfoWriter.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

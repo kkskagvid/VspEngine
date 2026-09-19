@@ -125,4 +125,79 @@ if ($engineProblems) {
 Write-Output "Engine log clean: $($runLog.Name)"
 
 & (Join-Path $PSScriptRoot "AnalyzeShots.ps1") -RunDirectory $runDirectory
-exit $LASTEXITCODE
+if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+}
+
+# ---------------------------------------------------------------------------
+# The engine must REFUSE a shader whose bindings are not its own.
+#
+# The checks above proved HLSLCC writes the engine's numbers into the container.
+# This one proves the other half of the contract: a container that names a
+# binding the engine does not provide is rejected while loading, by name,
+# instead of failing inside the driver.
+#
+# The binding is patched INSIDE the container - in the reflection record of the
+# vertex stage, which is what the engine reads - so the check covers the whole
+# path from the bytes on disk to the error message.
+# ---------------------------------------------------------------------------
+$shaderDirectory = Join-Path $runDirectory "Shaders"
+$containerPath = Join-Path $shaderDirectory "Triangle2D.vsfo"
+$backupPath = Join-Path $shaderDirectory "Triangle2D.original.vsfo"
+
+if (-not (Test-Path $containerPath)) {
+    Write-Error "The compiled shader container was not found: $containerPath"
+    exit 1
+}
+
+# A resource record is Name[64], kind, set, binding, so the binding sits 72 bytes
+# into the record. The record itself starts 24 bytes (the reflection header) plus
+# one 84-byte variable per input and output into the entry's reflection record -
+# NOT at the first occurrence of the name, which is the module's debug info.
+$containerBytes = [System.IO.File]::ReadAllBytes($containerPath)
+$indexOffset = [System.BitConverter]::ToUInt32($containerBytes, 16)
+$entryCount = [System.BitConverter]::ToUInt32($containerBytes, 12)
+$dataOffset = [System.BitConverter]::ToUInt32($containerBytes, 24)
+
+$bindingOffset = -1
+for ($entryIndex = 0; $entryIndex -lt $entryCount; $entryIndex++) {
+    $entryOffset = $indexOffset + ($entryIndex * 324)
+    $stageIndex = [System.BitConverter]::ToUInt32($containerBytes, $entryOffset + 0)
+    if ($stageIndex -ne 0) { continue }   # 0 = the vertex stage
+
+    $reflectionOffset = [System.BitConverter]::ToUInt32($containerBytes, $entryOffset + 20)
+    $inputCount = [System.BitConverter]::ToUInt32($containerBytes, $entryOffset + 28)
+    $outputCount = [System.BitConverter]::ToUInt32($containerBytes, $entryOffset + 32)
+    $candidateOffset = $dataOffset + $reflectionOffset + 24 + (($inputCount + $outputCount) * 84)
+
+    $name = [System.Text.Encoding]::UTF8.GetString($containerBytes, $candidateOffset, 64).Split([char]0)[0]
+    if ($name -eq "CameraUniformBuffer") { $bindingOffset = $candidateOffset + 72; break }
+}
+
+if ($bindingOffset -lt 0) {
+    Write-Error "The container does not reflect the camera block; the rejection check cannot run."
+    exit 1
+}
+
+$bindingBytes = [System.BitConverter]::GetBytes([uint32]5)
+[System.Array]::Copy($bindingBytes, 0, $containerBytes, $bindingOffset, 4)
+
+Copy-Item $containerPath $backupPath -Force
+[System.IO.File]::WriteAllBytes($containerPath, $containerBytes)
+try {
+    Start-Process -FilePath (Join-Path $runDirectory "Launch.exe") -ArgumentList @("--silent", "--frames=20", "--fixed-delta-time=16.6667") -WorkingDirectory $runDirectory -Wait | Out-Null
+    $badLog = Get-ChildItem $runDirectory -Filter "*.log" | Sort-Object LastWriteTime | Select-Object -Last 1
+    $rejection = Select-String -Path $badLog.FullName -Pattern "but the engine provides it at set 0 binding 0"
+}
+finally {
+    Move-Item $backupPath $containerPath -Force
+}
+
+if (-not $rejection) {
+    Write-Error "The engine loaded a shader whose camera block sits at binding 5."
+    exit 1
+}
+Write-Output "The engine refused the tampered shader: $($rejection.Line.Trim())"
+
+
+

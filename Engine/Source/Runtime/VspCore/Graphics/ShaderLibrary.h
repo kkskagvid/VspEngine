@@ -11,16 +11,19 @@ namespace Vsp
 	// -------------------------------------------------------------------------
 	// ShaderLibrary
 	// -------------------------------------------------------------------------
-	// Loads the shaders HLSLCC compiled into the engine. A compiled shader is a
-	// pair of files next to the executable:
+	// Loads the shaders HLSLCC compiled into the engine. A compiled shader is ONE
+	// file next to the executable:
 	//
-	//   <Name>.shader.json   the manifest: the shader's name, its render queue,
-	//                        the properties, the keyword groups and, for every
-	//                        variant of every pass, the module files to read
-	//   <Name>.*.spv         the SPIR-V modules the manifest names
+	//   <Name>.vsfo   the shader container: every SPIR-V module of every kept
+	//                 variant in its data segment, and an index table saying
+	//                 which stage each of them is, how big it is and what it
+	//                 reflects (see Shared/VsfoFormat.h)
 	//
-	// Loading turns them into a native Shader object (registered in the Scene)
-	// and caches it by name, so a shader is read from disk once.
+	// Loading turns it into a native Shader object (registered in the Scene) and
+	// caches it by name, so a shader is read from disk once.
+	//
+	// The engine loads a shader only when a game asks for it (Shader.Load); it
+	// has no default shader and loads nothing on startup.
 	// Every function reports failure through return values and logs the reason;
 	// nothing throws.
 	// -------------------------------------------------------------------------
@@ -64,12 +67,6 @@ namespace Vsp
 		};
 
 		const Entry* FindEntry(const VspString& sShaderName) const;
-
-		// Reads one module file into the stage it belongs to.
-		bool LoadStageModule(
-			const VspString& sModulePath,
-			Shader::StageModule& outStage,
-			VspString& outErrorText) const;
 
 		ArrayList<Entry> m_Entries;
 		VspString m_sShaderDirectory;

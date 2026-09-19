@@ -31,6 +31,8 @@ namespace Hlslcc
 	//     -D <name>[=value]          preprocessor definition
 	//     --no-vulkan-namespace      do not inject the Vulkan HLSL namespace
 	//     --no-attribute-shorthands  do not inject the attribute shorthands
+	//     --builtin-directory <dir>  where the HLSL builtin library lives
+	//                                (default: <exe dir>\Shaders\Builtin)
 	//     --reflection-only          only write the reflection/manifest documents
 	//     --debug-info               compile unoptimised with debug information
 	//     --quiet                    only report failures
@@ -40,6 +42,11 @@ namespace Hlslcc
 	{
 		std::string ShaderFilePath;
 		std::string OutputDirectory;
+
+		// Directory holding the HLSL builtin library a shader reaches with
+		// "#include <Vsp/...>". Empty means "find it next to the compiler".
+		std::string BuiltinDirectory;
+
 		CompileOptions CompileOptions;
 
 		bool bReflectionOnly = false;

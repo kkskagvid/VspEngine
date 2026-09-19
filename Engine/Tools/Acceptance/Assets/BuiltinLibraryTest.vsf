@@ -1,0 +1,96 @@
+// ---------------------------------------------------------------------------
+// BuiltinLibraryTest - a shader that uses the HLSL builtin library.
+//
+// The acceptance run compiles it to prove that <Vsp/...> includes resolve, that
+// the whole library parses under DXC and that what it declares lands on the
+// engine's bindings like any other shader's resources.
+// ---------------------------------------------------------------------------
+
+Shader "Vsp/BuiltinLibraryTest"
+{
+    Queue = "Geometry"
+
+    Pass
+    {
+        #pragma vertex PassVertex
+        #pragma fragment PassFragment
+
+        // The whole library in one include: constants, transforms, bindless
+        // textures, normal maps and the lighting models.
+        #include <Vsp/Builtin.hlsl>
+
+        struct BuiltinVertexInput
+        {
+            VSP_VK_LOCATION(0) float3 Position : POSITION;
+            VSP_VK_LOCATION(1) float3 Normal   : NORMAL;
+            VSP_VK_LOCATION(2) float2 Uv       : TEXCOORD0;
+        };
+
+        struct BuiltinVertexOutput
+        {
+            float4 Position      : SV_Position;
+            VSP_VK_LOCATION(0) float3 WorldPosition : TEXCOORD0;
+            VSP_VK_LOCATION(1) float3 WorldNormal   : TEXCOORD1;
+            VSP_VK_LOCATION(2) float2 Uv            : TEXCOORD2;
+        };
+
+        cbuffer CameraUniformBuffer
+        {
+            column_major float4x4 ViewProjectionMatrix;
+            column_major float4x4 WorldMatrix;
+        };
+
+        struct BuiltinPushConstants
+        {
+            VSP_VK_OFFSET(0)  float4 LightDirection;   // xyz = direction, w = intensity
+            VSP_VK_OFFSET(16) float4 LightColor;       // rgb = color
+            VSP_VK_OFFSET(32) float4 BaseColor;        // rgb = albedo, a = roughness
+            VSP_VK_OFFSET(48) uint   AlbedoTexture;    // bindless slot of the albedo map
+            VSP_VK_OFFSET(52) uint   NormalTexture;    // bindless slot of the normal map
+        };
+        [[vk::push_constant]] ConstantBuffer<BuiltinPushConstants> PushConstants;
+
+        BuiltinVertexOutput PassVertex(BuiltinVertexInput input)
+        {
+            BuiltinVertexOutput output;
+            output.Position = mul(ViewProjectionMatrix, mul(WorldMatrix, float4(input.Position, 1.0f)));
+            output.WorldPosition = VspTransformPoint(WorldMatrix, input.Position);
+            output.WorldNormal = VspTransformNormal((float4x4)WorldMatrix, input.Normal);
+            output.Uv = input.Uv;
+            return output;
+        }
+
+        float4 PassFragment(BuiltinVertexOutput input) : SV_Target0
+        {
+            // A tangent frame built from the derivatives, then the normal map.
+            float3 tangent, bitangent;
+            VspBuildTangentFrame(
+                VspFaceForward(input.WorldNormal, -VspViewDirection(input.WorldPosition, float3(0.0f, 25.0f, 25.0f))),
+                ddx(input.WorldPosition), ddy(input.WorldPosition), ddx(input.Uv), ddy(input.Uv),
+                tangent, bitangent);
+
+            float3 tangentSpaceNormal = VspSampleTangentSpaceNormal(PushConstants.NormalTexture, input.Uv, 0.5f);
+            float3 worldNormal = VspTangentSpaceToWorldNormal(tangentSpaceNormal,
+                VspFaceForward(input.WorldNormal, -VspViewDirection(input.WorldPosition, float3(0.0f, 25.0f, 25.0f))),
+                tangent, bitangent);
+
+            float4 albedo = VspSrgbToLinear(VspSampleTexture(PushConstants.AlbedoTexture, input.Uv));
+            float3 viewDirection = VspViewDirection(input.WorldPosition, float3(0.0f, 25.0f, 25.0f));
+
+            VspSurface surface = VspMakeSurface(worldNormal, viewDirection, albedo.rgb * PushConstants.BaseColor.rgb);
+            surface.fRoughness = PushConstants.BaseColor.a;
+            surface.fShininess = VspRemap(surface.fRoughness, 0.0f, 1.0f, 256.0f, 4.0f);
+
+            VspLight lights[VSP_MAX_LIGHTS];
+            lights[0] = VspMakeDirectionalLight(PushConstants.LightDirection.xyz, PushConstants.LightColor.rgb, PushConstants.LightDirection.w);
+            lights[1] = VspMakePointLight(float3(2.0f, 3.0f, 2.0f), 12.0f, float3(0.2f, 0.4f, 1.0f), 6.0f);
+
+            float3 litColor = VspShadeMetallicRoughnessLights(
+                surface, lights, 2u, input.WorldPosition, float3(0.05f, 0.05f, 0.07f));
+            litColor += VspShadeBlinnPhong(surface, VspGetLightDirection(lights[0]), VspGetLightRadiance(lights[0]) * 0.2f, 0.04f);
+
+            float3 tonemapped = VspAcesTonemap(litColor * VspLuminance(float3(1.0f, 1.0f, 1.0f)));
+            return VspLinearToSrgb(float4(tonemapped, albedo.a));
+        }
+    }
+}

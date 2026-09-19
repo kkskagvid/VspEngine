@@ -4,14 +4,16 @@ A small experimental game engine: a Vulkan 1.3 bindless renderer, a Unity-style
 managed object model and a **programmable render pipeline written in C#**, hosted
 by a native C++20 application that embeds the .NET CoreCLR runtime through the
 CoreCLR Hosting API (nethost + hostfxr). Shaders live in **.vsf** files - one file
-that carries its properties, its settings, its variants and its HLSL - and are
-compiled to SPIR-V by the engine's own cross compiler, **HLSLCC**.
+that carries its properties, its settings, its variants and its HLSL - and belong
+to the game Assembly, which compiles them to SPIR-V with **HLSLCC**. The runtime
+never compiles HLSL: it only loads the compiled modules.
 
 The managed side is split into two assemblies: **VspEngine.dll** (the engine's
 managed runtime: script base types, the object model, the input/time facades, the
-interop bridge, the render-pipeline framework and the default pipeline) and
-**Assembly.dll** (the game Assembly that holds the user scripts and is loaded by
-the engine at startup).
+interop bridge and the render-pipeline framework) and **Assembly.dll** (the game
+Assembly: the user scripts, the render pipeline and the shaders). The engine ships
+**no pipeline and no shader of its own** - rendering, and with it every shader
+load, starts when the game says so.
 
 ## Architecture
 
@@ -71,26 +73,105 @@ around it (`Shader`, `VertexBuffer`, `Texture2D`, `GraphicsPipeline`,
 | `RenderPipelineManager`       | gathers the draw list, opens the frame, runs the active pipeline |
 | `ScriptableRenderContext`     | the command buffer, the draw list and the target size            |
 | `CommandBuffer`               | records the frame through the wrapped graphics API               |
-| `Forward2DRenderPipeline`     | the engine's default pipeline (clear + triangles)                |
+| `IGameModule`                 | what a game assembly implements to take over at startup          |
 
-A game replaces the flow with one line during startup:
+**The engine installs nothing.** Until a game installs a pipeline, a frame is
+opened and closed with no draw command, which leaves the window cleared - and no
+shader file is ever read. A game takes over from its `IGameModule`:
 
 ```csharp
-RenderPipelineManager.ActivePipeline = new MyRenderPipeline();
-// or install the default the engine should create when nothing is set:
-RenderPipelineManager.SetDefaultPipelineFactory(() => new MyRenderPipeline());
+public sealed class Game : IGameModule
+{
+    public void OnGameLoad() => RenderPipelineManager.ActivePipeline = new TriangleRenderPipeline();
+    public void OnGameUnload() => RenderPipelineManager.ActivePipeline = null;
+}
 ```
 
-The default pipeline is an ordinary `RenderPipeline`, so it doubles as the
-worked example of the API.
+The engine calls `OnGameLoad` once, right after it loaded the game assembly.
+`Assembly/Rendering/TriangleRenderPipeline.cs` is the worked example: it is
+ordinary game code that loads its shader (`Shader.Load`), builds one graphics
+pipeline per shader variant and draws the demo triangle.
 
-### 4. Shaders are .vsf files, compiled by HLSLCC
+### 4. Shaders are .vsf files compiled by HLSLCC; the engine only loads the SPIR-V
 
-`Engine/Source/Programs/HLSLCC` is the engine's HLSL cross compiler. It is both a
-static library (linked into VspCore) and the command line tool `HLSLCC.exe`, so a
-shader compiles to exactly the same SPIR-V offline and at runtime.
+`Engine/Source/Programs/HLSLCC` is the engine's HLSL cross compiler: a command line
+tool (`HLSLCC.exe`) plus the static library it is built from. **The runtime holds no
+HLSL compiler.** VspCore neither includes nor links HLSLCC - it reads the files the
+compiler wrote:
 
-**One file holds everything.** A shader is a single `.vsf` file:
+```
+Assembly/Shaders/Triangle2D.vsf        the shader the GAME ships
+        |  HLSLCC (during the Assembly's build)
+        v
+<run directory>/Shaders/               everything the ENGINE loads
+        Triangle2D.vsfo                ONE container: every module + its reflection
+        Triangle2D.vert.spv ...        the modules on their own (debugger food)
+        Triangle2D.shader.json         the manifest, for tools
+        Triangle2D.reflection.json     the reflection, for tools
+```
+
+The shader is game content: `Assembly/Shaders` holds it, and `Assembly.csproj`
+runs `Engine/Tools/Build/CompileShaders.ps1` after its build to compile every
+`.vsf` into the run directory's `Shaders` folder. `Graphics/ShaderLibrary` then
+loads a container into a native shader **when the game asks for one by name**; the
+engine loads no shader at startup.
+
+**The `.vsfo` container is what the engine reads.** One file holds every SPIR-V
+module of the shader - all passes, all kept variants, both stages - together with
+the reflection of each of them. Its layout is an **index table** followed by a
+**data segment** (`Engine/Source/Shared/VsfoFormat.h` is the single definition
+that the writer in HLSLCC and the reader in VspCore both compile):
+
+```
++----------------+  Vsfo::Header        where the sections are, how many modules exist
+|    Header      |
++----------------+
+|  Index table   |  Vsfo::IndexEntry[]  WHICH STAGE each module is, HOW BIG it is,
+|                |                      WHERE it sits and WHAT its reflection
+|                |                      summarises to (inputs, outputs, resources,
+|                |                      push-constant size)
++----------------+
+|  Data segment  |  the SPIR-V modules, each followed by its reflection record
+|                |  (variables, resources with set/binding, push-constant members)
++----------------+
+|   Metadata     |  UTF-8 JSON: the shader's name, render queue, properties,
+|                |  keyword groups and its variants' keyword states
++----------------+
+```
+
+A reader therefore finds a stage without parsing anything: the index entry names
+the stage, its entry point, its pass, its variant, the byte range of its module and
+the reflection summary the engine checks its descriptor set against
+(`Graphics/ShaderBindings.h`). A container that disagrees with the engine's table,
+or that points outside its own bytes, is refused while loading, by name, instead of
+failing inside the driver. The loose `.spv` files stay next to it for a graphics
+debugger, and `Compiler.cpp`/`ShaderLibrary.cpp` never need them.
+
+**The HLSL builtin library** ships with the compiler (`Engine/Shaders/Builtin`,
+staged next to `HLSLCC.exe`) and is reached from a shader with an angle-bracket
+include:
+
+```hlsl
+#include <Vsp/Builtin.hlsl>      // everything
+#include <Vsp/Lighting.hlsl>     // or just what a shader needs
+```
+
+| Header | What it offers |
+| ------ | -------------- |
+| `Vsp/Common.hlsl`    | constants, `VspSafeNormalize`, remap/smoothstep, sRGB <-> linear, ACES tonemap, Fresnel |
+| `Vsp/Transform.hlsl` | Euler/TRS matrices, point/direction/normal transforms, view direction |
+| `Vsp/Texture.hlsl`   | the bindless array and sampler, sampling by slot (with LOD, gradients, texel fetch), packed-map readers |
+| `Vsp/Normal.hlsl`    | normal-map unpacking, tangent frames from derivatives, world-space normals, normal blending |
+| `Vsp/Lighting.hlsl`  | `VspLight`/`VspSurface`, Lambert, Blinn-Phong and metallic/roughness GGX, attenuation, light loops |
+
+The library declares the engine's bindless resources by their canonical names
+(`BindlessTextures`, `BindlessSampler`) and **no bindings**: like any other
+shader source, it is numbered by the engine rule. `--builtin-directory` points the
+lookup somewhere else.
+
+**One file holds everything.** A shader is a single `.vsf` file, and its `Pass`
+blocks live **inside** the `Shader` block - a `Shader` block may hold several of
+them:
 
 ```hlsl
 Properties
@@ -103,27 +184,35 @@ Shader "Vsp/Triangle2D"
 {
     Queue = "Geometry"
     Variant _TINT_ENABLED              // strippable keyword group
-}
 
-Pass
-{
-    #pragma vertex PassVertex           // the entry points live in the file
-    #pragma fragment PassFragment
-    #pragma multi_variant_local _FLAT_COLOR
+    Pass                               // one or more Pass blocks, inside Shader
+    {
+        #pragma vertex PassVertex       // the entry points live in the file
+        #pragma fragment PassFragment
+        #pragma multi_variant_local _FLAT_COLOR
 
-    #include "Triangle2DCommon.hlsl"     // Pass blocks may include HLSL
+        #include "Triangle2DCommon.hlsl" // Pass blocks may include HLSL
 
-    PassVertexOutput PassVertex(PassVertexInput input) { ... }
-    float4 PassFragment(PassFragmentInput input) : SV_Target0 { ... }
+        PassVertexOutput PassVertex(PassVertexInput input) { ... }
+        float4 PassFragment(PassFragmentInput input) : SV_Target0 { ... }
+    }
+
+    Pass "Second"                      // every Pass is compiled on its own
+    {
+        #pragma vertex PassVertex
+        #pragma fragment PassFragment
+        ...
+    }
 }
 ```
 
-- **`Properties`** declares the values the editor shows; a material starts from
-  their defaults.
-- **`Shader`** carries the settings: the render queue and the shader's keyword
-  groups.
+- **`Properties`** (top level) declares the values the editor shows; a material
+  starts from their defaults.
+- **`Shader`** is the shader itself: its settings (the render queue and the
+  keyword groups) and its `Pass` blocks.
 - **`Pass`** holds the shader code: HLSL, with `#include` and with the entry
-  points named by `#pragma vertex` / `#pragma fragment`.
+  points named by `#pragma vertex` / `#pragma fragment`. A `Pass` written
+  outside the `Shader` block is reported as a mistake.
 
 **Variants.** Four pragmas declare keyword groups, and the difference between them
 is what the build does with the variants nobody uses:
@@ -141,21 +230,23 @@ reported; a group declared with the `multi_variant` pragmas keeps every state.
 The same declarations can be written in the `Shader` block (`Variant`,
 `VariantLocal`, `MultiVariant`, `MultiVariantLocal`).
 
-**HLSLCC writes**
+**HLSLCC writes** (the Assembly's build runs exactly this)
 
 ```
-HLSLCC.exe Triangle2D.vsf --output-directory out [--used-variant _TINT_ENABLED]
+HLSLCC.exe Assembly/Shaders/Triangle2D.vsf --output-directory <run>\Shaders [--used-variant _TINT_ENABLED]
+  -> out/Triangle2D.vsfo                                  the container the ENGINE loads
   -> out/Triangle2D.vert.spv / Triangle2D.frag.spv        the default variant
   -> out/Triangle2D.<keywords>.vert.spv / .frag.spv       the other kept variants
-  -> out/Triangle2D.shader.json                           the manifest the ENGINE loads
+  -> out/<name>.<pass>.vert.spv / .frag.spv               one module pair per Pass
+  -> out/Triangle2D.shader.json                           the manifest, for tools
   -> out/Triangle2D.reflection.json                       full reflection of the default variant
 ```
 
-**The engine loads what HLSLCC wrote.** `Graphics/ShaderLibrary` reads the
-manifest and the `.spv` modules next to the executable into a native
-`Classes/Shader`, and `Classes/Material` pairs one of those shaders with the
-values a component draws with. Nothing is compiled at runtime unless a game calls
-`ShaderCompiler` itself.
+**The engine loads what HLSLCC wrote.** `Graphics/ShaderLibrary` reads a
+container into a native `Classes/Shader`, and `Classes/Material` pairs one of
+those shaders with the values a component draws with. That is the engine's whole
+involvement with shaders: it has no HLSL front end, no DirectX Shader Compiler
+dependency and no runtime compile path.
 
 **The Vulkan HLSL namespace is injected automatically.** HLSLCC prepends the
 Vulkan `vk::` namespace (`#include <vk/spirv.h>`, with the include directory that
@@ -165,12 +256,36 @@ provides it) plus the engine's own attribute shorthands (`VSP_VK_BINDING`,
 is idempotent and can be switched off per file with
 `#define VSP_NO_VULKAN_NAMESPACE` or per run with `--no-vulkan-namespace`.
 
+**The engine decides where a resource lives, the shader only names it.** A shader
+never writes `[[vk::binding]]`, `[[vk::descriptor_set]]` or `register(...)`: it
+declares the camera block, the bindless texture array and the sampler, and HLSLCC
+numbers them to match the engine's descriptor set (`VspCore/Graphics/ShaderBindings.h`):
+
+| Binding (set 0) | Kind | What the engine binds there | Constant |
+| --------------- | ---- | --------------------------- | -------- |
+| 0 | uniform buffer | the per-frame camera block | `k_nCameraUniformBuffer` |
+| 1 | sampled image | the 4096-slot bindless texture array | `k_nBindlessTextures` |
+| 2 | sampler | the sampler those images are read with | `k_nBindlessSampler` |
+
+The numbering is by **resource kind and declaration order, across the whole Pass**,
+so both stages of a Pass agree on one number for a resource they share, and the
+camera block lands on 0 whatever a shader calls it. A container whose reflection
+disagrees with the engine's table - an unknown kind, or a binding the engine does
+not provide - is rejected while loading, by name, instead of failing inside the
+driver.
+
+A Pass that does write its own bindings keeps them. The test is made on the whole
+compiled source, so a `[[vk::binding]]` or `register(...)` written in an included
+`.hlsl` file counts just as much as one written in the Pass block itself, and
+`--keep-explicit-bindings` turns the automatic assignment off for a whole run.
+
 **Reflection comes from the SPIR-V itself.** HLSLCC reads the compiled module back
 and reports the entry point, the interface variables with their locations and
 types, the descriptor bindings with set/binding/kind, and the push-constant layout
-- as the manifest, as `<name>.reflection.json` and as a console summary. The
-runtime keeps the counters in `Classes/Shader` so a pipeline can check itself
-against them.
+- into the container's index table and reflection records, as
+`<name>.reflection.json`, and as a console summary. The runtime keeps what it read
+in `Classes/Shader` so a pipeline can size its push-constant range and check itself
+against the shader it loaded.
 
 ### 5. Materials drive what is drawn
 
@@ -184,9 +299,11 @@ A renderable component points at a **material**; the material points at a
 | C#     | `VspEngine.Shader`  | reference handle: `Shader.Load("Triangle2D")` reads the compiled shader |
 | C#     | `VspEngine.Material` | reference handle: `SetFloat`, `SetVector`, `SetKeywordEnabled`, `ResolveVariantIndex` |
 
-`Forward2DRenderPipeline` builds **one graphics pipeline per shader variant** and
-picks between them from each drawable's material, so a variant is only paid for
-when something actually selects it.
+`Assembly/Rendering/TriangleRenderPipeline.cs` builds **one graphics pipeline per
+shader variant** and picks between them from each drawable's material, so a variant
+is only paid for when something actually selects it. The engine names no shader
+property: `_ColorMode` and `_Tint` live in `Assembly/Rendering/TriangleMaterial.cs`,
+next to the shader that declares them.
 
 ## Features
 
@@ -201,9 +318,10 @@ when something actually selects it.
     no `VspString& outErrorText` out-parameters anywhere in `Graphics/Vulkan`.
   - Images and the sampler are separate descriptors (bindings 1 and 2), which is the
     layout HLSL `Texture2D` + `SamplerState` compiles to.
-- **.vsf shader pipeline (HLSLCC)** (`Programs/HLSLCC` + `Shader/` + `Graphics/ShaderLibrary`):
-  - one `.vsf` file per shader with its `Properties`, its `Shader` settings and
-    its `Pass` blocks,
+- **.vsf shader pipeline (HLSLCC, build time)** (`Programs/HLSLCC` +
+  `Assembly/Shaders` + `Graphics/ShaderLibrary`):
+  - one `.vsf` file per shader with its `Properties` block and its `Shader`
+    block, which holds one or more `Pass` blocks,
   - entry points named in the file (`#pragma vertex` / `#pragma fragment`),
   - `#include` inside a Pass block, resolved against the shader's own directory,
   - four variant pragmas with the strip rules described above,
@@ -213,8 +331,20 @@ when something actually selects it.
     the Vulkan SDK, `VSP_DXC_ROOT` or the executable's directory),
   - reflection read straight out of the produced SPIR-V: interface variables,
     descriptor bindings and the push-constant block layout,
-  - a manifest the engine loads directly, plus the same compiler at runtime
-    (`ShaderCompiler` / `VspEngine.Rendering.ShaderCompiler`).
+  - **one `.vsfo` container per shader**: an index table (which stage, how big,
+    what it reflects) plus a data segment (the modules and their reflection
+    records), which is the single file the engine loads,
+  - an **HLSL builtin library** (`Vsp/Common`, `Vsp/Transform`, `Vsp/Texture`,
+    `Vsp/Normal`, `Vsp/Lighting`) that a shader reaches with
+    `#include <Vsp/Builtin.hlsl>`; HLSLCC resolves it against its own directory
+    (`--builtin-directory` overrides that),
+  - the shader BELONGS to the game Assembly, which compiles it while it builds;
+    the engine only loads the resulting container.
+- **The game owns rendering** (`Assembly/Rendering` + `VspEngine.IGameModule`):
+  the engine ships no pipeline and no shader. `Game.OnGameLoad` installs the
+  game's pipeline, which loads its shader with `Shader.Load` and draws with it -
+  everything a renderer does lives in the game Assembly, one `RenderPipeline`
+  class and a couple of helpers next to the scripts.
 - **Materials** (`Classes/Material` + `VspEngine.Material`): a component draws with
   a material, the material owns the shader plus its property values and keywords,
   and the pipeline keeps one graphics pipeline per shader variant.
@@ -312,10 +442,11 @@ order: the directory of the executable, `%VSP_DXC_ROOT%\bin`, `%DXC_ROOT%\bin`,
 `%VULKAN_SDK%\Bin` (the Vulkan SDK ships DXC), and the repository's own
 `Engine/Source/Thirdparty/dxc`. No import library is needed.
 
-VspCore's post-build step runs `Engine/Tools/Build/CompileShaders.ps1`, which
-compiles every `.vsf` into the `Shaders` folder next to the executable - the
-folder the engine loads from. The step skips itself while `HLSLCC.exe` is not
-built yet, and the acceptance run always recompiles the shaders itself.
+The game Assembly's build step runs `Engine/Tools/Build/CompileShaders.ps1`, which
+compiles every `Assembly/Shaders/*.vsf` into the `Shaders` folder next to the
+executable - the folder the engine loads from. The step skips itself while
+`HLSLCC.exe` is not built yet, and the acceptance run always recompiles the shaders
+itself.
 
 ```
 msbuild VspEngine.slnx /restore /p:Configuration=Debug /p:Platform=x64
@@ -374,7 +505,9 @@ Compiler installation.
 ```
 Engine\Intermediate\Binaries\Debug_x64\HLSLCC.exe <shader.vsf> [options]
 
-  --output-directory <dir>   where the .spv/.json files go (created on demand)
+  --output-directory <dir>   where the .vsfo/.spv/.json files go (created on demand)
+  --builtin-directory <dir>  where the HLSL builtin library (<Vsp/...>) lives
+                             (default: <exe dir>\Builtin; the build stages it)
   --used-variant <state>     keyword state the build uses; repeatable.
                              Strippable groups keep only these states, and their
                              default state when none is reported ("_" = none)
@@ -385,6 +518,7 @@ Engine\Intermediate\Binaries\Debug_x64\HLSLCC.exe <shader.vsf> [options]
   -D <name>[=value]          preprocessor definition
   --no-vulkan-namespace      keep the injected Vulkan HLSL namespace out
   --no-attribute-shorthands  keep the VSP_VK_* shorthands out
+  --keep-explicit-bindings   keep the bindings a shader names itself
   --reflection-only          write only the reflection document
   --debug-info               compile unoptimised with debug information
   --quiet                    report failures only
@@ -400,24 +534,39 @@ powershell -NoProfile -ExecutionPolicy Bypass -File Engine\Tools\Acceptance\RunA
 The script runs both halves of the acceptance test:
 
 1. **Shader compilation** (`VerifyShaderCompilation.ps1`) runs `HLSLCC.exe` over
-   `Graphics/Shaders/Triangle2D.vsf` - the one file that defines both
+   the game's `Assembly/Shaders/Triangle2D.vsf` - the one file that defines both
    `PassVertex` and `PassFragment` - and checks that
 
-   - the `Properties`, `Shader` and `Pass` blocks, both entry-point pragmas and
-     the `#include` of the Pass block are all read out of the file,
+   - the `Properties` block, the `Shader` block, the `Pass` block nested inside
+     it, both entry-point pragmas and the `#include` of the Pass block are all
+     read out of the file,
    - one SPIR-V binary per stage of the default variant is written, each starting
      with the SPIR-V magic number and carrying the entry point of its stage,
    - `spirv-val` accepts both modules (when the SDK ships it),
    - the reflection document describes both stages, the three vertex inputs, the
      camera uniform buffer, the bindless sampled-image array, the sampler and the
      48-byte, five-member push-constant block,
-   - the manifest the engine loads names the shader, its queue, its properties,
-     its keyword groups and the module file of every stage - and every module it
-     names exists,
+   - **the `.vsfo` container** the engine loads is well formed: the magic number,
+     the version, the section table inside the file, one index entry per module of
+     every variant, the stage/entry-point/pass/variant each entry names, the
+     modules byte-identical to the loose `.spv` files, and the reflection the
+     entries summarise and point at (camera block, bindless array, sampler, the
+     48-byte push-constant block),
+   - the manifest names the shader, its queue, its properties, its keyword groups
+     and the module file of every stage - and every module it names exists,
    - the strip rules hold: without `--used-variant` the strippable group ships
      only its default state while `multi_variant_local` ships both, reporting
      `_TINT_ENABLED` swaps which state ships, and reporting both states keeps
-     both.
+     both,
+   - a `Shader` block with **two** `Pass` blocks compiles both of them
+     (`MultiPassTest.Forward.*.spv` and `MultiPassTest.Tinted.*.spv`), and a
+     `Pass` written outside the `Shader` block is rejected with a clear error,
+   - no shader source writes a binding itself, while a shader that DOES
+     (`ExplicitBindingTest`, with the binding inside an included file) keeps its
+     own numbers,
+   - a shader that uses the **HLSL builtin library**
+     (`BuiltinLibraryTest.vsf`, `#include <Vsp/Builtin.hlsl>`) compiles and its
+     bindless resources land on the engine's bindings.
 
    The compiled output goes into the run directory's `Shaders` folder, so the
    same command compiles the shader the demo then loads.
@@ -429,6 +578,12 @@ The script runs both halves of the acceptance test:
    `[FATAL]` entry in the engine log**, and finally checks the captured frames
    with `AnalyzeShots.ps1` (movement direction, reset position and all four color
    modes).
+
+   It then patches the binding of the camera block **inside the container** and
+   runs the engine once more: the load must be refused, by name, with
+   "the shader 'Triangle2D' reads 'CameraUniformBuffer' ... at set 0 binding 5, but
+   the engine provides it at set 0 binding 0". That closes the loop from the bytes
+   on disk to the error message.
 
 The shader half can be run on its own:
 
@@ -453,13 +608,16 @@ Launch.exe --silent --frames=445 --fixed-delta-time=16.6667 ^
 
 - `Engine/Source/Runtime/VspCore`    - the native engine DLL. `Classes/` owns the object model, `Graphics/` the wrapped graphics API and the backends, `Scripting/` the CoreCLR host and every export managed code P/Invokes. All Windows-only code is encapsulated in its `Common/` folder behind `#if VSP_PLATFORM_WINDOWS`.
 - `Engine/Source/Runtime/VspEngine`  - the engine's managed runtime assembly (VspEngine.dll): the object model reference handles, the Input/Time facades, the interop bridge, the RHI wrappers and the render-pipeline framework.
-- `Assembly`                          - the game Assembly (Assembly.dll) holding the user scripts (the demo TriangleController); loaded by the engine at startup.
+- `Assembly`                          - the game Assembly (Assembly.dll): the user scripts (the demo `TriangleController`), the render pipeline the game installs (`Rendering/`) and the shaders it ships (`Assembly/Shaders/*.vsf`), which HLSLCC compiles during its build.
 - `Engine/Source/Runtime/Launch`     - the host executable: parses the command line, runs `GameEngine`.
-- `Engine/Source/Programs/HLSLCC`  - the HLSL cross compiler: `HLSLCCLib` (linked into VspCore) and `HLSLCC.exe` (the build tool). Vulkan namespace injection, DXC backend and SPIR-V reflection.
+- `Engine/Source/Programs/HLSLCC`  - the HLSL cross compiler `HLSLCC.exe`: the .vsf parser, Vulkan namespace injection, the DXC backend, the engine's binding rules, SPIR-V reflection and the `.vsfo` container writer. Nothing links it into the runtime.
+- `Engine/Source/Shared`            - `VsfoFormat.h`, the one definition of the shader-container format that both HLSLCC (writer) and VspCore (reader) compile.
+- `Engine/Shaders/Builtin`          - the HLSL builtin library (`Vsp/Common`, `Transform`, `Texture`, `Normal`, `Lighting`, `Builtin`), staged next to HLSLCC.exe and included by shaders as `<Vsp/...>`.
 - `Engine/Source/Programs/VspBuildTool` - the lightweight build system / stager described above.
 - `Engine/Source/Thirdparty`  - imported third-party SDKs (Vulkan, dxc, glm, fmt, ...). Read-only: never modified.
 - `Engine/Binaries`           - third-party binaries (dotnet runtime, Vulkan import lib, ...).
 - `Engine/Intermediate`       - all build outputs: binaries, obj/, NuGet restore caches, generated shader header.
-- `Engine/Tools/Build`        - the build steps: `CompileShaders.ps1` compiles every `.vsf` into the run directory's `Shaders` folder.
+- `Engine/Tools/Build`        - the build steps: `CompileShaders.ps1` compiles a game's `.vsf` shaders into the run directory's `Shaders` folder.
 - `Engine/Tools/Acceptance`   - the acceptance runner, the shader-compilation verifier and the captured-frame analyzer.
-- `Engine/Intermediate/Binaries/<config>/Shaders` - the compiled shaders the engine loads: the manifest, the SPIR-V modules and the reflection documents.
+- `Engine/Intermediate/Binaries/<config>/Shaders` - the compiled shaders the engine loads: the `.vsfo` container per shader, next to the loose SPIR-V modules and the JSON documents the tools read.
+- `Engine/Intermediate/Binaries/<config>/Builtin` - the HLSL builtin library staged next to HLSLCC.exe.

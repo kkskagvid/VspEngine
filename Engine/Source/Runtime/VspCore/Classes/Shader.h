@@ -37,6 +37,8 @@ namespace Vsp
 		static constexpr uint32 k_nMaxPropertyDisplayNameLength = 128;
 		static constexpr uint32 k_nMaxEntryPointNameLength = 64;
 		static constexpr uint32 k_nMaxVariantKeyLength = 128;
+		static constexpr uint32 k_nMaxStageResourceCount = 8;
+		static constexpr uint32 k_nMaxResourceNameLength = 64;
 
 		// What a keyword group does with its unused variants (see HLSLCC's
 		// ShaderDefinition.h for the full rules).
@@ -75,8 +77,22 @@ namespace Vsp
 			float fDefaultValues[4] = {};
 		};
 
-		// One compiled stage: the SPIR-V module, its entry point and the
-		// reflection summary the pipeline checks itself against.
+		// One descriptor the compiled stage reads, with the set and binding the
+		// engine assigned to it (see Graphics/ShaderBindings.h).
+		struct ResourceBinding
+		{
+			char Name[k_nMaxResourceNameLength] = {};
+			ShaderResourceKind eKind = ShaderResourceKind::Unknown;
+			uint32 uDescriptorSet = 0;
+			uint32 uBinding = 0;
+
+			// Elements the shader reads through this binding; 0 for an unsized
+			// runtime array, whose length the engine decides.
+			uint32 uDescriptorCount = 1;
+		};
+
+		// One compiled stage: the SPIR-V module, its entry point, the resources it
+		// reads and the reflection summary the pipeline checks itself against.
 		struct StageModule
 		{
 			char EntryPointName[k_nMaxEntryPointNameLength] = {};
@@ -84,10 +100,18 @@ namespace Vsp
 			uint32 uInputCount = 0;
 			uint32 uOutputCount = 0;
 			uint32 uResourceCount = 0;
+			uint32 uPushConstantMemberCount = 0;
 			uint32 uPushConstantByteSize = 0;
+			ResourceBinding Resources[k_nMaxStageResourceCount];
 
 			bool IsValid() const { return SpirvWords.size() >= 5; }
 			uint32 GetSpirvByteCount() const { return static_cast<uint32>(SpirvWords.size() * sizeof(uint32)); }
+
+			// Adds one resource; the stage keeps at most k_nMaxStageResourceCount.
+			bool AddResource(const ResourceBinding& resource);
+
+			// Resource the stage reads under a binding, or null.
+			const ResourceBinding* FindResource(uint32 uDescriptorSet, uint32 uBinding) const;
 		};
 
 		struct PassModule
@@ -132,6 +156,7 @@ namespace Vsp
 		// -------- Variants and modules --------
 		uint32 GetVariantCount() const { return static_cast<uint32>(m_Variants.GetSize()); }
 		const VariantModule* GetVariant(uint32 uVariantIndex) const;
+		VariantModule* GetMutableVariant(uint32 uVariantIndex);
 
 		// Variant whose keyword states match the given selection; the first
 		// variant when nothing matches (never null for a valid shader).

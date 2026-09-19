@@ -35,6 +35,7 @@ namespace VspEngine
 	{
 		private static Assembly? cachedGameAssembly;
 		private static List<Type>? cachedScriptTypes;
+		private static IGameModule? gameModule;
 
 		// -----------------------------------------------------------------
 		// Native entry-point delegates. The C++ host calls these through
@@ -148,7 +149,17 @@ namespace VspEngine
 
 				cachedGameAssembly = bridgeContext.LoadFromAssemblyPath(assemblyPath);
 				cachedScriptTypes = null;
-				return cachedGameAssembly != null ? 1 : 0;
+				gameModule = null;
+
+				if (cachedGameAssembly == null)
+				{
+					return 0;
+				}
+
+				// The game's entry point: it installs the render pipeline and loads
+				// the shaders the engine will never load by itself.
+				LoadGameModule(cachedGameAssembly);
+				return 1;
 			}
 			catch
 			{
@@ -156,6 +167,72 @@ namespace VspEngine
 				cachedGameAssembly = null;
 				cachedScriptTypes = null;
 				return 0;
+			}
+		}
+
+		/// <summary>
+		/// Finds the game module - the single concrete IGameModule of the game
+		/// assembly - and lets it start the game. A game without one is legal: it
+		/// simply renders nothing until a script installs a pipeline.
+		/// </summary>
+		private static void LoadGameModule(Assembly gameAssembly)
+		{
+			Type? moduleType = null;
+			foreach (Type candidateType in gameAssembly.GetTypes())
+			{
+				if (candidateType.IsClass && !candidateType.IsAbstract &&
+					typeof(IGameModule).IsAssignableFrom(candidateType))
+				{
+					if (moduleType != null)
+					{
+						NativeApi.VspLog_Error("GameModule: '" + moduleType.FullName + "' and '" +
+							candidateType.FullName + "' both implement IGameModule; using the first.");
+						break;
+					}
+					moduleType = candidateType;
+				}
+			}
+
+			if (moduleType == null)
+			{
+				return;
+			}
+
+			try
+			{
+				gameModule = Activator.CreateInstance(moduleType) as IGameModule;
+				gameModule?.OnGameLoad();
+			}
+			catch (Exception exception)
+			{
+				// A game that cannot start must not tear the process down: the
+				// host keeps running and the log says what happened.
+				gameModule = null;
+				NativeApi.VspLog_Error("GameModule: '" + moduleType.FullName + "' failed to load: " + exception.Message);
+			}
+		}
+
+		/// <summary>
+		/// Lets the game module release what it created. Called before the
+		/// engine shuts the graphics backend down.
+		/// </summary>
+		private static void UnloadGameModule()
+		{
+			IGameModule? module = gameModule;
+			gameModule = null;
+
+			if (module == null)
+			{
+				return;
+			}
+
+			try
+			{
+				module.OnGameUnload();
+			}
+			catch (Exception exception)
+			{
+				NativeApi.VspLog_Error("GameModule: OnGameUnload failed: " + exception.Message);
 			}
 		}
 
@@ -306,6 +383,7 @@ namespace VspEngine
 			try
 			{
 				RenderFlow.Release();
+				UnloadGameModule();
 			}
 			catch (Exception exception)
 			{

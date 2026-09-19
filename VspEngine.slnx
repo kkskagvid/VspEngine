@@ -18,7 +18,6 @@
       <Platform Project="x64" />
     </Project>
     <Project Path="Engine/Source/Runtime/VspCore/VspCore.vcxproj" Id="b5752592-6d1c-4ca0-8ac5-45881dbfaffa">
-      <BuildDependency Project="Engine/Source/Programs/HLSLCC/HLSLCCLib.vcxproj" />
       <Platform Project="x64" />
     </Project>
     <Project Path="Engine/Source/Runtime/VspEngine/VspEngine.csproj">
@@ -27,6 +26,8 @@
   </Folder>
   <Folder Name="/Game/">
     <Project Path="Assembly/Assembly.csproj">
+      <!-- The game's shaders are compiled by HLSLCC while the Assembly builds. -->
+      <BuildDependency Project="Engine/Source/Programs/HLSLCC/HLSLCC.vcxproj" />
       <Platform Project="x64" />
     </Project>
   </Folder>

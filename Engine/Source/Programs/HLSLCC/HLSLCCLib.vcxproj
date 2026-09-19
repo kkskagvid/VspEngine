@@ -58,7 +58,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <ExceptionHandling>false</ExceptionHandling>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)Engine\Source\Thirdparty\dxc\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)Engine\Source;$(SolutionDir)Engine\Source\Thirdparty\dxc\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <LanguageStandard_C>stdc11</LanguageStandard_C>
     </ClCompile>
@@ -73,7 +73,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <ExceptionHandling>false</ExceptionHandling>
-      <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)Engine\Source\Thirdparty\dxc\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(SolutionDir)Engine\Source;$(SolutionDir)Engine\Source\Thirdparty\dxc\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <LanguageStandard_C>stdc11</LanguageStandard_C>
       <Optimization>MaxSpeed</Optimization>
@@ -89,8 +89,10 @@
     <ClCompile Include="ShaderOutputWriter.cpp" />
     <ClCompile Include="ShaderReflection.cpp" />
     <ClCompile Include="ShaderSourceInjector.cpp" />
+    <ClCompile Include="SpirvBindingAssigner.cpp" />
     <ClCompile Include="SpirvReflectionReader.cpp" />
     <ClCompile Include="VspShaderFile.cpp" />
+    <ClCompile Include="VsfoWriter.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="CommandLine.h" />
@@ -102,8 +104,11 @@
     <ClInclude Include="ShaderOutputWriter.h" />
     <ClInclude Include="ShaderReflection.h" />
     <ClInclude Include="ShaderSourceInjector.h" />
+    <ClInclude Include="SpirvBindingAssigner.h" />
     <ClInclude Include="SpirvReflectionReader.h" />
     <ClInclude Include="VspShaderFile.h" />
+    <ClInclude Include="VsfoWriter.h" />
+    <ClInclude Include="$(SolutionDir)Engine\Source\Shared\VsfoFormat.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

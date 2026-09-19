@@ -6,6 +6,7 @@
 #include "DxcCompilerApi.h"
 #include "FilePathUtility.h"
 #include "ShaderOutputWriter.h"
+#include "VsfoWriter.h"
 
 namespace Hlslcc
 {
@@ -25,8 +26,11 @@ namespace Hlslcc
 			"\n"
 			"usage: HLSLCC <shader.vsf> [options]\n"
 			"\n"
-			"  --output-directory <dir>   directory the .spv/.json files go to\n"
+			"  --output-directory <dir>   directory the .vsfo/.spv/.json files go to\n"
 			"                             (default: the directory of the shader file)\n"
+			"  --builtin-directory <dir>  where the HLSL builtin library lives, the one\n"
+			"                             a shader includes as <Vsp/...>\n"
+			"                             (default: <exe dir>\\Builtin)\n"
 			"  --used-variant <state>     keyword state the build uses; repeatable\n"
 			"                             (strippable groups keep only these states)\n"
 			"  --vertex-entry <name>      entry point for passes without a pragma\n"
@@ -38,6 +42,8 @@ namespace Hlslcc
 			"  -D <name>[=value]          preprocessor definition\n"
 			"  --no-vulkan-namespace      keep the Vulkan HLSL namespace out of the source\n"
 			"  --no-attribute-shorthands  keep the VSP_VK_* shorthands out of the source\n"
+			"  --keep-explicit-bindings   keep the bindings a shader names itself instead\n"
+			"                             of letting the engine assign them\n"
 			"  --reflection-only          write only the manifest and reflection documents\n"
 			"  --debug-info               compile unoptimised and keep debug information\n"
 			"  --quiet                    report failures only\n"
@@ -47,9 +53,10 @@ namespace Hlslcc
 			"keyword groups, and the Pass blocks with the HLSL. The entry points are named\n"
 			"with '#pragma vertex <name>' and '#pragma fragment <name>'.\n"
 			"\n"
-			"outputs: <name>[.<pass>][.<variant>].vert.spv, the same for .frag.spv,\n"
-			"         <name>.shader.json (the manifest the engine loads) and\n"
-			"         <name>.reflection.json\n");
+			"outputs: <name>.vsfo (the shader container the engine loads: every module\n"
+			"         with its reflection), <name>[.<pass>][.<variant>].vert.spv and\n"
+			"         .frag.spv (the modules on their own, for a graphics debugger),\n"
+			"         <name>.shader.json and <name>.reflection.json for tools\n");
 	}
 
 	CommandLineOptions CommandLine::Parse(int32_t nArgumentCount, char** pArguments)
@@ -86,6 +93,13 @@ namespace Hlslcc
 			{
 				options.bQuiet = true;
 			}
+			else if (IsOption(pArgument, "--builtin-directory"))
+			{
+				if (!ReadValue("--builtin-directory", options.BuiltinDirectory))
+				{
+					return options;
+				}
+			}
 			else if (IsOption(pArgument, "--reflection-only"))
 			{
 				options.bReflectionOnly = true;
@@ -101,6 +115,10 @@ namespace Hlslcc
 			else if (IsOption(pArgument, "--no-attribute-shorthands"))
 			{
 				options.CompileOptions.bInjectEngineAttributeShorthands = false;
+			}
+			else if (IsOption(pArgument, "--keep-explicit-bindings"))
+			{
+				options.CompileOptions.bAutoAssignBindings = false;
 			}
 			else if (IsOption(pArgument, "--used-variant"))
 			{
@@ -159,6 +177,53 @@ namespace Hlslcc
 		return options;
 	}
 
+	// Directory the HLSL builtin library is read from. An explicit
+	// --builtin-directory wins; otherwise the library staged next to the
+	// compiler is used, and a missing library is only an error when the shader
+	// actually includes something from it (DXC reports that include itself).
+	std::string ResolveBuiltinDirectory(const CommandLineOptions& options, std::string& outErrorText)
+	{
+		outErrorText.clear();
+
+		if (!options.BuiltinDirectory.empty())
+		{
+			if (!FilePathUtility::DoesDirectoryExist(options.BuiltinDirectory))
+			{
+				outErrorText = "the builtin library directory '" + options.BuiltinDirectory + "' does not exist";
+				return std::string();
+			}
+			return options.BuiltinDirectory;
+		}
+
+		const std::string sExecutableDirectory = FilePathUtility::GetExecutableDirectory();
+		if (sExecutableDirectory.empty())
+		{
+			return std::string();
+		}
+
+		// The library belongs to the compiler, not to the shaders it produces, so
+		// it sits in its own directory next to the executable.
+		const std::string sStagedDirectory = FilePathUtility::Combine(sExecutableDirectory, "Builtin");
+		if (FilePathUtility::DoesDirectoryExist(sStagedDirectory))
+		{
+			return sStagedDirectory;
+		}
+
+		// Running straight from the build tree: the library sits in the
+		// repository, three levels above the run directory.
+		const std::string sRepositoryDirectory = FilePathUtility::Combine(
+			FilePathUtility::Combine(
+				FilePathUtility::Combine(sExecutableDirectory, ".."), ".."), "..");
+		const std::string sRepositoryBuiltinDirectory =
+			FilePathUtility::Combine(FilePathUtility::Combine(sRepositoryDirectory, "Engine\\Shaders"), "Builtin");
+		if (FilePathUtility::DoesDirectoryExist(sRepositoryBuiltinDirectory))
+		{
+			return sRepositoryBuiltinDirectory;
+		}
+
+		return std::string();
+	}
+
 	int32_t CommandLine::Run(const CommandLineOptions& options)
 	{
 		if (!options.ParseErrorText.empty())
@@ -180,6 +245,22 @@ namespace Hlslcc
 		// The entry points and the keyword groups live in the file, so they are
 		// known before compiling.
 		CompileOptions resolvedOptions = options.CompileOptions;
+
+		// The HLSL builtin library (<Vsp/...>) is resolved through an include
+		// directory, which is looked up once here: a shader writes
+		// "#include <Vsp/Lighting.hlsl>" and never has to know where the library
+		// sits on the machine that compiles it.
+		std::string sBuiltinErrorMessage;
+		const std::string sBuiltinDirectory = ResolveBuiltinDirectory(options, sBuiltinErrorMessage);
+		if (!sBuiltinDirectory.empty())
+		{
+			resolvedOptions.IncludeDirectories.push_back(sBuiltinDirectory);
+		}
+		else if (!sBuiltinErrorMessage.empty())
+		{
+			std::fprintf(stderr, "HLSLCC: %s\n", sBuiltinErrorMessage.c_str());
+			return 3;
+		}
 		ShaderFile shaderFile;
 		std::string sErrorText;
 		const HlslccResult eInspectResult =
@@ -203,6 +284,10 @@ namespace Hlslcc
 					pass.Name, pass.VertexEntryPoint.c_str(), pass.FragmentEntryPoint.c_str());
 			}
 			std::printf("  target environment   : %s\n", resolvedOptions.TargetEnvironment.c_str());
+			if (!sBuiltinDirectory.empty())
+			{
+				std::printf("  builtin library      : %s\n", sBuiltinDirectory.c_str());
+			}
 		}
 
 		CompiledShader compiledShader;
@@ -237,6 +322,8 @@ namespace Hlslcc
 			: 0u;
 
 		// ---- SPIR-V binaries, one per pass and stage of every kept variant ----
+		// They are what goes INTO the container; writing them next to it as well
+		// keeps a module readable by a graphics debugger.
 		if (!options.bReflectionOnly)
 		{
 			for (const CompiledVariant& variant : compiledShader.Variants)
@@ -269,7 +356,24 @@ namespace Hlslcc
 			}
 		}
 
-		// ---- The manifest the engine loads ----
+		// ---- The shader container the engine loads ----
+		// One .vsfo holds every module of every kept variant together with the
+		// reflection of each of them, so the engine reads one asset per shader
+		// instead of a manifest and a pile of .spv files.
+		const std::string sContainerPath = VsfoWriter::BuildContainerPath(sOutputDirectory, sBaseName);
+		if (VsfoWriter::WriteContainer(sContainerPath, compiledShader, sBaseName, sErrorText) !=
+			HlslccResult::Success)
+		{
+			std::fprintf(stderr, "HLSLCC: %s\n", sErrorText.c_str());
+			return 7;
+		}
+		if (!options.bQuiet)
+		{
+			std::printf("  wrote %s\n", sContainerPath.c_str());
+			std::printf("%s", VsfoWriter::BuildContainerSummary(compiledShader, sBaseName).c_str());
+		}
+
+		// ---- The manifest, for tools and humans ----
 		const std::string sManifestPath = ShaderOutputWriter::BuildManifestPath(sOutputDirectory, sBaseName);
 		if (ShaderOutputWriter::WriteShaderManifest(sManifestPath, compiledShader, sBaseName, sErrorText) !=
 			HlslccResult::Success)

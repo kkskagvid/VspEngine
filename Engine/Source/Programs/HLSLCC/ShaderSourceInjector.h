@@ -79,6 +79,12 @@ namespace Hlslcc
 		// True when the source text already asks for the injection to be skipped.
 		static bool IsInjectionDisabled(const std::string& sSourceText);
 
+		// True when the text names a descriptor binding itself - through
+		// [[vk::binding]], a register(...) annotation or the VSP_VK_BINDING
+		// shorthand this injector defines. Such a shader keeps its own bindings;
+		// every other shader is numbered by the engine (see SpirvBindingAssigner).
+		static bool SourceTextSpecifiesBindings(const std::string& sSourceText);
+
 	private:
 		// Byte offset the prologue is inserted at: past the leading run of blank
 		// lines, comments, preprocessor directives and whitespace.

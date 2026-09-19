@@ -4,6 +4,7 @@
 #include <cstring>
 
 #include "DxcCompilerApi.h"
+#include "SpirvBindingAssigner.h"
 #include "SpirvReflectionReader.h"
 
 namespace Hlslcc
@@ -184,10 +185,13 @@ namespace Hlslcc
 			return HlslccResult::FailInvalidArgument;
 		}
 
-		// Plain HLSL (no Pass block) is accepted as one pass holding the text,
+		// Plain HLSL (no Shader block) is accepted as one pass holding the text,
 		// which is what the engine's runtime compiler hands over.
 		ShaderFile shaderFile;
-		shaderFile.LoadFromSource(sSourceText, sSourceName);
+		if (shaderFile.LoadFromSource(sSourceText, sSourceName, outErrorText) != HlslccResult::Success)
+		{
+			return HlslccResult::FailInvalidArgument;
+		}
 		ApplyEntryPointOverrides(shaderFile, options);
 
 		return CompileShaderFile(shaderFile, options, outShader, outErrorText);
@@ -261,7 +265,17 @@ namespace Hlslcc
 		return HlslccResult::Success;
 	}
 
-	// Compiles both stages of one pass for one variant.
+	// True when the pass names its own descriptor bindings, in which case the
+	// engine leaves them alone.
+	bool Compiler::DoesPassSpecifyBindings(const ShaderPass& pass)
+	{
+		return ShaderSourceInjector::SourceTextSpecifiesBindings(pass.SourceText);
+	}
+
+	// Compiles both stages of one pass for one variant. The two stages are compiled
+	// first and read back afterwards, because the engine's binding rules number the
+	// resources of the WHOLE pass: the vertex and the fragment stage share one
+	// descriptor set, so they have to agree on the numbers.
 	bool Compiler::CompilePass(
 		const ShaderPass& pass,
 		const ShaderVariantKey& variantKey,
@@ -310,6 +324,7 @@ namespace Hlslcc
 			? std::string("(default variant)")
 			: ("(variant " + variantKey.KeyText + ")");
 
+		// ---- 1. Compile every stage the pass defines ----
 		for (uint32_t uStageIndex = 0; uStageIndex < k_nShaderStageCount; ++uStageIndex)
 		{
 			const ShaderStage eStage = static_cast<ShaderStage>(uStageIndex);
@@ -352,6 +367,24 @@ namespace Hlslcc
 
 			outStage.SpirvWords = std::move(output.SpirvWords);
 			outStage.Diagnostics = std::move(output.Diagnostics);
+			outStage.bSourceSpecifiesBindings = output.bSourceSpecifiesBindings;
+		}
+
+		// ---- 2. Let the engine decide the bindings ----
+		if (!AssignPassBindings(pass, options, outPass, outErrorText))
+		{
+			return false;
+		}
+
+		// ---- 3. Read the finished modules back for reflection ----
+		for (uint32_t uStageIndex = 0; uStageIndex < k_nShaderStageCount; ++uStageIndex)
+		{
+			const ShaderStage eStage = static_cast<ShaderStage>(uStageIndex);
+			CompiledStage& outStage = outPass.Stages[uStageIndex];
+			if (!outStage.IsValid())
+			{
+				continue;
+			}
 
 			std::string sReflectionErrorText;
 			if (SpirvReflectionReader::Read(outStage.SpirvWords, eStage, outStage.Reflection, sReflectionErrorText) !=
@@ -369,6 +402,39 @@ namespace Hlslcc
 			}
 		}
 
+		return true;
+	}
+
+	// Applies the engine's binding rules to a compiled pass.
+	bool Compiler::AssignPassBindings(
+		const ShaderPass& pass,
+		const CompileOptions& options,
+		CompiledPass& outPass,
+		std::string& outErrorText)
+	{
+		// A shader that numbers its own resources keeps them, whether it wrote the
+		// numbers in the Pass block or in a file the Pass includes. The stages
+		// carry what the compiler saw while it resolved the includes, so a
+		// binding inside an include file is found too.
+		bool bPassSpecifiesBindings = DoesPassSpecifyBindings(pass);
+		for (const CompiledStage& stage : outPass.Stages)
+		{
+			bPassSpecifiesBindings = bPassSpecifiesBindings || stage.bSourceSpecifiesBindings;
+		}
+
+		if (!options.bAutoAssignBindings || bPassSpecifiesBindings)
+		{
+			return true;   // The shader manages its own bindings.
+		}
+
+		std::string sBindingErrorText;
+		if (SpirvBindingAssigner::AssignPassBindings(
+			outPass.Stages[0].SpirvWords, outPass.Stages[1].SpirvWords, sBindingErrorText) != HlslccResult::Success)
+		{
+			outErrorText = "assigning the engine's bindings to pass '" + std::string(pass.Name) +
+				"' failed: " + sBindingErrorText;
+			return false;
+		}
 		return true;
 	}
 }

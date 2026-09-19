@@ -5,6 +5,10 @@
 // in the shader file stay readable and the declarations can be shared with
 // other passes or shaders.
 //
+// NOTE: no resource names a binding. The ENGINE decides where every resource
+// lives and HLSLCC applies that decision to the compiled SPIR-V, so a shader
+// only says WHICH resource it uses, never where it sits.
+//
 // The Vulkan HLSL namespace (vk::) and the VSP_VK_* attribute shorthands are
 // injected by HLSLCC before this file is preprocessed, so nothing here includes
 // them either.
@@ -54,13 +58,16 @@ struct PassPushConstants
 // Per-frame camera. The renderer fills it with an orthographic projection whose
 // aspect ratio matches the swapchain, so world units stay square. The matrix is
 // column major, which is what the renderer writes.
-[[vk::binding(0, 0)]] cbuffer CameraUniformBuffer
+//
+// Its binding is assigned by the engine: a uniform buffer always lands on the
+// engine's uniform-buffer binding, whatever the shader calls it.
+cbuffer CameraUniformBuffer
 {
     column_major float4x4 ViewProjectionMatrix;
 };
 
-// Bindless texture access: the pipeline binds one large sampled-image array and
-// a single shared sampler, and every draw picks its slot through the push
-// constants.
-[[vk::binding(1, 0)]] Texture2D<float4> BindlessTextures[] : register(t0, space0);
-[[vk::binding(2, 0)]] SamplerState BindlessSampler : register(s0, space0);
+// Bindless texture access comes from the builtin library: <Vsp/Texture.hlsl>
+// declares the engine's sampled-image array and its sampler - without saying
+// where they sit, because the engine decides that - and wraps them in the
+// sampling functions every shader shares.
+#include <Vsp/Texture.hlsl>

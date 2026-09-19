@@ -18,13 +18,14 @@ namespace Vsp
 	//   binding 2 = the one sampler every bindless texture is read with.
 	//
 	// Images and the sampler are separate descriptors because that is the layout
-	// the HLSL shaders compile to (see Graphics/Shaders/Triangle2D.hlsl): a
-	// "Texture2D + SamplerState" pair becomes OpTypeImage and OpTypeSampler, not
-	// a combined image sampler.
+	// an HLSL "Texture2D + SamplerState" pair compiles to: OpTypeImage and
+	// OpTypeSampler, not a combined image sampler. Shaders name the resources
+	// they read and never write a binding - HLSLCC numbers them to match this
+	// layout (see Graphics/ShaderBindings.h).
 	//
 	// Create() writes the per-frame uniform buffers; textures arrive later through
-	// WriteTextureSlot, which is what the managed render pipeline drives when it
-	// creates a texture through the wrapped graphics API. Bindless is the only
+	// WriteTextureSlot, which is what a render pipeline drives when it creates a
+	// texture through the wrapped graphics API. Bindless is the only
 	// supported implementation - there is no fallback path.
 	// Every function logs its own errors through the Log module and never throws.
 	// -------------------------------------------------------------------------

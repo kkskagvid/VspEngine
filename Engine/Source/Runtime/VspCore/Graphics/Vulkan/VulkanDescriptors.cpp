@@ -1,6 +1,7 @@
 #include "RuntimePCH.h"
 
 #include "Core/Logging/Log.h"
+#include "Graphics/ShaderBindings.h"
 #include "Graphics/Vulkan/VulkanBuffer.h"
 #include "Graphics/Vulkan/VulkanDescriptors.h"
 #include "Graphics/Vulkan/VulkanRHI.h"
@@ -66,48 +67,43 @@ namespace Vsp
 			return false;
 		}
 
-		// Layout:
-		//   binding 0 = per-frame camera UBO (vertex),
-		//   binding 1 = bindless sampled-image array (fragment),
-		//   binding 2 = the sampler those images are read with (fragment).
+		// Layout: the engine's resource set (see Graphics/ShaderBindings.h), which
+		// HLSLCC assigns to every shader it compiles, so the numbers here and the
+		// numbers in a compiled shader come from the same rule.
 		// HLSL "Texture2D" maps to VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE and
 		// "SamplerState" to VK_DESCRIPTOR_TYPE_SAMPLER, which is exactly what the
 		// engine's shaders compile to.
-		VkDescriptorSetLayoutBinding bindings[3] = {};
-		bindings[0].binding = 0;
-		bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		bindings[0].descriptorCount = 1;
-		bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+		VkDescriptorSetLayoutBinding bindings[ShaderBindings::k_nBindingCount] = {};
+		bindings[ShaderBindings::k_nCameraUniformBuffer].binding = ShaderBindings::k_nCameraUniformBuffer;
+		bindings[ShaderBindings::k_nCameraUniformBuffer].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		bindings[ShaderBindings::k_nCameraUniformBuffer].descriptorCount = 1;
+		bindings[ShaderBindings::k_nCameraUniformBuffer].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
-		bindings[1].binding = 1;
-		bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-		bindings[1].descriptorCount = k_nMaxBindlessTextureCount;
-		bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+		bindings[ShaderBindings::k_nBindlessTextures].binding = ShaderBindings::k_nBindlessTextures;
+		bindings[ShaderBindings::k_nBindlessTextures].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+		bindings[ShaderBindings::k_nBindlessTextures].descriptorCount = k_nMaxBindlessTextureCount;
+		bindings[ShaderBindings::k_nBindlessTextures].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-		bindings[2].binding = 2;
-		bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
-		bindings[2].descriptorCount = 1;
-		bindings[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+		bindings[ShaderBindings::k_nBindlessSampler].binding = ShaderBindings::k_nBindlessSampler;
+		bindings[ShaderBindings::k_nBindlessSampler].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+		bindings[ShaderBindings::k_nBindlessSampler].descriptorCount = 1;
+		bindings[ShaderBindings::k_nBindlessSampler].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
 		// One flag entry per layout binding: binding 0 and 2 are single
 		// descriptors, binding 1 is partially bound (only the slots the engine
 		// actually created are written, and shaders only index those).
-		VkDescriptorBindingFlags bindingFlags[3] =
-		{
-			0,
-			VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT,
-			0,
-		};
+		VkDescriptorBindingFlags bindingFlags[ShaderBindings::k_nBindingCount] = {};
+		bindingFlags[ShaderBindings::k_nBindlessTextures] = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT;
 
 		VkDescriptorSetLayoutBindingFlagsCreateInfo bindingFlagsCreateInfo = {};
 		bindingFlagsCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
-		bindingFlagsCreateInfo.bindingCount = 3;
+		bindingFlagsCreateInfo.bindingCount = ShaderBindings::k_nBindingCount;
 		bindingFlagsCreateInfo.pBindingFlags = bindingFlags;
 
 		VkDescriptorSetLayoutCreateInfo layoutCreateInfo = {};
 		layoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 		layoutCreateInfo.pNext = &bindingFlagsCreateInfo;
-		layoutCreateInfo.bindingCount = 3;
+		layoutCreateInfo.bindingCount = ShaderBindings::k_nBindingCount;
 		layoutCreateInfo.pBindings = bindings;
 
 		if (vkCreateDescriptorSetLayout(device, &layoutCreateInfo, nullptr, &m_VkDescriptorSetLayout) != VK_SUCCESS)
@@ -123,7 +119,7 @@ namespace Vsp
 		poolSizes[0].descriptorCount = uFrameCount;
 		poolSizes[1].type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
 		poolSizes[1].descriptorCount = uFrameCount * k_nMaxBindlessTextureCount;
-		poolSizes[2].type = VK_DESCRIPTOR_TYPE_SAMPLER;
+		poolSizes[2].type = VK_DESCRIPTOR_TYPE_SAMPLER;   // The engine's sampler binding.
 		poolSizes[2].descriptorCount = uFrameCount;
 
 		VkDescriptorPoolCreateInfo poolCreateInfo = {};
@@ -173,7 +169,7 @@ namespace Vsp
 			VkWriteDescriptorSet writes[2] = {};
 			writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 			writes[0].dstSet = m_VkDescriptorSets[uFrameIndex];
-			writes[0].dstBinding = 0;
+			writes[0].dstBinding = ShaderBindings::k_nCameraUniformBuffer;
 			writes[0].dstArrayElement = 0;
 			writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 			writes[0].descriptorCount = 1;
@@ -181,7 +177,7 @@ namespace Vsp
 
 			writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 			writes[1].dstSet = m_VkDescriptorSets[uFrameIndex];
-			writes[1].dstBinding = 2;
+			writes[1].dstBinding = ShaderBindings::k_nBindlessSampler;
 			writes[1].dstArrayElement = 0;
 			writes[1].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
 			writes[1].descriptorCount = 1;
@@ -221,7 +217,7 @@ namespace Vsp
 		{
 			writes[uFrameIndex].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 			writes[uFrameIndex].dstSet = m_VkDescriptorSets[uFrameIndex];
-			writes[uFrameIndex].dstBinding = 1;
+			writes[uFrameIndex].dstBinding = ShaderBindings::k_nBindlessTextures;
 			writes[uFrameIndex].dstArrayElement = uBindlessSlot;
 			writes[uFrameIndex].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
 			writes[uFrameIndex].descriptorCount = 1;

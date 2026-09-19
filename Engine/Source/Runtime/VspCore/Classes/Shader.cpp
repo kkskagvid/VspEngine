@@ -118,6 +118,11 @@ namespace Vsp
 		return GetDefaultVariant();
 	}
 
+	Shader::VariantModule* Shader::GetMutableVariant(uint32 uVariantIndex)
+	{
+		return (uVariantIndex < m_Variants.GetSize()) ? &m_Variants[uVariantIndex] : nullptr;
+	}
+
 	const Shader::VariantModule* Shader::GetDefaultVariant() const
 	{
 		return m_Variants.IsEmpty() ? nullptr : &m_Variants[0];
@@ -130,5 +135,30 @@ namespace Vsp
 			return nullptr;
 		}
 		return &m_Variants.Add(VariantModule());
+	}
+
+	bool Shader::StageModule::AddResource(const ResourceBinding& resource)
+	{
+		if (uResourceCount >= k_nMaxStageResourceCount)
+		{
+			return false;
+		}
+
+		Resources[uResourceCount] = resource;
+		++uResourceCount;
+		return true;
+	}
+
+	const Shader::ResourceBinding* Shader::StageModule::FindResource(uint32 uDescriptorSet, uint32 uBinding) const
+	{
+		for (uint32 uResourceIndex = 0; uResourceIndex < uResourceCount; ++uResourceIndex)
+		{
+			const ResourceBinding& resource = Resources[uResourceIndex];
+			if (resource.uDescriptorSet == uDescriptorSet && resource.uBinding == uBinding)
+			{
+				return &resource;
+			}
+		}
+		return nullptr;
 	}
 }
