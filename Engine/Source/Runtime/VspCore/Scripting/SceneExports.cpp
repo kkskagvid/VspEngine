@@ -210,6 +210,145 @@ CSHARP_EXPORT int32 VspTransform_IsDirty(uint32 uTransformHandle)
 	return (pTransform != nullptr && pTransform->IsDirty()) ? 1 : 0;
 }
 
+// -------- World transforms (derived from the parent chain) --------
+
+CSHARP_EXPORT void VspTransform_GetWorldPosition(uint32 uTransformHandle, float* pOutXyz)
+{
+	if (pOutXyz == nullptr)
+	{
+		return;
+	}
+
+	Vsp::Transform* pTransform = Vsp::Scene::Get().FindTransform(uTransformHandle);
+	if (pTransform == nullptr)
+	{
+		pOutXyz[0] = 0.0f;
+		pOutXyz[1] = 0.0f;
+		pOutXyz[2] = 0.0f;
+		return;
+	}
+	pTransform->GetWorldPosition(pOutXyz[0], pOutXyz[1], pOutXyz[2]);
+}
+
+CSHARP_EXPORT void VspTransform_SetWorldPosition(uint32 uTransformHandle, float fPositionX, float fPositionY, float fPositionZ)
+{
+	Vsp::Transform* pTransform = Vsp::Scene::Get().FindTransform(uTransformHandle);
+	if (pTransform != nullptr)
+	{
+		pTransform->SetWorldPosition(fPositionX, fPositionY, fPositionZ);
+	}
+}
+
+CSHARP_EXPORT void VspTransform_GetWorldRotation(uint32 uTransformHandle, float* pOutXyz)
+{
+	if (pOutXyz == nullptr)
+	{
+		return;
+	}
+
+	Vsp::Transform* pTransform = Vsp::Scene::Get().FindTransform(uTransformHandle);
+	if (pTransform == nullptr)
+	{
+		pOutXyz[0] = 0.0f;
+		pOutXyz[1] = 0.0f;
+		pOutXyz[2] = 0.0f;
+		return;
+	}
+	pTransform->GetWorldRotation(pOutXyz[0], pOutXyz[1], pOutXyz[2]);
+}
+
+CSHARP_EXPORT void VspTransform_GetWorldScale(uint32 uTransformHandle, float* pOutXyz)
+{
+	if (pOutXyz == nullptr)
+	{
+		return;
+	}
+
+	Vsp::Transform* pTransform = Vsp::Scene::Get().FindTransform(uTransformHandle);
+	if (pTransform == nullptr)
+	{
+		pOutXyz[0] = 1.0f;
+		pOutXyz[1] = 1.0f;
+		pOutXyz[2] = 1.0f;
+		return;
+	}
+	pTransform->GetWorldScale(pOutXyz[0], pOutXyz[1], pOutXyz[2]);
+}
+
+// -------- Matrices (column-major, 16 floats) --------
+
+CSHARP_EXPORT void VspTransform_GetLocalMatrix(uint32 uTransformHandle, float* pOutMatrix16)
+{
+	if (pOutMatrix16 == nullptr)
+	{
+		return;
+	}
+
+	const Vsp::Transform* pTransform = Vsp::Scene::Get().FindTransform(uTransformHandle);
+	if (pTransform != nullptr)
+	{
+		pTransform->GetLocalMatrix(pOutMatrix16);
+	}
+}
+
+CSHARP_EXPORT void VspTransform_GetWorldMatrix(uint32 uTransformHandle, float* pOutMatrix16)
+{
+	if (pOutMatrix16 == nullptr)
+	{
+		return;
+	}
+
+	Vsp::Transform* pTransform = Vsp::Scene::Get().FindTransform(uTransformHandle);
+	if (pTransform != nullptr)
+	{
+		pTransform->GetWorldMatrix(pOutMatrix16);
+	}
+}
+
+CSHARP_EXPORT void VspTransform_GetWorldToLocalMatrix(uint32 uTransformHandle, float* pOutMatrix16)
+{
+	if (pOutMatrix16 == nullptr)
+	{
+		return;
+	}
+
+	Vsp::Transform* pTransform = Vsp::Scene::Get().FindTransform(uTransformHandle);
+	if (pTransform != nullptr)
+	{
+		pTransform->GetWorldToLocalMatrix(pOutMatrix16);
+	}
+}
+
+// -------- Hierarchy --------
+
+CSHARP_EXPORT uint32 VspTransform_GetParent(uint32 uTransformHandle)
+{
+	const Vsp::Transform* pTransform = Vsp::Scene::Get().FindTransform(uTransformHandle);
+	return pTransform != nullptr ? pTransform->GetParentTransformHandle() : Vsp::k_nInvalidObjectHandle;
+}
+
+CSHARP_EXPORT int32 VspTransform_SetParent(uint32 uTransformHandle, uint32 uParentTransformHandle)
+{
+	Vsp::Transform* pTransform = Vsp::Scene::Get().FindTransform(uTransformHandle);
+	return (pTransform != nullptr && pTransform->SetParentTransformHandle(uParentTransformHandle)) ? 1 : 0;
+}
+
+CSHARP_EXPORT int32 VspTransform_GetChildCount(uint32 uTransformHandle)
+{
+	const Vsp::Transform* pTransform = Vsp::Scene::Get().FindTransform(uTransformHandle);
+	return pTransform != nullptr ? static_cast<int32>(pTransform->GetChildTransformCount()) : 0;
+}
+
+CSHARP_EXPORT uint32 VspTransform_GetChild(uint32 uTransformHandle, int32 nChildIndex)
+{
+	const Vsp::Transform* pTransform = Vsp::Scene::Get().FindTransform(uTransformHandle);
+	if (pTransform == nullptr || nChildIndex < 0)
+	{
+		return Vsp::k_nInvalidObjectHandle;
+	}
+	return pTransform->GetChildTransformHandle(static_cast<uint32>(nChildIndex));
+}
+
 CSHARP_EXPORT void VspTransform_ClearDirtyFlag(uint32 uTransformHandle)
 {
 	Vsp::Transform* pTransform = Vsp::Scene::Get().FindTransform(uTransformHandle);
@@ -274,6 +413,11 @@ CSHARP_EXPORT uint32 VspComponent_GetRenderableHandle(uint32 uRenderableIndex)
 CSHARP_EXPORT uint32 VspScene_GetLiveGameObjectCount()
 {
 	return Vsp::Scene::Get().GetLiveGameObjectCount();
+}
+
+CSHARP_EXPORT uint32 VspScene_GetGameObjectHandle(uint32 uGameObjectIndex)
+{
+	return Vsp::Scene::Get().GetLiveGameObjectHandle(uGameObjectIndex);
 }
 
 CSHARP_EXPORT uint32 VspScene_GetLiveTransformCount()

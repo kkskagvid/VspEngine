@@ -20,7 +20,7 @@ namespace VspEngine.Rendering
 				throw new ArgumentOutOfRangeException(nameof(byteSize), "A vertex buffer needs at least one byte.");
 			}
 
-			nativeHandle = RhiApi.VspRhi_CreateBuffer(byteSize, 1, isDynamic ? 1 : 0);
+			nativeHandle = RhiApi.VspRhi_CreateBuffer(byteSize, (int)BufferUsage.Vertex, isDynamic ? 1 : 0);
 		}
 
 		/// <summary>Native buffer handle (0 = invalid).</summary>

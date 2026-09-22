@@ -14,8 +14,42 @@ namespace VspEngine.Rendering
 	public enum PrimitiveTopology
 	{
 		TriangleList = 0,
-		LineList = 1,
-		PointList = 2,
+		TriangleStrip = 1,
+		LineList = 2,
+		PointList = 3,
+	}
+
+	/// <summary>Which faces the rasterizer throws away.</summary>
+	public enum CullMode
+	{
+		/// <summary>Draw both sides (what flat content usually wants).</summary>
+		None = 0,
+
+		/// <summary>Throw away front faces (looking at a shape from inside).</summary>
+		Front = 1,
+
+		/// <summary>Throw away back faces (what a closed 3D shape wants).</summary>
+		Back = 2,
+	}
+
+	/// <summary>How a depth test compares a fragment with the depth buffer.</summary>
+	public enum CompareOperation
+	{
+		Never = 0,
+		Less = 1,
+		Equal = 2,
+		LessOrEqual = 3,
+		Greater = 4,
+		NotEqual = 5,
+		GreaterOrEqual = 6,
+		Always = 7,
+	}
+
+	/// <summary>What a buffer holds.</summary>
+	public enum BufferUsage
+	{
+		Vertex = 0,
+		Index = 1,
 	}
 
 	/// <summary>
@@ -46,7 +80,7 @@ namespace VspEngine.Rendering
 
 		// ---- Buffers ----
 		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
-		internal static extern uint VspRhi_CreateBuffer(uint byteSize, int isVertexBuffer, int isDynamic);
+		internal static extern uint VspRhi_CreateBuffer(uint byteSize, int bufferUsage, int isDynamic);
 
 		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
 		internal static extern void VspRhi_DestroyBuffer(uint buffer);
@@ -95,6 +129,13 @@ namespace VspEngine.Rendering
 		internal static extern void VspRhi_PipelineBuilderSetTopology(uint builder, int topology);
 
 		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspRhi_PipelineBuilderSetCullMode(uint builder, int cullMode);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspRhi_PipelineBuilderSetDepthState(
+			uint builder, int depthTestEnabled, int depthWriteEnabled, int depthCompare);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
 		internal static extern void VspRhi_PipelineBuilderSetBlendEnabled(uint builder, int blendEnabled);
 
 		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
@@ -120,6 +161,9 @@ namespace VspEngine.Rendering
 		internal static extern void VspRhi_SetClearColor(float red, float green, float blue, float alpha);
 
 		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspRhi_SetFrameCamera(uint camera);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
 		internal static extern void VspRhi_CmdBeginRenderPass();
 
 		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
@@ -138,10 +182,16 @@ namespace VspEngine.Rendering
 		internal static extern void VspRhi_CmdBindVertexBuffer(uint vertexBuffer);
 
 		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspRhi_CmdBindIndexBuffer(uint indexBuffer);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
 		internal static extern void VspRhi_CmdPushConstants(int shaderStageFlags, uint byteOffset, [In] byte[] data, uint byteCount);
 
 		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
 		internal static extern void VspRhi_CmdDraw(uint vertexCount, uint firstVertex);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspRhi_CmdDrawIndexed(uint indexCount, uint firstIndex, uint firstVertex);
 
 		// ---- Back buffer ----
 		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]

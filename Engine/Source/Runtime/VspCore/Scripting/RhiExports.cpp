@@ -2,6 +2,9 @@
 
 #include <cstring>
 
+#include "Classes/Camera.h"
+#include "Classes/Scene.h"
+#include "Classes/Transform.h"
 #include "Graphics/GraphicsSystem.h"
 #include "Graphics/RenderCore.h"
 #include "Scripting/ScriptExport.h"
@@ -18,11 +21,12 @@
 
 // -------- Buffers --------
 
-CSHARP_EXPORT uint32 VspRhi_CreateBuffer(uint32 uByteSize, int32 bIsVertexBuffer, int32 bIsDynamic)
+// uBufferUsage: 0 = vertex buffer, 1 = index buffer.
+CSHARP_EXPORT uint32 VspRhi_CreateBuffer(uint32 uByteSize, int32 nBufferUsage, int32 bIsDynamic)
 {
 	Vsp::RhiBufferDescriptor descriptor;
 	descriptor.uByteSize = uByteSize;
-	descriptor.bIsVertexBuffer = (bIsVertexBuffer != 0);
+	descriptor.eUsage = static_cast<Vsp::RhiBufferUsage>(nBufferUsage);
 	descriptor.bIsDynamic = (bIsDynamic != 0);
 	return Vsp::GraphicsSystem::Get().CreateBuffer(descriptor);
 }
@@ -113,6 +117,25 @@ CSHARP_EXPORT void VspRhi_PipelineBuilderSetTopology(uint32 uBuilder, int32 nTop
 		uBuilder, static_cast<Vsp::RhiPrimitiveTopology>(nTopology));
 }
 
+CSHARP_EXPORT void VspRhi_PipelineBuilderSetCullMode(uint32 uBuilder, int32 nCullMode)
+{
+	Vsp::GraphicsSystem::Get().PipelineBuilderSetCullMode(
+		uBuilder, static_cast<Vsp::RhiCullMode>(nCullMode));
+}
+
+CSHARP_EXPORT void VspRhi_PipelineBuilderSetDepthState(
+	uint32 uBuilder,
+	int32 bDepthTestEnabled,
+	int32 bDepthWriteEnabled,
+	int32 nDepthCompare)
+{
+	Vsp::GraphicsSystem::Get().PipelineBuilderSetDepthState(
+		uBuilder,
+		bDepthTestEnabled != 0,
+		bDepthWriteEnabled != 0,
+		static_cast<Vsp::RhiCompareOperation>(nDepthCompare));
+}
+
 CSHARP_EXPORT void VspRhi_PipelineBuilderSetBlendEnabled(uint32 uBuilder, int32 bBlendEnabled)
 {
 	Vsp::GraphicsSystem::Get().PipelineBuilderSetBlendEnabled(uBuilder, bBlendEnabled != 0);
@@ -155,6 +178,42 @@ CSHARP_EXPORT void VspRhi_SetClearColor(float fColorR, float fColorG, float fCol
 	Vsp::RenderCore::Get().SetClearColor(fColorR, fColorG, fColorB, fColorA);
 }
 
+// Hands the frame the camera the pipeline renders from. Everything the engine
+// needs (the matrices a shader multiplies by and the lens the camera carries)
+// travels in one call, so a pipeline sets its camera with one line.
+CSHARP_EXPORT void VspRhi_SetFrameCamera(uint32 uCameraHandle)
+{
+	const Vsp::Camera* pCamera = Vsp::Scene::Get().FindCamera(uCameraHandle);
+	if (pCamera == nullptr)
+	{
+		return;
+	}
+
+	Vsp::RhiFrameCamera frameCamera;
+	pCamera->GetViewProjectionMatrix(frameCamera.m4ViewProjection);
+	pCamera->GetViewMatrix(frameCamera.m4View);
+	pCamera->GetProjectionMatrix(frameCamera.m4Projection);
+
+	// The camera-to-world matrix is the view, inverted: the camera's own
+	// transform.
+	const Vsp::Transform* pTransform = Vsp::Scene::Get().FindTransform(pCamera->GetTransformHandle());
+	if (pTransform != nullptr)
+	{
+		const_cast<Vsp::Transform*>(pTransform)->GetWorldMatrix(frameCamera.m4CameraToWorld);
+	}
+
+	pCamera->GetWorldPosition(
+		frameCamera.fPosition[0], frameCamera.fPosition[1], frameCamera.fPosition[2]);
+
+	frameCamera.fAperture = pCamera->GetAperture();
+	frameCamera.fFocusDistance = pCamera->GetFocusDistance();
+	frameCamera.fNearClipPlane = pCamera->GetNearClipPlane();
+	frameCamera.fFarClipPlane = pCamera->GetFarClipPlane();
+	frameCamera.bIsSet = true;
+
+	Vsp::RenderCore::Get().SetFrameCamera(frameCamera);
+}
+
 CSHARP_EXPORT void VspRhi_CmdBeginRenderPass()
 {
 	Vsp::RenderCore::Get().BeginRenderPass();
@@ -185,6 +244,11 @@ CSHARP_EXPORT void VspRhi_CmdBindVertexBuffer(uint32 uVertexBuffer)
 	Vsp::RenderCore::Get().BindVertexBuffer(uVertexBuffer);
 }
 
+CSHARP_EXPORT void VspRhi_CmdBindIndexBuffer(uint32 uIndexBuffer)
+{
+	Vsp::RenderCore::Get().BindIndexBuffer(uIndexBuffer);
+}
+
 CSHARP_EXPORT void VspRhi_CmdPushConstants(
 	int32 nShaderStageFlags,
 	uint32 uByteOffset,
@@ -198,6 +262,11 @@ CSHARP_EXPORT void VspRhi_CmdPushConstants(
 CSHARP_EXPORT void VspRhi_CmdDraw(uint32 uVertexCount, uint32 uFirstVertex)
 {
 	Vsp::RenderCore::Get().Draw(uVertexCount, uFirstVertex);
+}
+
+CSHARP_EXPORT void VspRhi_CmdDrawIndexed(uint32 uIndexCount, uint32 uFirstIndex, uint32 uFirstVertex)
+{
+	Vsp::RenderCore::Get().DrawIndexed(uIndexCount, uFirstIndex, uFirstVertex);
 }
 
 // -------- Back buffer --------

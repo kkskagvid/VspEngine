@@ -23,9 +23,10 @@ namespace VspEngine.Rendering
 		private static readonly List<RenderDrawItem> frameDrawItems = new List<RenderDrawItem>();
 		private static readonly ScriptableRenderContext renderContext = new ScriptableRenderContext();
 
-		// Scratch buffer the native transform getter fills with x, y, z; kept
-		// here so gathering a frame allocates nothing.
+		// Scratch buffers the native transform getters fill; kept here so
+		// gathering a frame allocates nothing.
 		private static readonly float[] positionXyzScratch = new float[3];
+		private static readonly float[] worldMatrixScratch = new float[16];
 
 		private static RenderPipeline? activePipeline;
 		private static Func<RenderPipeline>? defaultPipelineFactory;
@@ -130,12 +131,29 @@ namespace VspEngine.Rendering
 					continue;
 				}
 
-				NativeApi.VspTransform_GetLocalPosition(transformHandle, positionXyzScratch);
+				// The world matrix is what a vertex stage needs; the position is
+				// the same information in the form a 2D-style pipeline reads.
+				NativeApi.VspTransform_GetWorldMatrix(transformHandle, worldMatrixScratch);
+				NativeApi.VspTransform_GetWorldPosition(transformHandle, positionXyzScratch);
 				Vector3 position = new Vector3(positionXyzScratch[0], positionXyzScratch[1], positionXyzScratch[2]);
 
 				uint materialHandle = NativeApi.VspComponent_GetMaterial(componentHandle);
-				frameDrawItems.Add(new RenderDrawItem(componentHandle, transformHandle, position, materialHandle));
+				frameDrawItems.Add(new RenderDrawItem(
+					componentHandle, transformHandle, position, ToMatrix4x4(worldMatrixScratch), materialHandle));
 			}
+		}
+
+		/// <summary>
+		/// Turns the native column-major matrix into a <see cref="Matrix4x4"/>,
+		/// which stores rows: element (row, column) sits at column * 4 + row.
+		/// </summary>
+		private static Matrix4x4 ToMatrix4x4(float[] columnMajorValues)
+		{
+			return new Matrix4x4(
+				columnMajorValues[0], columnMajorValues[4], columnMajorValues[8], columnMajorValues[12],
+				columnMajorValues[1], columnMajorValues[5], columnMajorValues[9], columnMajorValues[13],
+				columnMajorValues[2], columnMajorValues[6], columnMajorValues[10], columnMajorValues[14],
+				columnMajorValues[3], columnMajorValues[7], columnMajorValues[11], columnMajorValues[15]);
 		}
 	}
 }

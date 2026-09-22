@@ -9,42 +9,40 @@ using VspEngine.Rendering;
 namespace Assembly.Rendering
 {
 	/// <summary>
-	/// The push-constant block the game's 2D shader declares: the color override,
-	/// the material tint, the per-draw position offset, the color mode and the
-	/// bindless texture slot. The field order and the explicit offsets must stay
-	/// identical to the PassPushConstants block in the shader's include file
-	/// (Assembly/Shaders/Triangle2DCommon.hlsl) - the reflection HLSLCC produced
-	/// for that block is what the pipeline reads back from the loaded shader.
+	/// The push-constant block the demo shader declares: the draw's world matrix,
+	/// the flat color, the material tint, the light and the bindless texture slot.
+	///
+	/// The layout and the explicit offsets must stay identical to the
+	/// PassPushConstants block in Assembly/Shaders/Triangle2DCommon.hlsl - the
+	/// reflection HLSLCC produced for that block is what the pipeline reads back
+	/// from the loaded shader.
 	/// </summary>
 	[StructLayout(LayoutKind.Sequential, Pack = 4)]
-	internal struct TrianglePushConstants
+	internal struct DemoPushConstants
 	{
-		public float OverrideColorR;   // offset 0
-		public float OverrideColorG;
-		public float OverrideColorB;
-		public float OverrideColorA;
-		public float TintColorR;       // offset 16
-		public float TintColorG;
-		public float TintColorB;
-		public float TintColorA;
-		public float PositionOffsetX;  // offset 32
-		public float PositionOffsetY;
-		public int ColorMode;          // offset 40
-		public uint TextureIndex;      // offset 44
+		public Matrix4x4 WorldMatrix;    // offset 0   (row_major in the shader)
+		public Vector4 BaseColor;        // offset 64
+		public Vector4 TintColor;        // offset 80
+		public Vector4 LightDirection;   // offset 96  (xyz = travel direction, w = intensity)
+		public int ColorMode;            // offset 112
+		public uint TextureIndex;        // offset 116
+		public float Roughness;          // offset 120
+		public float SpecularStrength;   // offset 124
 	}
 
 	/// <summary>
 	/// The game's forward pipeline: one pass that clears the background and draws
-	/// every drawable the engine gathered as a triangle.
+	/// the demo scene - a camera, a cube and the colored triangle - in 3D.
 	///
 	/// This is GAME code. The engine ships no pipeline of its own, so rendering -
-	/// and with it every shader load - starts here: the pipeline calls
-	/// <see cref="Shader.Load"/> for the game's compiled shader, builds one
-	/// graphics pipeline per shader VARIANT and picks between them from the
-	/// material each drawable carries.
+	/// and with it every shader load - starts here: the pipeline creates the
+	/// scene objects it draws (a camera and a cube), calls <see cref="Shader.Load"/>
+	/// for the game's compiled shader, builds one graphics pipeline per shader
+	/// VARIANT and draws with depth testing, so nearer surfaces hide farther ones.
 	///
-	/// The shader is not written here and is not compiled here either: it is the
-	/// SPIR-V HLSLCC produced from Assembly/Shaders/Triangle2D.vsf at build time.
+	/// The "2D" content of the demo is the colored triangle: it is a mesh in the
+	/// same 3D scene, drawn through the same camera and the same depth buffer.
+	/// The engine has no separate 2D path.
 	/// </summary>
 	public sealed class TriangleRenderPipeline : RenderPipeline
 	{
@@ -54,22 +52,34 @@ namespace Assembly.Rendering
 		/// <summary>Name of the compiled shader this pipeline draws with.</summary>
 		public const string ShaderName = "Triangle2D";
 
-		private const int TriangleVertexCount = 3;
-		private const uint DefaultTextureSize = 8;
+		/// <summary>Where the camera sits and which way it looks.</summary>
+		public static readonly Vector3 CameraPosition = new Vector3(0.0f, 0.0f, 6.0f);
 
-		// The acceptance triangle: one vertex per corner, distinct vertex colors.
-		private static readonly TriangleVertex[] TriangleVertices =
-		{
-			// bottom-left (red)    bottom-right (green)  top (blue)
-			new TriangleVertex(new Vector2(-0.5f, -0.45f), new Vector4(1.0f, 0.0f, 0.0f, 1.0f), new Vector2(0.0f, 0.0f)),
-			new TriangleVertex(new Vector2( 0.5f, -0.45f), new Vector4(0.0f, 1.0f, 0.0f, 1.0f), new Vector2(1.0f, 0.0f)),
-			new TriangleVertex(new Vector2( 0.0f,  0.55f), new Vector4(0.0f, 0.0f, 1.0f, 1.0f), new Vector2(0.5f, 1.0f)),
-		};
+		/// <summary>How far behind the triangle the cube sits, in world units.</summary>
+		public const float CubeDistance = 3.0f;
+
+		/// <summary>Color the cube is drawn with; dark, so the demo's colored triangle stays the subject.</summary>
+		public static readonly Vector3 CubeColor = new Vector3(0.10f, 0.10f, 0.14f);
+
+		/// <summary>Direction the demo light travels (it comes from the camera and above).</summary>
+		public static readonly Vector3 LightDirection = new Vector3(-0.35f, -0.45f, -1.0f);
+
+		private const uint WhiteTextureSize = 8;
 
 		private Shader? shader;
 		private Material? defaultMaterial;
+		private Material? cubeMaterial;
+		private Camera? camera;
+		private GameObject? cameraObject;
+		private GameObject? cubeObject;
 		private VertexBuffer? triangleVertexBuffer;
-		private Texture2D? defaultTexture;
+		private IndexBuffer? triangleIndexBuffer;
+		private VertexBuffer? cubeVertexBuffer;
+		private IndexBuffer? cubeIndexBuffer;
+		private Texture2D? whiteTexture;
+
+		private DemoMesh? triangleMesh;
+		private DemoMesh? cubeMesh;
 
 		// One graphics pipeline per shader variant, built on first use.
 		private readonly Dictionary<int, GraphicsPipeline> pipelinesByVariant = new Dictionary<int, GraphicsPipeline>();
@@ -82,6 +92,12 @@ namespace Assembly.Rendering
 
 		/// <summary>The material given to drawables that do not carry one.</summary>
 		public Material? DefaultMaterial => defaultMaterial;
+
+		/// <summary>The camera the demo renders from.</summary>
+		public Camera? Camera => camera;
+
+		/// <summary>The cube the demo draws behind the triangle, once it exists.</summary>
+		public GameObject? Cube => cubeObject;
 
 		public override void Render(ScriptableRenderContext context)
 		{
@@ -99,16 +115,22 @@ namespace Assembly.Rendering
 				return;
 			}
 
+			// The whole frame renders from this camera: the backend fills the
+			// engine's camera uniform buffer with its matrices and its lens.
+			commandBuffer.SetCamera(camera!);
+
 			commandBuffer.BeginRenderPass(BackgroundColor);
 			commandBuffer.SetViewport(0.0f, 0.0f, context.BackbufferWidth, context.BackbufferHeight);
 			commandBuffer.SetScissor(0, 0, (uint)context.BackbufferWidth, (uint)context.BackbufferHeight);
-			commandBuffer.BindVertexBuffer(triangleVertexBuffer!);
 
-			// Vertex colors carry the multicolor mode; every other mode is an
-			// override the fragment stage applies.
 			ShaderStageFlags pushConstantStages = ShaderStageFlags.Vertex | ShaderStageFlags.Fragment;
-			uint textureIndex = (uint)defaultTexture!.BindlessSlot;
+			uint textureIndex = (uint)whiteTexture!.BindlessSlot;
 
+			// The cube first: it is the farther object, so drawing it early makes
+			// the depth test do the visible work when the triangle moves behind it.
+			DrawCube(commandBuffer, pushConstantStages, textureIndex);
+
+			// Then every drawable the engine gathered: one colored triangle each.
 			foreach (RenderDrawItem drawItem in context.DrawItems)
 			{
 				Material material = ResolveMaterial(drawItem);
@@ -119,10 +141,12 @@ namespace Assembly.Rendering
 				}
 
 				commandBuffer.BindPipeline(pipeline);
+				commandBuffer.BindVertexBuffer(triangleVertexBuffer!);
+				commandBuffer.BindIndexBuffer(triangleIndexBuffer!);
 
-				TrianglePushConstants pushConstants = BuildPushConstants(drawItem, material, textureIndex);
+				DemoPushConstants pushConstants = BuildTriangleConstants(drawItem, material, textureIndex);
 				commandBuffer.PushConstants(pushConstantStages, in pushConstants);
-				commandBuffer.Draw(TriangleVertexCount);
+				commandBuffer.DrawIndexed((uint)triangleMesh!.Indices.Length);
 			}
 
 			commandBuffer.EndRenderPass();
@@ -139,21 +163,36 @@ namespace Assembly.Rendering
 
 			triangleVertexBuffer?.Dispose();
 			triangleVertexBuffer = null;
+			triangleIndexBuffer?.Dispose();
+			triangleIndexBuffer = null;
+			cubeVertexBuffer?.Dispose();
+			cubeVertexBuffer = null;
+			cubeIndexBuffer?.Dispose();
+			cubeIndexBuffer = null;
 
-			defaultTexture?.Dispose();
-			defaultTexture = null;
+			whiteTexture?.Dispose();
+			whiteTexture = null;
+
+			// The scene objects the pipeline created go with it; the objects a
+			// script owns belong to the scene and stay.
+			cubeObject?.Destroy();
+			cubeObject = null;
+			cameraObject?.Destroy();
+			cameraObject = null;
+			camera = null;
 
 			shader = null;
 			defaultMaterial = null;
+			cubeMaterial = null;
 
 			resourcesReady = false;
 			resourceCreationFailed = false;
 		}
 
 		/// <summary>
-		/// Loads the game's compiled shader and creates the resources one frame
-		/// needs, on first use - which is also the first frame after the graphics
-		/// backend came up.
+		/// Loads the game's compiled shader and creates the resources the demo
+		/// scene needs, on first use - which is also the first frame after the
+		/// graphics backend came up.
 		/// </summary>
 		private void EnsureResources()
 		{
@@ -173,31 +212,33 @@ namespace Assembly.Rendering
 			}
 
 			defaultMaterial = Material.Create(shader);
-			if (defaultMaterial == null)
+			cubeMaterial = Material.Create(shader);
+			if (defaultMaterial == null || cubeMaterial == null)
 			{
-				FailResourceCreation("the default material could not be created");
+				FailResourceCreation("the demo materials could not be created");
 				return;
 			}
 
-			triangleVertexBuffer = new VertexBuffer((uint)(TriangleVertices.Length * TriangleVertex.Stride));
-			if (!triangleVertexBuffer.IsValid || !triangleVertexBuffer.Update<TriangleVertex>(TriangleVertices))
+			// The white texture keeps the demo colors exact while the bindless
+			// array sampling is exercised.
+			whiteTexture = Texture2D.CreateWhite(WhiteTextureSize, WhiteTextureSize);
+			if (whiteTexture == null || !whiteTexture.IsValid)
 			{
-				FailResourceCreation("the triangle vertex buffer could not be filled");
+				FailResourceCreation("the white texture could not be created");
 				return;
 			}
 
-			// The white texture keeps the acceptance colors exact while the
-			// bindless array sampling is exercised.
-			defaultTexture = Texture2D.CreateWhite(DefaultTextureSize, DefaultTextureSize);
-			if (defaultTexture == null || !defaultTexture.IsValid)
+			if (!CreateMeshes() || !CreateSceneObjects())
 			{
-				FailResourceCreation("the default white texture could not be created");
 				return;
 			}
 
 			resourcesReady = true;
 			Debug.LogInfo("TriangleRenderPipeline: shader '" + shader.ShaderName + "' ready ("
 				+ shader.VariantCount + " variant(s), queue " + shader.RenderQueue + ").");
+			Debug.LogInfo("TriangleRenderPipeline: 3D scene ready (camera at "
+				+ CameraPosition.X + ", " + CameraPosition.Y + ", " + CameraPosition.Z
+				+ "; cube " + CubeDistance + " units behind the triangle).");
 
 			for (int variantIndex = 0; variantIndex < shader.VariantCount; ++variantIndex)
 			{
@@ -210,6 +251,122 @@ namespace Assembly.Rendering
 					+ "': vertex '" + vertexEntryPoint + "', fragment '" + fragmentEntryPoint
 					+ "', push constants " + reflection.PushConstantByteSize + " bytes.");
 			}
+		}
+
+		/// <summary>Uploads the two meshes the demo draws.</summary>
+		private bool CreateMeshes()
+		{
+			triangleMesh = DemoMesh.CreateColoredTriangle();
+			cubeMesh = DemoMesh.CreateUnitCube();
+
+			triangleVertexBuffer = new VertexBuffer((uint)(triangleMesh.Vertices.Length * DemoVertex.Stride));
+			triangleIndexBuffer = new IndexBuffer((uint)triangleMesh.Indices.Length);
+			cubeVertexBuffer = new VertexBuffer((uint)(cubeMesh.Vertices.Length * DemoVertex.Stride));
+			cubeIndexBuffer = new IndexBuffer((uint)cubeMesh.Indices.Length);
+
+			if (!triangleVertexBuffer.IsValid || !triangleIndexBuffer.IsValid ||
+				!cubeVertexBuffer.IsValid || !cubeIndexBuffer.IsValid)
+			{
+				FailResourceCreation("the demo mesh buffers could not be allocated");
+				return false;
+			}
+
+			if (!triangleVertexBuffer.Update<DemoVertex>(triangleMesh.Vertices) ||
+				!triangleIndexBuffer.Update(triangleMesh.Indices) ||
+				!cubeVertexBuffer.Update<DemoVertex>(cubeMesh.Vertices) ||
+				!cubeIndexBuffer.Update(cubeMesh.Indices))
+			{
+				FailResourceCreation("the demo mesh buffers could not be filled");
+				return false;
+			}
+
+			return true;
+		}
+
+		/// <summary>
+		/// Creates the objects the demo scene is made of. They belong to the game,
+		/// not to the engine: the engine only stores them.
+		/// </summary>
+		private bool CreateSceneObjects()
+		{
+			cameraObject = GameObject.Create("DemoCamera");
+			cubeObject = GameObject.Create("DemoCube");
+			GameObject? rigObject = GameObject.Create("DemoRig");
+			if (cameraObject == null || cubeObject == null || rigObject == null)
+			{
+				FailResourceCreation("the demo scene objects could not be created");
+				return false;
+			}
+
+			// The cube hangs off a rig: the rig sits at the cube's distance and
+			// the cube sits at its rig's origin, so the scene has a parent and a
+			// child - local and world coordinates that differ, which is what a
+			// saved scene records side by side.
+			rigObject.Transform.Position = new Vector3(0.0f, 0.0f, -CubeDistance);
+			cubeObject.Transform.SetParent(rigObject.Transform, false);
+
+			cameraObject.Transform.Position = CameraPosition;
+
+			camera = Camera.Create(cameraObject);
+			if (camera == null)
+			{
+				FailResourceCreation("the demo camera could not be created");
+				return false;
+			}
+
+			// An orthographic camera whose half height is 1.5 world units: the
+			// triangle (1.1 units tall) fills about a third of the screen and
+			// world units stay square. The physical camera is a 50 mm lens on a
+			// full-frame sensor, which is the "normal" lens of photography.
+			camera.ProjectionMode = CameraProjectionMode.Orthographic;
+			camera.OrthographicSize = 1.5f;
+			camera.FieldOfView = 45.0f;
+			camera.NearClipPlane = 0.1f;
+			camera.FarClipPlane = 100.0f;
+			camera.FocalLength = 50.0f;
+			camera.SensorWidth = 36.0f;
+			camera.SensorHeight = 24.0f;
+			camera.Aperture = 2.8f;
+			camera.FocusDistance = 6.0f;
+
+			return true;
+		}
+
+		/// <summary>Draws the demo cube with the depth test on.</summary>
+		private void DrawCube(CommandBuffer commandBuffer, ShaderStageFlags pushConstantStages, uint textureIndex)
+		{
+			if (cubeObject == null || cubeMesh == null)
+			{
+				return;
+			}
+
+			Material material = cubeMaterial!;
+			GraphicsPipeline? pipeline = GetOrCreatePipeline(material.ResolveVariantIndex());
+			if (pipeline == null)
+			{
+				return;
+			}
+
+			commandBuffer.BindPipeline(pipeline);
+			commandBuffer.BindVertexBuffer(cubeVertexBuffer!);
+			commandBuffer.BindIndexBuffer(cubeIndexBuffer!);
+
+			DemoPushConstants pushConstants = default;
+			pushConstants.WorldMatrix = cubeObject.Transform.LocalToWorldMatrix;
+			pushConstants.BaseColor = new Vector4(CubeColor, 1.0f);
+			pushConstants.TintColor = Vector4.One;
+			pushConstants.LightDirection = new Vector4(LightDirection, 1.0f);
+
+			// Any mode but 3 means "use BaseColor": the cube keeps its dark
+			// material color instead of its per-face vertex colors, so it stays
+			// scenery behind the colored triangle.
+			pushConstants.ColorMode = 0;
+			pushConstants.TextureIndex = textureIndex;
+			pushConstants.Roughness = 0.55f;
+			pushConstants.SpecularStrength = 0.35f;
+
+			commandBuffer.PushConstants(pushConstantStages, in pushConstants);
+			commandBuffer.DrawIndexed((uint)cubeMesh.Indices.Length);
 		}
 
 		/// <summary>
@@ -265,7 +422,7 @@ namespace Assembly.Rendering
 			int pushConstantByteCount = (int)reflection.PushConstantByteSize;
 			if (pushConstantByteCount <= 0)
 			{
-				pushConstantByteCount = Marshal.SizeOf<TrianglePushConstants>();
+				pushConstantByteCount = Marshal.SizeOf<DemoPushConstants>();
 			}
 
 			GraphicsPipeline? pipeline;
@@ -282,11 +439,14 @@ namespace Assembly.Rendering
 					.SetShader(ShaderStage.Vertex, vertexShader)
 					.SetShader(ShaderStage.Fragment, fragmentShader)
 					.SetVertexLayout(
-						TriangleVertex.Stride,
-						new VertexAttribute(0, 2, 0),    // position
-						new VertexAttribute(1, 4, 8),    // color
-						new VertexAttribute(2, 2, 24))   // uv
+						DemoVertex.Stride,
+						new VertexAttribute(0, 3, 0),     // position
+						new VertexAttribute(1, 3, 12),    // normal
+						new VertexAttribute(2, 4, 24),    // vertex color
+						new VertexAttribute(3, 2, 40))    // uv
 					.SetTopology(PrimitiveTopology.TriangleList)
+					.SetCullMode(CullMode.Back)          // a closed 3D shape culls its back faces
+					.SetDepthTest(true, true, CompareOperation.LessOrEqual)
 					.SetBlendEnabled(true)
 					.SetPushConstantByteCount((uint)pushConstantByteCount);
 
@@ -350,11 +510,10 @@ namespace Assembly.Rendering
 		}
 
 		/// <summary>
-		/// Translates a draw item and its material into the shader constants:
-		/// where the triangle sits, which color it shows and how the material
-		/// tints it.
+		/// Translates a drawable and its material into the shader constants: where
+		/// the triangle sits, which color it shows and how the material tints it.
 		/// </summary>
-		private static TrianglePushConstants BuildPushConstants(
+		private static DemoPushConstants BuildTriangleConstants(
 			RenderDrawItem drawItem,
 			Material material,
 			uint textureIndex)
@@ -362,25 +521,29 @@ namespace Assembly.Rendering
 			TriangleColorMode colorMode = (TriangleColorMode)(int)material.GetFloat(
 				TriangleMaterial.ColorModePropertyName, (float)TriangleColorMode.MultiColor);
 
-			TrianglePushConstants pushConstants = default;
-			pushConstants.PositionOffsetX = drawItem.Position.X;
-			pushConstants.PositionOffsetY = drawItem.Position.Y;
+			// The drawable's own place in the scene, with its parent chain
+			// applied: the world matrix is what the vertex stage multiplies by.
+			Matrix4x4 worldMatrix = drawItem.WorldMatrix;
+
+			DemoPushConstants pushConstants = default;
+			pushConstants.WorldMatrix = worldMatrix;
+			pushConstants.BaseColor = new Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+			pushConstants.TintColor = Vector4.One;
+			pushConstants.LightDirection = new Vector4(LightDirection, 1.0f);
 			pushConstants.ColorMode = (int)colorMode;
 			pushConstants.TextureIndex = textureIndex;
-			pushConstants.OverrideColorA = 1.0f;
+			pushConstants.Roughness = 1.0f;
+			pushConstants.SpecularStrength = 0.0f;
 
-			// MultiColor keeps the vertex colors, so its override stays zero and
-			// the fragment stage ignores it (uColorMode == 3).
-			TriangleMaterial.GetOverrideColor(
-				colorMode, out pushConstants.OverrideColorR, out pushConstants.OverrideColorG, out pushConstants.OverrideColorB);
+			// MultiColor keeps the vertex colors, so the flat color stays black;
+			// the fragment stage does not read it in that mode (ColorMode == 3).
+			TriangleMaterial.GetFlatColor(
+				colorMode, out pushConstants.BaseColor.X, out pushConstants.BaseColor.Y, out pushConstants.BaseColor.Z);
 
 			// The material's tint; it reaches the image only in the variants that
 			// declare the _TINT_ENABLED keyword, and white leaves it unchanged.
 			Vector4 tint = material.GetVector(TriangleMaterial.TintPropertyName, Vector4.One);
-			pushConstants.TintColorR = tint.X;
-			pushConstants.TintColorG = tint.Y;
-			pushConstants.TintColorB = tint.Z;
-			pushConstants.TintColorA = tint.W;
+			pushConstants.TintColor = tint;
 
 			return pushConstants;
 		}

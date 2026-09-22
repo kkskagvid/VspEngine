@@ -34,10 +34,16 @@ Shader "Vsp/BuiltinLibraryTest"
             VSP_VK_LOCATION(2) float2 Uv            : TEXCOORD2;
         };
 
+        // The engine's per-frame camera block, in the order the engine fills it:
+        // the four matrices, where the camera is, and the lens it carries.
         cbuffer CameraUniformBuffer
         {
             column_major float4x4 ViewProjectionMatrix;
-            column_major float4x4 WorldMatrix;
+            column_major float4x4 ViewMatrix;
+            column_major float4x4 ProjectionMatrix;
+            column_major float4x4 CameraToWorldMatrix;
+            float4 CameraPosition;
+            float4 CameraLens;
         };
 
         struct BuiltinPushConstants
@@ -53,9 +59,9 @@ Shader "Vsp/BuiltinLibraryTest"
         BuiltinVertexOutput PassVertex(BuiltinVertexInput input)
         {
             BuiltinVertexOutput output;
-            output.Position = mul(ViewProjectionMatrix, mul(WorldMatrix, float4(input.Position, 1.0f)));
-            output.WorldPosition = VspTransformPoint(WorldMatrix, input.Position);
-            output.WorldNormal = VspTransformNormal((float4x4)WorldMatrix, input.Normal);
+            output.Position = mul(ViewProjectionMatrix, mul(CameraToWorldMatrix, float4(input.Position, 1.0f)));
+            output.WorldPosition = VspTransformPoint(CameraToWorldMatrix, input.Position);
+            output.WorldNormal = VspTransformNormal(CameraToWorldMatrix, input.Normal);
             output.Uv = input.Uv;
             return output;
         }

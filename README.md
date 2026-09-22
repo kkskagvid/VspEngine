@@ -1,12 +1,17 @@
 # VspEngine
 
-A small experimental game engine: a Vulkan 1.3 bindless renderer, a Unity-style
-managed object model and a **programmable render pipeline written in C#**, hosted
-by a native C++20 application that embeds the .NET CoreCLR runtime through the
-CoreCLR Hosting API (nethost + hostfxr). Shaders live in **.vsf** files - one file
-that carries its properties, its settings, its variants and its HLSL - and belong
-to the game Assembly, which compiles them to SPIR-V with **HLSLCC**. The runtime
-never compiles HLSL: it only loads the compiled modules.
+A small experimental game engine: a **3D** Vulkan 1.3 bindless renderer, a
+Unity-style managed object model and a **programmable render pipeline written in
+C#**, hosted by a native C++20 application that embeds the .NET CoreCLR runtime
+through the CoreCLR Hosting API (nethost + hostfxr). Shaders live in **.vsf**
+files - one file that carries its properties, its settings, its variants and its
+HLSL - and belong to the game Assembly, which compiles them to SPIR-V with
+**HLSLCC**. The runtime never compiles HLSL: it only loads the compiled modules.
+
+Scene objects carry **local** and **world** coordinates, cameras project
+orthographically, perspectively or through a real lens, and everything is drawn in
+3D with a depth buffer - **there is no separate 2D path**: 2D content is 3D
+content on a plane, seen through the same camera.
 
 The managed side is split into two assemblies: **VspEngine.dll** (the engine's
 managed runtime: script base types, the object model, the input/time facades, the
@@ -32,9 +37,10 @@ The native side of that contract is `Classes/`:
 | ---------------------- | ----------------------------------------------------------------------- |
 | `NativeObject`        | the handle, the kind tag and the name every object carries              |
 | `GameObject`          | activation state, layer, transform handle, attached component handles   |
-| `Transform`           | local position / rotation / scale and a dirty flag                      |
+| `Transform`           | local position / rotation / scale, the parent link and children, and the world matrix derived from them |
 | `Component`           | owner game object, component kind, enable state, render state           |
-| `Scene` (singleton)   | the three object tables, slot recycling and handle validation           |
+| `Camera`              | projection mode, clip planes, the lens of a physical camera, and the view / projection / view-projection matrices that follow from its transform |
+| `Scene` (singleton)   | the object tables, slot recycling and handle validation                 |
 
 A handle packs the object kind (bits 28..31), a slot generation (bits 20..27) and
 the 1-based slot index (bits 0..19). Released slots are recycled with a bumped
@@ -287,7 +293,68 @@ types, the descriptor bindings with set/binding/kind, and the push-constant layo
 in `Classes/Shader` so a pipeline can size its push-constant range and check itself
 against the shader it loaded.
 
-### 5. Materials drive what is drawn
+### 5. A transform has two coordinate spaces; a camera turns them into pixels
+
+**Local and world.** A `Transform` stores the LOCAL position, rotation and scale
+a script writes, plus the parent link and the children that make up the scene
+graph. The WORLD transform is derived from that chain and cached, so a child that
+follows its parent pays for one matrix multiply, not for a walk up the graph:
+
+```csharp
+Transform child = someObject.Transform;
+child.SetParent(parentTransform, keepWorldPosition: true);   // stays where it is
+Vector3 local = child.LocalPosition;      // relative to the parent
+Vector3 world = child.Position;           // where the scene says it is
+Matrix4x4 toWorld = child.LocalToWorldMatrix;
+```
+
+`VspEngine/SceneSerializer` records a whole scene to JSON with BOTH spaces -
+local is what a file stores, world is what that put in the scene - and reads it
+back:
+
+```json
+{ "name": "DemoCube", "parentGameObjectHandle": 268435460,
+  "localPosition": { "x": 0, "y": 0, "z": 0 },
+  "worldPosition": { "x": 0, "y": 0, "z": -3 } }
+```
+
+**Cameras.** A `Camera` belongs to a game object, so its transform is where it is
+and which way it looks (down its local -Z, Y up). Three projection modes:
+
+| Mode | Described by | Use |
+| ---- | ------------ | --- |
+| `Orthographic` | `OrthographicSize` (half height in world units) | flat content: a world unit stays the same size however far away it is |
+| `Perspective` | `FieldOfView` (vertical, degrees) | the usual 3D camera |
+| `Physical` | `FocalLength`, `SensorWidth`/`SensorHeight`, `Aperture`, `FocusDistance` | a real lens: a 50 mm lens on a full-frame sensor is 27 degrees, and the aperture and focus distance travel to the shader |
+
+A pipeline renders from a camera by handing it to the frame:
+
+```csharp
+commandBuffer.SetCamera(camera);   // fills the engine's camera uniform buffer
+```
+
+The engine writes that buffer from the camera - view-projection, view, projection,
+camera-to-world, the camera position, the aperture and the focus distance - so a
+shader reads the camera the pipeline chose without managing a buffer of its own.
+
+### 6. Everything is drawn in 3D
+
+The render pass has a **color and a depth attachment** (one depth image per
+swapchain image), and a pipeline states whether it tests and writes depth:
+
+```csharp
+builder.SetCullMode(CullMode.Back)
+       .SetDepthTest(true, true, CompareOperation.LessOrEqual);
+```
+
+Meshes are drawn through a vertex buffer and an **index buffer**
+(`DrawIndexed`), each draw carrying its own world matrix in the push-constant
+block, and the camera block supplies the view-projection. There is no 2D
+pipeline, no 2D render pass and no 2D shader convention: the demo's colored
+triangle is a mesh in the same scene as the cube, drawn through the same camera,
+culled and depth-tested exactly like it.
+
+### 7. Materials drive what is drawn
 
 A renderable component points at a **material**; the material points at a
 **shader** and carries that shader's property values and keywords:
@@ -416,19 +483,26 @@ next to the shader that declares them.
 ## Demo (acceptance test)
 
 `Assembly/TriangleController.cs` (the game Assembly loaded by the engine) drives a
-multicolor triangle:
+3D scene: a **camera**, a **cube** hanging off a rig, and the multicolor triangle -
+the demo's 2D content, drawn as a mesh in the same 3D scene.
 
-| Key | Action                                             |
-| --- | -------------------------------------------------- |
-| W   | move up                                            |
-| A   | move left                                          |
-| S   | move down                                          |
-| D   | move right                                         |
-| R   | reset position                                     |
-| T   | cycle color: red -> blue -> green -> multicolor    |
+| Key | Action                                                        |
+| --- | ------------------------------------------------------------- |
+| W   | move the triangle up (world +Y)                                |
+| A   | move it left (world -X)                                        |
+| S   | move it down (world -Y)                                        |
+| D   | move it right (world +X)                                       |
+| Q / E | move it away from / towards the camera (world Z)             |
+| R   | reset its position                                             |
+| T   | cycle its color: red -> blue -> green -> multicolor            |
+| Z / X | send it behind the cube / bring it back (the depth test)     |
+| C   | cycle the camera: orthographic -> perspective -> physical       |
+| F5 / F9 | record the scene to `DemoScene.json` / read it back        |
 
-The script owns no render state: it writes the position and the color mode into the
-native scene, and the active render pipeline reads them while it builds the frame.
+The script owns no render state: it writes world positions and material properties
+into the native scene, and the game's render pipeline reads them while it builds
+the frame. `Z` is the visible proof that the depth buffer works - the triangle is
+drawn *after* the cube, so only depth testing can hide it.
 
 ## Building
 
@@ -543,15 +617,16 @@ The script runs both halves of the acceptance test:
    - one SPIR-V binary per stage of the default variant is written, each starting
      with the SPIR-V magic number and carrying the entry point of its stage,
    - `spirv-val` accepts both modules (when the SDK ships it),
-   - the reflection document describes both stages, the three vertex inputs, the
-     camera uniform buffer, the bindless sampled-image array, the sampler and the
-     48-byte, five-member push-constant block,
+   - the reflection document describes both stages, the four vertex attributes,
+     the camera uniform buffer, the bindless sampled-image array, the sampler and
+     the 128-byte, eight-member push-constant block (the block carries a draw's
+     world matrix, which is why it is the size Vulkan guarantees),
    - **the `.vsfo` container** the engine loads is well formed: the magic number,
      the version, the section table inside the file, one index entry per module of
      every variant, the stage/entry-point/pass/variant each entry names, the
      modules byte-identical to the loose `.spv` files, and the reflection the
      entries summarise and point at (camera block, bindless array, sampler, the
-     48-byte push-constant block),
+     128-byte push-constant block),
    - the manifest names the shader, its queue, its properties, its keyword groups
      and the module file of every stage - and every module it names exists,
    - the strip rules hold: without `--used-variant` the strippable group ships
@@ -576,8 +651,21 @@ The script runs both halves of the acceptance test:
    `--fixed-delta-time=16.6667 --frames=445` together with the scheduled key
    presses and captures below, **fails on any `[ERROR]`, `[WARNING]` or
    `[FATAL]` entry in the engine log**, and finally checks the captured frames
-   with `AnalyzeShots.ps1` (movement direction, reset position and all four color
-   modes).
+   with `AnalyzeShots.ps1`:
+
+   - movement direction (D/W/A/S), reset position (R) and all four color modes (T),
+   - **the depth test**: sent behind the cube with `Z`, the triangle has to
+     disappear - it is drawn after the cube, so only a depth buffer can hide it -
+     and `X` has to bring it back,
+   - **the three projections**: the same scene through an orthographic, a 45-degree
+     perspective and a 50 mm physical camera produces three different images, with
+     the perspective one showing less of the triangle than the orthographic one and
+     the 50 mm lens framing tighter still.
+
+   It then reads what the run left behind: the `DemoScene.json` the demo recorded
+   (at least four objects, every one with local AND world coordinates, and the cube
+   at local z=0 / world z=-3 under its parent - the hierarchy surviving the round
+   trip) and the log (all three camera projection modes exercised).
 
    It then patches the binding of the camera block **inside the container** and
    runs the engine once more: the load must be refused, by name, with

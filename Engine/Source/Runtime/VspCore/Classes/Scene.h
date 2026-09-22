@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Classes/Camera.h"
 #include "Classes/Component.h"
 #include "Classes/GameObject.h"
 #include "Classes/Material.h"
@@ -76,6 +77,23 @@ namespace Vsp
 		Component* FindComponent(NativeObjectHandle uComponentHandle);
 		const Component* FindComponent(NativeObjectHandle uComponentHandle) const;
 
+		// -------- Cameras --------
+		// Creates a camera on a game object: the object's transform is where the
+		// camera sits and which way it looks. Returns the camera handle (0 on
+		// failure).
+		NativeObjectHandle CreateCamera(NativeObjectHandle uGameObjectHandle);
+
+		// Releases one camera. Returns false when the handle does not address a
+		// live camera.
+		bool DestroyCamera(NativeObjectHandle uCameraHandle);
+
+		Camera* FindCamera(NativeObjectHandle uCameraHandle);
+		const Camera* FindCamera(NativeObjectHandle uCameraHandle) const;
+
+		// Cameras of the scene, in table order.
+		uint32 GetLiveCameraCount() const;
+		NativeObjectHandle GetLiveCameraHandle(uint32 uLiveCameraIndex) const;
+
 		// -------- Shaders --------
 		// Creates an empty shader the ShaderLibrary fills in while it loads.
 		NativeObjectHandle CreateShader(const VspString& sShaderName);
@@ -106,8 +124,13 @@ namespace Vsp
 		uint32 GetRenderableComponentCount() const;
 		NativeObjectHandle GetRenderableComponentHandle(uint32 uRenderableIndex) const;
 
-		// Number of live objects per kind (diagnostics and tests).
+		// Live game objects, in table order: what a scene serializer walks. The
+		// index is a position in that walk, not a slot index, so a caller can
+		// enumerate a scene without knowing about slots.
 		uint32 GetLiveGameObjectCount() const;
+		NativeObjectHandle GetLiveGameObjectHandle(uint32 uLiveGameObjectIndex) const;
+
+		// Number of live objects per kind (diagnostics and tests).
 		uint32 GetLiveTransformCount() const;
 		uint32 GetLiveComponentCount() const;
 		uint32 GetLiveShaderCount() const;
@@ -140,6 +163,7 @@ namespace Vsp
 		ArrayList<Component> m_Components;
 		ArrayList<Shader> m_Shaders;
 		ArrayList<Material> m_Materials;
+		ArrayList<Camera> m_Cameras;
 
 		// Returned by GetObjectName for handles that do not resolve.
 		VspString m_sEmptyName;

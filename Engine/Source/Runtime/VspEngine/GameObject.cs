@@ -6,6 +6,10 @@ namespace VspEngine
 	/// A scene object. The managed instance is a reference handle: the object's
 	/// name, activation state, layer, transform and components all live in the
 	/// native scene, and every property here forwards to them.
+	///
+	/// Objects form a hierarchy through their transforms
+	/// (<see cref="Transform.SetParent(Transform?, bool)"/>), which is what turns
+	/// local coordinates into world coordinates.
 	/// </summary>
 	public class GameObject : Object
 	{
@@ -47,6 +51,34 @@ namespace VspEngine
 					cachedTransform = new Transform(NativeApi.VspGameObject_GetTransform(NativeHandle));
 				}
 				return cachedTransform;
+			}
+		}
+
+		/// <summary>True while the object still owns a live transform.</summary>
+		public bool HasValidTransform => NativeApi.VspGameObject_GetTransform(NativeHandle) != 0;
+
+		/// <summary>
+		/// The game object this one is parented to, or null when it is a scene
+		/// root. The link lives on the transform, so this follows it.
+		/// </summary>
+		public GameObject? Parent
+		{
+			get
+			{
+				uint transformHandle = NativeApi.VspGameObject_GetTransform(NativeHandle);
+				if (transformHandle == 0)
+				{
+					return null;
+				}
+
+				uint parentTransformHandle = NativeApi.VspTransform_GetParent(transformHandle);
+				if (parentTransformHandle == 0)
+				{
+					return null;
+				}
+
+				uint parentGameObjectHandle = NativeApi.VspTransform_GetOwnerGameObject(parentTransformHandle);
+				return parentGameObjectHandle != 0 ? new GameObject(parentGameObjectHandle) : null;
 			}
 		}
 

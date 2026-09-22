@@ -20,7 +20,10 @@ namespace Vsp
 	// -------------------------------------------------------------------------
 	struct RUNTIME_API ShaderBindings
 	{
-		// Descriptor set every engine resource lives in.
+		// Descriptor set every engine resource lives in. The bindings are
+		// declared for BOTH programmable stages, so a shader may read any of them
+		// from whichever stage it needs (a vertex stage transforming by the camera
+		// and a fragment stage taking the camera position from it are both fine).
 		static constexpr uint32 k_nDescriptorSet = 0;
 
 		// Binding of the per-frame camera block (a uniform buffer).

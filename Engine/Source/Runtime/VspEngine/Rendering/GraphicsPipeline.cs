@@ -122,6 +122,28 @@ namespace VspEngine.Rendering
 			return this;
 		}
 
+		/// <summary>Which faces the rasterizer throws away.</summary>
+		public GraphicsPipelineBuilder SetCullMode(CullMode cullMode)
+		{
+			RhiApi.VspRhi_PipelineBuilderSetCullMode(nativeHandle, (int)cullMode);
+			return this;
+		}
+
+		/// <summary>
+		/// Turns the depth test on or off. A 3D pipeline turns it on and writes
+		/// depth, so a nearer surface hides a farther one; a pipeline that draws
+		/// one flat thing (2D content) leaves it off.
+		/// </summary>
+		public GraphicsPipelineBuilder SetDepthTest(
+			bool depthTestEnabled,
+			bool depthWriteEnabled = true,
+			CompareOperation depthCompare = CompareOperation.LessOrEqual)
+		{
+			RhiApi.VspRhi_PipelineBuilderSetDepthState(
+				nativeHandle, depthTestEnabled ? 1 : 0, depthWriteEnabled ? 1 : 0, (int)depthCompare);
+			return this;
+		}
+
 		/// <summary>Size in bytes of the push-constant block draws may set.</summary>
 		public GraphicsPipelineBuilder SetPushConstantByteCount(uint pushConstantByteCount)
 		{

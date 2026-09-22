@@ -98,6 +98,7 @@ namespace Vsp
 		m_Components.Clear();
 		m_Shaders.Clear();
 		m_Materials.Clear();
+		m_Cameras.Clear();
 	}
 
 	// -------------------------------------------------------------------------
@@ -148,6 +149,9 @@ namespace Vsp
 		Transform* pTransform = FindTransform(uTransformHandle);
 		if (pTransform != nullptr)
 		{
+			// The transform leaves the scene graph before it goes: a parent
+			// that kept the handle would otherwise walk into a dead slot.
+			pTransform->DetachFromParent();
 			pTransform->SetOwnerGameObjectHandle(k_nInvalidObjectHandle);
 			ReleaseObjectSlot(m_Transforms, GetObjectHandleSlotIndex(uTransformHandle));
 		}
@@ -245,6 +249,83 @@ namespace Vsp
 	const Component* Scene::FindComponent(NativeObjectHandle uComponentHandle) const
 	{
 		return ResolveHandle(m_Components, uComponentHandle, NativeObjectKind::Component);
+	}
+
+	// -------------------------------------------------------------------------
+	// Cameras
+	// -------------------------------------------------------------------------
+
+	NativeObjectHandle Scene::CreateCamera(NativeObjectHandle uGameObjectHandle)
+	{
+		GameObject* pGameObject = FindGameObject(uGameObjectHandle);
+		if (pGameObject == nullptr)
+		{
+			LOG_ERROR(kLogTag, "Cannot create a camera for the unknown game object handle {}.",
+				static_cast<uint32>(uGameObjectHandle));
+			return k_nInvalidObjectHandle;
+		}
+
+		Camera* pCamera = AcquireObjectSlot(NativeObjectKind::Camera, m_Cameras, pGameObject->GetName());
+		if (pCamera == nullptr)
+		{
+			LOG_ERROR(kLogTag, "Failed to acquire a camera slot.");
+			return k_nInvalidObjectHandle;
+		}
+
+		pCamera->SetOwnerGameObjectHandle(uGameObjectHandle);
+		return pCamera->GetHandle();
+	}
+
+	bool Scene::DestroyCamera(NativeObjectHandle uCameraHandle)
+	{
+		Camera* pCamera = FindCamera(uCameraHandle);
+		if (pCamera == nullptr)
+		{
+			return false;
+		}
+
+		pCamera->SetOwnerGameObjectHandle(k_nInvalidObjectHandle);
+		ReleaseObjectSlot(m_Cameras, GetObjectHandleSlotIndex(uCameraHandle));
+		return true;
+	}
+
+	Camera* Scene::FindCamera(NativeObjectHandle uCameraHandle)
+	{
+		return ResolveHandle(m_Cameras, uCameraHandle, NativeObjectKind::Camera);
+	}
+
+	const Camera* Scene::FindCamera(NativeObjectHandle uCameraHandle) const
+	{
+		return ResolveHandle(m_Cameras, uCameraHandle, NativeObjectKind::Camera);
+	}
+
+	uint32 Scene::GetLiveCameraCount() const
+	{
+		uint32 uLiveCount = 0;
+		for (size_t nSlotIndex = 0; nSlotIndex < m_Cameras.GetSize(); ++nSlotIndex)
+		{
+			uLiveCount += m_Cameras[nSlotIndex].IsValid() ? 1u : 0u;
+		}
+		return uLiveCount;
+	}
+
+	NativeObjectHandle Scene::GetLiveCameraHandle(uint32 uLiveCameraIndex) const
+	{
+		uint32 uLiveIndex = 0;
+		for (size_t nSlotIndex = 0; nSlotIndex < m_Cameras.GetSize(); ++nSlotIndex)
+		{
+			if (!m_Cameras[nSlotIndex].IsValid())
+			{
+				continue;
+			}
+
+			if (uLiveIndex == uLiveCameraIndex)
+			{
+				return m_Cameras[nSlotIndex].GetHandle();
+			}
+			++uLiveIndex;
+		}
+		return k_nInvalidObjectHandle;
 	}
 
 	// -------------------------------------------------------------------------
@@ -455,6 +536,25 @@ namespace Vsp
 			uLiveCount += m_GameObjects[nSlotIndex].IsValid() ? 1u : 0u;
 		}
 		return uLiveCount;
+	}
+
+	NativeObjectHandle Scene::GetLiveGameObjectHandle(uint32 uLiveGameObjectIndex) const
+	{
+		uint32 uLiveIndex = 0;
+		for (size_t nSlotIndex = 0; nSlotIndex < m_GameObjects.GetSize(); ++nSlotIndex)
+		{
+			if (!m_GameObjects[nSlotIndex].IsValid())
+			{
+				continue;
+			}
+
+			if (uLiveIndex == uLiveGameObjectIndex)
+			{
+				return m_GameObjects[nSlotIndex].GetHandle();
+			}
+			++uLiveIndex;
+		}
+		return k_nInvalidObjectHandle;
 	}
 
 	uint32 Scene::GetLiveTransformCount() const

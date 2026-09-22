@@ -53,10 +53,38 @@ namespace Vsp
 	{
 		switch (eTopology)
 		{
+		case RhiPrimitiveTopology::TriangleStrip: return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
 		case RhiPrimitiveTopology::LineList: return VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
 		case RhiPrimitiveTopology::PointList: return VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
 		case RhiPrimitiveTopology::TriangleList:
 		default: return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+		}
+	}
+
+	VkCullModeFlags VulkanPipeline::GetCullMode(RhiCullMode eCullMode)
+	{
+		switch (eCullMode)
+		{
+		case RhiCullMode::Front: return VK_CULL_MODE_FRONT_BIT;
+		case RhiCullMode::Back: return VK_CULL_MODE_BACK_BIT;
+		case RhiCullMode::None:
+		default: return VK_CULL_MODE_NONE;
+		}
+	}
+
+	VkCompareOp VulkanPipeline::GetDepthCompareOperation(RhiCompareOperation eCompare)
+	{
+		switch (eCompare)
+		{
+		case RhiCompareOperation::Never: return VK_COMPARE_OP_NEVER;
+		case RhiCompareOperation::Less: return VK_COMPARE_OP_LESS;
+		case RhiCompareOperation::Equal: return VK_COMPARE_OP_EQUAL;
+		case RhiCompareOperation::LessOrEqual: return VK_COMPARE_OP_LESS_OR_EQUAL;
+		case RhiCompareOperation::Greater: return VK_COMPARE_OP_GREATER;
+		case RhiCompareOperation::NotEqual: return VK_COMPARE_OP_NOT_EQUAL;
+		case RhiCompareOperation::GreaterOrEqual: return VK_COMPARE_OP_GREATER_OR_EQUAL;
+		case RhiCompareOperation::Always: return VK_COMPARE_OP_ALWAYS;
+		default: return VK_COMPARE_OP_LESS_OR_EQUAL;
 		}
 	}
 
@@ -188,7 +216,7 @@ namespace Vsp
 		rasterizer.rasterizerDiscardEnable = VK_FALSE;
 		rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
 		rasterizer.lineWidth = 1.0f;
-		rasterizer.cullMode = VK_CULL_MODE_NONE;
+		rasterizer.cullMode = GetCullMode(state.eCullMode);
 		rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 		rasterizer.depthBiasEnable = VK_FALSE;
 
@@ -215,6 +243,22 @@ namespace Vsp
 		colorBlending.attachmentCount = 1;
 		colorBlending.pAttachments = &colorBlendAttachment;
 
+		// Depth state: a 3D pipeline tests and writes depth (nearer surfaces win,
+		// farther ones are thrown away), a 2D pipeline leaves the attachment
+		// alone. The render pass always HAS a depth attachment, so the state is
+		// valid either way.
+		LOG_INFO(kLogTag, "Pipeline state: depthTest={}, depthWrite={}, cull={}, topology={}.",
+			state.bDepthTestEnabled ? 1 : 0, state.bDepthWriteEnabled ? 1 : 0,
+			static_cast<int32>(state.eCullMode), static_cast<int32>(state.eTopology));
+
+		VkPipelineDepthStencilStateCreateInfo depthStencil = {};
+		depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+		depthStencil.depthTestEnable = state.bDepthTestEnabled ? VK_TRUE : VK_FALSE;
+		depthStencil.depthWriteEnable = (state.bDepthTestEnabled && state.bDepthWriteEnabled) ? VK_TRUE : VK_FALSE;
+		depthStencil.depthCompareOp = GetDepthCompareOperation(state.eDepthCompare);
+		depthStencil.depthBoundsTestEnable = VK_FALSE;
+		depthStencil.stencilTestEnable = VK_FALSE;
+
 		VkGraphicsPipelineCreateInfo pipelineCreateInfo = {};
 		pipelineCreateInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
 		pipelineCreateInfo.stageCount = 2;
@@ -224,6 +268,7 @@ namespace Vsp
 		pipelineCreateInfo.pViewportState = &viewportState;
 		pipelineCreateInfo.pRasterizationState = &rasterizer;
 		pipelineCreateInfo.pMultisampleState = &multisampling;
+		pipelineCreateInfo.pDepthStencilState = &depthStencil;
 		pipelineCreateInfo.pColorBlendState = &colorBlending;
 		pipelineCreateInfo.pDynamicState = &dynamicState;
 		pipelineCreateInfo.layout = pipelineLayout;

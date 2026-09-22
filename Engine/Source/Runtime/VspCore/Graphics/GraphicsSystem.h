@@ -78,6 +78,12 @@ namespace Vsp
 			uint32 uComponentCount,
 			uint32 uByteOffset);
 		void PipelineBuilderSetTopology(RhiPipelineBuilderHandle uBuilder, RhiPrimitiveTopology eTopology);
+		void PipelineBuilderSetCullMode(RhiPipelineBuilderHandle uBuilder, RhiCullMode eCullMode);
+		void PipelineBuilderSetDepthState(
+			RhiPipelineBuilderHandle uBuilder,
+			bool bDepthTestEnabled,
+			bool bDepthWriteEnabled,
+			RhiCompareOperation eDepthCompare);
 		void PipelineBuilderSetBlendEnabled(RhiPipelineBuilderHandle uBuilder, bool bBlendEnabled);
 		void PipelineBuilderSetPushConstantByteCount(RhiPipelineBuilderHandle uBuilder, uint32 uPushConstantByteCount);
 

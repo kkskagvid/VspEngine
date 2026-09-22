@@ -267,9 +267,9 @@ namespace Vsp
 			return k_nInvalidRhiHandle;
 		}
 
-		VkBufferUsageFlags eUsage = descriptor.bIsVertexBuffer
-			? VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
-			: VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+		VkBufferUsageFlags eUsage = (descriptor.eUsage == RhiBufferUsage::Index)
+			? VK_BUFFER_USAGE_INDEX_BUFFER_BIT
+			: VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
 
 		VkMemoryPropertyFlags eProperties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
 		if (descriptor.bIsDynamic)
@@ -696,24 +696,57 @@ namespace Vsp
 
 	void VulkanRenderer2D::UpdateCameraUniform(uint32 uFrameIndex)
 	{
-		// Orthographic projection preserving the window aspect ratio; the
-		// triangle lives in [-1, 1] on the shorter axis. Vulkan's viewport
-		// transform maps NDC +Y to the BOTTOM of the framebuffer (it uses
-		// (y+1)/2, unlike OpenGL), so the ortho's top/bottom are swapped:
-		// world +Y ends up at NDC -1, which is the top of the screen.
-		// Draw positions arrive per draw as vertex push-constant offsets, so
-		// the camera matrix is the projection alone.
 		const VkExtent2D extent = m_SwapChain.GetExtent();
 		if (extent.height == 0)
 		{
 			return;
 		}
 
-		const float fAspectRatio = static_cast<float>(extent.width) / static_cast<float>(extent.height);
-		const glm::mat4 projectionMatrix = glm::ortho(-fAspectRatio, fAspectRatio, 1.0f, -1.0f, -1.0f, 1.0f);
+		CameraUniformData uniformData = {};
 
-		CameraUniformData uniformData;
-		memcpy(uniformData.m4ViewProjection, &projectionMatrix[0][0], sizeof(uniformData.m4ViewProjection));
+		const RhiFrameCamera& frameCamera = RenderCore::Get().GetFrameCamera();
+		if (frameCamera.bIsSet)
+		{
+			// The camera the render pipeline chose for this frame.
+			memcpy(uniformData.m4ViewProjection, frameCamera.m4ViewProjection, sizeof(uniformData.m4ViewProjection));
+			memcpy(uniformData.m4View, frameCamera.m4View, sizeof(uniformData.m4View));
+			memcpy(uniformData.m4Projection, frameCamera.m4Projection, sizeof(uniformData.m4Projection));
+			memcpy(uniformData.m4CameraToWorld, frameCamera.m4CameraToWorld, sizeof(uniformData.m4CameraToWorld));
+
+			uniformData.fCameraPosition[0] = frameCamera.fPosition[0];
+			uniformData.fCameraPosition[1] = frameCamera.fPosition[1];
+			uniformData.fCameraPosition[2] = frameCamera.fPosition[2];
+			uniformData.fCameraPosition[3] = frameCamera.fAperture;
+
+			uniformData.fLens[0] = frameCamera.fFocusDistance;
+			uniformData.fLens[1] = frameCamera.fNearClipPlane;
+			uniformData.fLens[2] = frameCamera.fFarClipPlane;
+		}
+		else
+		{
+			// No pipeline handed a camera over: fall back to the projection the
+			// engine used before cameras existed - an orthographic box that
+			// preserves the window aspect ratio, with world units in [-1, 1] on
+			// the shorter axis. Vulkan's viewport transform maps NDC +Y to the
+			// BOTTOM of the framebuffer (it uses (y+1)/2, unlike OpenGL), so the
+			// ortho's top/bottom are swapped: world +Y ends up at the top.
+			const float fAspectRatio = static_cast<float>(extent.width) / static_cast<float>(extent.height);
+			const glm::mat4 projectionMatrix = glm::ortho(-fAspectRatio, fAspectRatio, 1.0f, -1.0f, -1.0f, 1.0f);
+			memcpy(uniformData.m4ViewProjection, &projectionMatrix[0][0], sizeof(uniformData.m4ViewProjection));
+			memcpy(uniformData.m4Projection, &projectionMatrix[0][0], sizeof(uniformData.m4Projection));
+
+			uniformData.m4View[0] = 1.0f;
+			uniformData.m4View[5] = 1.0f;
+			uniformData.m4View[10] = 1.0f;
+			uniformData.m4View[15] = 1.0f;
+			uniformData.m4CameraToWorld[0] = 1.0f;
+			uniformData.m4CameraToWorld[5] = 1.0f;
+			uniformData.m4CameraToWorld[10] = 1.0f;
+			uniformData.m4CameraToWorld[15] = 1.0f;
+
+			uniformData.fLens[1] = -1.0f;
+			uniformData.fLens[2] = 1.0f;
+		}
 
 		m_Frames[uFrameIndex].CameraUniformBuffer.WriteData(m_Context, 0, &uniformData, sizeof(CameraUniformData));
 	}
@@ -753,10 +786,13 @@ namespace Vsp
 		renderPassBeginInfo.renderArea.offset = { 0, 0 };
 		renderPassBeginInfo.renderArea.extent = extent;
 
-		VkClearValue clearValue = {};
-		clearValue.color = { { clearColor.fColorR, clearColor.fColorG, clearColor.fColorB, clearColor.fColorA } };
-		renderPassBeginInfo.clearValueCount = 1;
-		renderPassBeginInfo.pClearValues = &clearValue;
+		// One clear value per attachment: the color target and the depth buffer
+		// (cleared to the far plane, which is 1 in Vulkan's depth convention).
+		VkClearValue clearValues[2] = {};
+		clearValues[0].color = { { clearColor.fColorR, clearColor.fColorG, clearColor.fColorB, clearColor.fColorA } };
+		clearValues[1].depthStencil = { 1.0f, 0 };
+		renderPassBeginInfo.clearValueCount = 2;
+		renderPassBeginInfo.pClearValues = clearValues;
 
 		vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
@@ -868,6 +904,20 @@ namespace Vsp
 				break;
 			}
 
+			case RhiCommandType::BindIndexBuffer:
+			{
+				const BufferEntry* pEntry = FindResource(m_Buffers, command.uResourceHandle);
+				if (pEntry == nullptr)
+				{
+					LOG_WARNING(kLogTag, "Frame playback: index buffer handle {} is not live; the command is skipped.",
+						command.uResourceHandle);
+					break;
+				}
+
+				vkCmdBindIndexBuffer(commandBuffer, pEntry->Buffer.GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
+				break;
+			}
+
 			case RhiCommandType::PushConstants:
 				if (boundPipelineLayout != VK_NULL_HANDLE && command.uValueC > 0)
 				{
@@ -885,6 +935,13 @@ namespace Vsp
 				if (bRenderPassActive && command.uValueA > 0)
 				{
 					vkCmdDraw(commandBuffer, command.uValueA, 1, command.uValueB, 0);
+				}
+				break;
+
+			case RhiCommandType::DrawIndexed:
+				if (bRenderPassActive && command.uValueA > 0)
+				{
+					vkCmdDrawIndexed(commandBuffer, command.uValueA, 1, command.uValueB, 0, command.uValueC);
 				}
 				break;
 

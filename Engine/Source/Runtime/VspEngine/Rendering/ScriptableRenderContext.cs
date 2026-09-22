@@ -9,9 +9,9 @@ namespace VspEngine.Rendering
 	/// list is built once per frame from the native scene, so a pipeline never
 	/// walks the scene itself.
 	///
-	/// The engine reports where a drawable IS and what it draws WITH; what that
-	/// means for the pixels is a property of the material and therefore entirely
-	/// the game's business.
+	/// The engine reports where a drawable IS (its world matrix) and what it
+	/// draws WITH; what that means for the pixels is a property of the material
+	/// and therefore entirely the game's business.
 	/// </summary>
 	public readonly struct RenderDrawItem
 	{
@@ -21,8 +21,15 @@ namespace VspEngine.Rendering
 		/// <summary>Native handle of that component's transform.</summary>
 		public readonly uint TransformHandle;
 
-		/// <summary>Position of the transform.</summary>
+		/// <summary>Position of the transform, in the scene.</summary>
 		public readonly Vector3 Position;
+
+		/// <summary>
+		/// Where the drawable sits in the scene, as a matrix: its local
+		/// coordinates with the whole parent chain applied. This is what a
+		/// vertex stage multiplies a mesh vertex by.
+		/// </summary>
+		public readonly Matrix4x4 WorldMatrix;
 
 		/// <summary>Material the component draws with (0 when it has none yet).</summary>
 		public readonly uint MaterialHandle;
@@ -31,11 +38,13 @@ namespace VspEngine.Rendering
 			uint componentHandle,
 			uint transformHandle,
 			Vector3 position,
+			Matrix4x4 worldMatrix,
 			uint materialHandle)
 		{
 			ComponentHandle = componentHandle;
 			TransformHandle = transformHandle;
 			Position = position;
+			WorldMatrix = worldMatrix;
 			MaterialHandle = materialHandle;
 		}
 

@@ -19,10 +19,13 @@ namespace Vsp
 	// -------------------------------------------------------------------------
 	// VulkanSwapChain
 	// -------------------------------------------------------------------------
-	// Owns the swapchain, its image views, the framebuffers and the single
-	// render pass used by the 2D renderer. Recreate() rebuilds everything
-	// (resize / minimize handling). Acquire/SubmitAndPresent implement the
-	// standard semaphore handshake around one submitted command buffer.
+	// Owns the swapchain, its image views, one depth image per swapchain image,
+	// the framebuffers and the single render pass the renderer uses. The render
+	// pass has a COLOR attachment and a DEPTH attachment, so 3D content can be
+	// drawn with a depth test; 2D content simply does not enable it.
+	// Recreate() rebuilds everything (resize / minimize handling).
+	// Acquire/SubmitAndPresent implement the standard semaphore handshake around
+	// one submitted command buffer.
 	// All errors are logged through the Log module; nothing throws.
 	// -------------------------------------------------------------------------
 	class VulkanSwapChain
@@ -42,6 +45,7 @@ namespace Vsp
 
 		VkSwapchainKHR GetSwapchain() const { return m_VkSwapchain; }
 		VkRenderPass GetRenderPass() const { return m_VkRenderPass; }
+		VkFormat GetDepthFormat() const { return m_eDepthFormat; }
 		VkFramebuffer GetFramebuffer(uint32 uImageIndex) const { return m_Framebuffers.At(uImageIndex); }
 		VkImage GetImage(uint32 uImageIndex) const { return m_SwapChainImages.At(uImageIndex); }
 		VkFormat GetImageFormat() const { return m_eImageFormat; }
@@ -69,8 +73,12 @@ namespace Vsp
 		bool CreateSwapChain();
 		bool CreateImageViews();
 		bool CreateRenderPass();
+		bool CreateDepthResources();
 		bool CreateFramebuffers();
 		void DestroySwapChainObjects();
+
+		// Picks a depth format the device supports (depth, or depth+stencil).
+		VkFormat ChooseDepthFormat() const;
 
 		static VkSurfaceFormatKHR ChooseSurfaceFormat(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface);
 		static VkPresentModeKHR ChoosePresentMode(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface);
@@ -83,12 +91,19 @@ namespace Vsp
 
 		VkSwapchainKHR m_VkSwapchain = VK_NULL_HANDLE;
 		VkFormat m_eImageFormat = VK_FORMAT_UNDEFINED;
+		VkFormat m_eDepthFormat = VK_FORMAT_UNDEFINED;
 		VkExtent2D m_Extent = {};
 		VkRenderPass m_VkRenderPass = VK_NULL_HANDLE;
 
 		ArrayList<VkImage> m_SwapChainImages;
 		ArrayList<VkImageView> m_SwapChainImageViews;
 		ArrayList<VkFramebuffer> m_Framebuffers;
+
+		// One depth image per swapchain image: a frame in flight must not share
+		// its depth buffer with the frame being recorded.
+		ArrayList<VkImage> m_DepthImages;
+		ArrayList<VkDeviceMemory> m_DepthImageMemories;
+		ArrayList<VkImageView> m_DepthImageViews;
 
 		uint32 m_nCurrentImageIndex = 0;
 	};

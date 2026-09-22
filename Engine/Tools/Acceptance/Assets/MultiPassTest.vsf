@@ -3,6 +3,9 @@
 //
 // The acceptance run compiles it to prove that a Shader block may carry several
 // Pass blocks and that every one of them is compiled on its own.
+//
+// Both passes include the demo's shared declarations, so they follow the 3D
+// vertex layout and the push-constant block of the demo shader.
 // ---------------------------------------------------------------------------
 
 Properties
@@ -25,7 +28,10 @@ Shader "Vsp/MultiPassTest"
         PassVertexOutput PassVertex(PassVertexInput input)
         {
             PassVertexOutput output;
-            output.Position = mul(ViewProjectionMatrix, float4(input.Position + PushConstants.PositionOffset, 0.0, 1.0));
+            float4 worldPosition = mul(PushConstants.WorldMatrix, float4(input.Position, 1.0f));
+            output.Position = mul(ViewProjectionMatrix, worldPosition);
+            output.WorldPosition = worldPosition.xyz;
+            output.WorldNormal = VspSafeNormalize(mul(input.Normal, (float3x3)PushConstants.WorldMatrix), input.Normal);
             output.Color = input.Color;
             output.Uv = input.Uv;
             return output;
@@ -33,7 +39,7 @@ Shader "Vsp/MultiPassTest"
 
         float4 PassFragment(PassFragmentInput input) : SV_Target0
         {
-            float4 baseColor = (PushConstants.ColorMode == 3) ? input.Color : PushConstants.OverrideColor;
+            float4 baseColor = (PushConstants.ColorMode == 3) ? input.Color : PushConstants.BaseColor;
             return baseColor;
         }
     }
@@ -49,7 +55,10 @@ Shader "Vsp/MultiPassTest"
         PassVertexOutput PassVertex(PassVertexInput input)
         {
             PassVertexOutput output;
-            output.Position = mul(ViewProjectionMatrix, float4(input.Position + PushConstants.PositionOffset, 0.0, 1.0));
+            float4 worldPosition = mul(PushConstants.WorldMatrix, float4(input.Position, 1.0f));
+            output.Position = mul(ViewProjectionMatrix, worldPosition);
+            output.WorldPosition = worldPosition.xyz;
+            output.WorldNormal = VspSafeNormalize(mul(input.Normal, (float3x3)PushConstants.WorldMatrix), input.Normal);
             output.Color = input.Color;
             output.Uv = input.Uv;
             return output;
@@ -57,7 +66,7 @@ Shader "Vsp/MultiPassTest"
 
         float4 PassFragment(PassFragmentInput input) : SV_Target0
         {
-            float4 baseColor = (PushConstants.ColorMode == 3) ? input.Color : PushConstants.OverrideColor;
+            float4 baseColor = (PushConstants.ColorMode == 3) ? input.Color : PushConstants.BaseColor;
             return baseColor * PushConstants.TintColor;
         }
     }

@@ -12,8 +12,9 @@ namespace VspEngine.Rendering
 	public sealed class CommandBuffer
 	{
 		// Scratch buffer push-constant blocks are marshalled through, reused so
-		// recording a frame does not allocate.
-		private const int PushConstantScratchByteCount = 64;
+		// recording a frame does not allocate. 128 bytes is what Vulkan
+		// guarantees and what the engine's command list stores per draw.
+		private const int PushConstantScratchByteCount = 128;
 		private readonly byte[] pushConstantScratch = new byte[PushConstantScratchByteCount];
 
 		internal CommandBuffer() { }
@@ -61,6 +62,32 @@ namespace VspEngine.Rendering
 			RhiApi.VspRhi_CmdBindVertexBuffer(vertexBuffer.NativeHandle);
 		}
 
+		/// <summary>Binds the index buffer <see cref="DrawIndexed"/> walks.</summary>
+		public void BindIndexBuffer(IndexBuffer indexBuffer)
+		{
+			if (indexBuffer == null)
+			{
+				throw new ArgumentNullException(nameof(indexBuffer));
+			}
+
+			RhiApi.VspRhi_CmdBindIndexBuffer(indexBuffer.NativeHandle);
+		}
+
+		/// <summary>
+		/// Makes the whole frame render from this camera: the backend fills the
+		/// engine's camera uniform buffer with its matrices and lens, which is
+		/// what every shader reads as the camera block.
+		/// </summary>
+		public void SetCamera(Camera camera)
+		{
+			if (camera == null)
+			{
+				throw new ArgumentNullException(nameof(camera));
+			}
+
+			RhiApi.VspRhi_SetFrameCamera(camera.NativeHandle);
+		}
+
 		/// <summary>
 		/// Sets the push-constant block of the bound pipeline for the following
 		/// draws. The block layout is the one the shaders declare.
@@ -81,6 +108,13 @@ namespace VspEngine.Rendering
 		/// <summary>Records one non-indexed draw.</summary>
 		public void Draw(uint vertexCount, uint firstVertex = 0) =>
 			RhiApi.VspRhi_CmdDraw(vertexCount, firstVertex);
+
+		/// <summary>
+		/// Records one indexed draw: the vertices come from the bound vertex
+		/// buffer, in the order the bound index buffer lists them.
+		/// </summary>
+		public void DrawIndexed(uint indexCount, uint firstIndex = 0, uint baseVertex = 0) =>
+			RhiApi.VspRhi_CmdDrawIndexed(indexCount, firstIndex, baseVertex);
 
 		/// <summary>
 		/// Closes the frame's command list. The render pipeline manager calls it

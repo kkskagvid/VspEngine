@@ -31,10 +31,10 @@ namespace Vsp
 	static constexpr uint32 k_nMaxPipelineBuilderCount = 16;
 	static constexpr uint32 k_nMaxPipelineVertexAttributeCount = 8;
 
-	// Push constants recorded per draw command. The engine's shaders stay far
-	// below this, and a fixed payload keeps one recorded command a plain
-	// copyable value.
-	static constexpr uint32 k_nMaxPushConstantByteCount = 64;
+	// Push constants recorded per draw command. Vulkan guarantees at least 128
+	// bytes, which is what a draw needs to carry its own world matrix; a fixed
+	// payload keeps one recorded command a plain copyable value.
+	static constexpr uint32 k_nMaxPushConstantByteCount = 128;
 	static constexpr uint32 k_nMaxRecordedCommandCount = 4096;
 
 	// Function name an entry point of a compiled shader may have. HLSL shaders
@@ -51,8 +51,31 @@ namespace Vsp
 	enum class RhiPrimitiveTopology : int32
 	{
 		TriangleList = 0,
-		LineList = 1,
-		PointList = 2,
+		TriangleStrip = 1,
+		LineList = 2,
+		PointList = 3,
+	};
+
+	// Which faces a rasterizer throws away. A closed 3D shape needs its back
+	// faces culled; 2D content drawn on a plane usually turns culling off.
+	enum class RhiCullMode : int32
+	{
+		None = 0,
+		Front = 1,
+		Back = 2,
+	};
+
+	// Depth comparison a pipeline applies when depth testing is on.
+	enum class RhiCompareOperation : int32
+	{
+		Never = 0,
+		Less = 1,
+		Equal = 2,
+		LessOrEqual = 3,
+		Greater = 4,
+		NotEqual = 5,
+		GreaterOrEqual = 6,
+		Always = 7,
 	};
 
 	enum class RhiCommandType : uint32
@@ -66,6 +89,41 @@ namespace Vsp
 		BindVertexBuffer = 6,
 		PushConstants = 7,
 		Draw = 8,
+		BindIndexBuffer = 9,
+		DrawIndexed = 10,
+	};
+
+	// -------------------------------------------------------------------------
+	// RhiFrameCamera
+	// -------------------------------------------------------------------------
+	// The camera a frame is rendered from, as the render pipeline handed it over.
+	// The backend writes it into the engine's camera uniform buffer (binding 0 of
+	// the engine descriptor set), so every shader reads the camera the pipeline
+	// chose without the pipeline having to manage a buffer.
+	//
+	// Every matrix is column-major, right-handed, with Vulkan clip space (X
+	// right, Y down, depth 0..1) - what a Camera computes.
+	// -------------------------------------------------------------------------
+	struct RhiFrameCamera
+	{
+		float m4ViewProjection[16] = {};
+		float m4View[16] = {};
+		float m4Projection[16] = {};
+		float m4CameraToWorld[16] = {};
+
+		// World position of the camera (the last column of m4CameraToWorld, kept
+		// separate because a shader reads it as a vector).
+		float fPosition[3] = {};
+
+		// Lens the camera was configured with: aperture as an f-number and the
+		// distance it is focused at. 0 means "no depth of field information".
+		float fAperture = 0.0f;
+		float fFocusDistance = 0.0f;
+		float fNearClipPlane = 0.0f;
+		float fFarClipPlane = 0.0f;
+
+		// True once a pipeline handed a camera over for this frame.
+		bool bIsSet = false;
 	};
 
 	// One vertex input element of a graphics pipeline.
@@ -77,10 +135,18 @@ namespace Vsp
 	};
 
 	// Buffer creation request.
+	// What a buffer holds: the vertex data a draw reads, or the indices that
+	// pick vertices out of it.
+	enum class RhiBufferUsage : int32
+	{
+		Vertex = 0,
+		Index = 1,
+	};
+
 	struct RhiBufferDescriptor
 	{
 		uint32 uByteSize = 0;
-		bool bIsVertexBuffer = true;
+		RhiBufferUsage eUsage = RhiBufferUsage::Vertex;
 		// Dynamic buffers stay host visible and are written directly;
 		// non-dynamic buffers live in device-local memory and are filled
 		// through a staging copy.
@@ -109,6 +175,16 @@ namespace Vsp
 
 		RhiPrimitiveTopology eTopology = RhiPrimitiveTopology::TriangleList;
 
+		// Which faces to throw away before rasterizing.
+		RhiCullMode eCullMode = RhiCullMode::None;
+
+		// Depth test: off by default, because a pipeline that draws one flat
+		// thing after another does not need it. A 3D scene turns it on and
+		// writes depth so nearer surfaces hide farther ones.
+		bool bDepthTestEnabled = false;
+		bool bDepthWriteEnabled = false;
+		RhiCompareOperation eDepthCompare = RhiCompareOperation::LessOrEqual;
+
 		// Alpha blending (src alpha / one minus src alpha) - the 2D default.
 		bool bBlendEnabled = true;
 
@@ -130,6 +206,7 @@ namespace Vsp
 		// Scalar operands; the meaning depends on eType:
 		//   SetScissor      -> uValueA = x, uValueB = y, uValueC = width, uValueD = height
 		//   Draw            -> uValueA = vertex count, uValueB = first vertex
+		//   DrawIndexed     -> uValueA = index count, uValueB = first index, uValueC = first vertex
 		//   PushConstants   -> uValueA = stage flags, uValueB = byte offset, uValueC = byte count
 		uint32 uValueA = 0;
 		uint32 uValueB = 0;

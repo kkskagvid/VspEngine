@@ -21,6 +21,7 @@
   <ItemGroup>
     <ClInclude Include="Classes\Object.h" />
     <ClInclude Include="Classes\GameObject.h" />
+    <ClInclude Include="Classes\Camera.h" />
     <ClInclude Include="Classes\Component.h" />
     <ClInclude Include="Classes\Shader.h" />
     <ClInclude Include="Classes\Material.h" />
@@ -83,6 +84,7 @@
   <ItemGroup>
     <ClCompile Include="Classes\Object.cpp" />
     <ClCompile Include="Classes\GameObject.cpp" />
+    <ClCompile Include="Classes\Camera.cpp" />
     <ClCompile Include="Classes\Component.cpp" />
     <ClCompile Include="Classes\Shader.cpp" />
     <ClCompile Include="Classes\Material.cpp" />
@@ -123,6 +125,7 @@
     <ClCompile Include="Graphics\Vulkan\VulkanRenderer2D.cpp" />
     <ClCompile Include="Scripting\NativeExports.cpp" />
     <ClCompile Include="Scripting\AssetExports.cpp" />
+    <ClCompile Include="Scripting\CameraExports.cpp" />
     <ClCompile Include="Scripting\SceneExports.cpp" />
     <ClCompile Include="Scripting\RhiExports.cpp" />
     <ClCompile Include="Scripting\ScriptCore.cpp" />

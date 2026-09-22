@@ -67,6 +67,8 @@ namespace Vsp
 	private:
 		static VkFormat GetVertexAttributeFormat(uint32 uComponentCount);
 		static VkPrimitiveTopology GetPrimitiveTopology(RhiPrimitiveTopology eTopology);
+		static VkCullModeFlags GetCullMode(RhiCullMode eCullMode);
+		static VkCompareOp GetDepthCompareOperation(RhiCompareOperation eCompare);
 
 		static bool CreateGraphicsPipeline(
 			VkDevice device,

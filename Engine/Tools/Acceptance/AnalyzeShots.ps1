@@ -88,6 +88,27 @@ $checks += [PSCustomObject]@{ Check = "T3 = single green"; Pass = ($m["shot8_T_g
 $checks += [PSCustomObject]@{ Check = "T4 = multicolor"; Pass = ($m["shot9_T_multi.bmp"].Red -gt 20 -and $m["shot9_T_multi.bmp"].Green -gt 20 -and $m["shot9_T_multi.bmp"].Blue -gt 20) }
 $checks += [PSCustomObject]@{ Check = "initial = multicolor"; Pass = ($m["shot0_initial.bmp"].Red -gt 20 -and $m["shot0_initial.bmp"].Green -gt 20 -and $m["shot0_initial.bmp"].Blue -gt 20) }
 
+# 7. The depth test: sent behind the cube the triangle disappears, and brought
+#    back it is exactly where it was. Without a depth buffer the cube could not
+#    hide anything - the triangle is drawn AFTER it.
+$checks += [PSCustomObject]@{ Check = "Z hides the triangle behind the cube"; Pass = ($m["shot10_behind_cube.bmp"].PixelCount -lt 400 -and $m["shot10_behind_cube.bmp"].PixelCount -lt ($m["shot0_initial.bmp"].PixelCount / 4)) }
+$checks += [PSCustomObject]@{ Check = "X brings it back in front"; Pass = ($m["shot11_back_in_front.bmp"].PixelCount -gt ($m["shot0_initial.bmp"].PixelCount * 0.9)) }
+
+# 8. The same scene through three projections: an orthographic camera keeps a
+#    world unit the same size, a 45-degree perspective camera makes the same
+#    triangle smaller, and a 50 mm lens on a full-frame sensor is close to it
+#    again. The three images therefore cannot all be identical.
+$orthographicPixels = $m["shot14_camera_orthographic.bmp"].PixelCount
+$perspectivePixels = $m["shot12_camera_perspective.bmp"].PixelCount
+$physicalPixels = $m["shot13_camera_physical.bmp"].PixelCount
+$checks += [PSCustomObject]@{ Check = "the projection changes what the same scene looks like"; Pass = ($perspectivePixels -ne $orthographicPixels -and $physicalPixels -ne $perspectivePixels) }
+# A 45-degree perspective camera sees about five world units of height where the
+# orthographic one sees three, so the same triangle covers fewer pixels; the
+# 50 mm lens on a full-frame sensor is narrower than both, so it covers more than
+# the perspective camera again.
+$checks += [PSCustomObject]@{ Check = "the perspective camera shows less of the triangle than the orthographic one"; Pass = ($perspectivePixels -gt 50 -and $perspectivePixels -lt $orthographicPixels) }
+$checks += [PSCustomObject]@{ Check = "the 50 mm lens frames tighter than the 45-degree perspective camera"; Pass = ($physicalPixels -gt $perspectivePixels) }
+
 $checks | Format-Table -AutoSize
 $failed = ($checks | Where-Object { -not $_.Pass }).Count
 Write-Output ("RESULT: " + ($checks.Count - $failed) + "/" + $checks.Count + " checks passed")

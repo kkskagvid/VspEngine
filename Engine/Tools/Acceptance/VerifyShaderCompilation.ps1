@@ -155,12 +155,12 @@ if ($hasReflection) {
     Add-Check "the reflection describes the fragment stage" ($reflection -match '"stage"\s*:\s*"fragment"')
     Add-Check "the reflection names the PassVertex entry point" ($reflection -match '"entryPoint"\s*:\s*"PassVertex"')
     Add-Check "the reflection names the PassFragment entry point" ($reflection -match '"entryPoint"\s*:\s*"PassFragment"')
-    Add-Check "the reflection lists the three vertex inputs" ($reflection -match '"inputCount"\s*:\s*3')
+    Add-Check "the reflection lists the four vertex inputs" ($reflection -match '"inputCount"\s*:\s*4')
     Add-Check "the reflection lists the camera uniform buffer" ($reflection -match '"kind"\s*:\s*"uniformBuffer"')
     Add-Check "the reflection lists the bindless sampled-image array" ($reflection -match '"kind"\s*:\s*"sampledImage"')
     Add-Check "the reflection lists the bindless sampler" ($reflection -match '"kind"\s*:\s*"sampler"')
-    Add-Check "the push-constant block is 48 bytes" ($reflection -match '"pushConstantByteSize"\s*:\s*48')
-    Add-Check "the push-constant block has five members" ($reflection -match '"pushConstantMemberCount"\s*:\s*5')
+    Add-Check "the push-constant block is 128 bytes" ($reflection -match '"pushConstantByteSize"\s*:\s*128')
+    Add-Check "the push-constant block lists all eight members" ($reflection -match '"pushConstantMemberCount"\s*:\s*8')
 }
 
 # ---- The manifest the engine loads ---------------------------------------------
@@ -361,10 +361,10 @@ if ($hasContainer) {
     # one fragment entry.
     $vertexEntry = $containerEntries | Where-Object { $_.StageName -eq "vertex" -and $_.VariantKey -eq "" } | Select-Object -First 1
     $fragmentEntry = $containerEntries | Where-Object { $_.StageName -eq "fragment" -and $_.VariantKey -eq "" } | Select-Object -First 1
-    Add-Check "the vertex entry reflects three inputs" ($vertexEntry.InputCount -eq 3)
+    Add-Check "the vertex entry reflects the four vertex attributes" ($vertexEntry.InputCount -eq 4)
     Add-Check "the vertex entry reflects one resource" ($vertexEntry.ResourceCount -eq 1)
-    Add-Check "the fragment entry reflects two resources" ($fragmentEntry.ResourceCount -eq 2)
-    Add-Check "the fragment entry reflects the 48-byte push-constant block" ($fragmentEntry.PushConstantByteSize -eq 48)
+    Add-Check "the fragment entry reflects three resources" ($fragmentEntry.ResourceCount -eq 3)
+    Add-Check "the fragment entry reflects the 128-byte push-constant block" ($fragmentEntry.PushConstantByteSize -eq 128)
 
     function Read-ContainerResource([byte[]]$bytes, [int]$dataSegmentOffset, $entry, [int]$resourceIndex) {
         # The record holds the inputs and outputs first, then the resources.
@@ -378,23 +378,33 @@ if ($hasContainer) {
         }
     }
 
-    $vertexResource = Read-ContainerResource $container $containerDataOffset $vertexEntry 0
-    $fragmentResources = @(
-        (Read-ContainerResource $container $containerDataOffset $fragmentEntry 0),
-        (Read-ContainerResource $container $containerDataOffset $fragmentEntry 1)
-    )
+    # The resources are looked up by name: a stage reads what it reads, and the
+    # order they appear in is the shader's business, not the check's.
+    $vertexResources = @()
+    for ($resourceIndex = 0; $resourceIndex -lt $vertexEntry.ResourceCount; $resourceIndex++) {
+        $vertexResources += Read-ContainerResource $container $containerDataOffset $vertexEntry $resourceIndex
+    }
+    $fragmentResources = @()
+    for ($resourceIndex = 0; $resourceIndex -lt $fragmentEntry.ResourceCount; $resourceIndex++) {
+        $fragmentResources += Read-ContainerResource $container $containerDataOffset $fragmentEntry $resourceIndex
+    }
+
+    $cameraResource = $vertexResources | Where-Object { $_.Name -eq "CameraUniformBuffer" } | Select-Object -First 1
+    $textureResource = $fragmentResources | Where-Object { $_.Name -eq "BindlessTextures" } | Select-Object -First 1
+    $samplerResource = $fragmentResources | Where-Object { $_.Name -eq "BindlessSampler" } | Select-Object -First 1
 
     Add-Check "the container binds the camera block to the engine's uniform-buffer binding" (
-        $vertexResource.Name -eq "CameraUniformBuffer" -and $vertexResource.Kind -eq 1 -and
-        $vertexResource.Set -eq $engineBindings["k_nDescriptorSet"] -and
-        $vertexResource.Binding -eq $engineBindings["k_nCameraUniformBuffer"])
+        $null -ne $cameraResource -and $cameraResource.Kind -eq 1 -and
+        $cameraResource.Set -eq $engineBindings["k_nDescriptorSet"] -and
+        $cameraResource.Binding -eq $engineBindings["k_nCameraUniformBuffer"])
     Add-Check "the container binds the texture array to the engine's sampled-image binding" (
-        $fragmentResources[0].Name -eq "BindlessTextures" -and $fragmentResources[0].Kind -eq 3 -and
-        $fragmentResources[0].Binding -eq $engineBindings["k_nBindlessTextures"])
+        $null -ne $textureResource -and $textureResource.Kind -eq 3 -and
+        $textureResource.Binding -eq $engineBindings["k_nBindlessTextures"])
     Add-Check "the container binds the sampler to the engine's sampler binding" (
-        $fragmentResources[1].Name -eq "BindlessSampler" -and $fragmentResources[1].Kind -eq 5 -and
-        $fragmentResources[1].Binding -eq $engineBindings["k_nBindlessSampler"])
+        $null -ne $samplerResource -and $samplerResource.Kind -eq 5 -and
+        $samplerResource.Binding -eq $engineBindings["k_nBindlessSampler"])
 }
+
 # ---- variant vs multi_variant ---------------------------------------------------
 # Without any --used-variant the strippable group keeps only its default state,
 # while the multi_variant group keeps every state.

@@ -295,6 +295,30 @@ namespace Vsp
 		}
 	}
 
+	void GraphicsSystem::PipelineBuilderSetCullMode(RhiPipelineBuilderHandle uBuilder, RhiCullMode eCullMode)
+	{
+		PipelineBuilderEntry* pEntry = FindPipelineBuilder(uBuilder);
+		if (pEntry != nullptr)
+		{
+			pEntry->State.eCullMode = eCullMode;
+		}
+	}
+
+	void GraphicsSystem::PipelineBuilderSetDepthState(
+		RhiPipelineBuilderHandle uBuilder,
+		bool bDepthTestEnabled,
+		bool bDepthWriteEnabled,
+		RhiCompareOperation eDepthCompare)
+	{
+		PipelineBuilderEntry* pEntry = FindPipelineBuilder(uBuilder);
+		if (pEntry != nullptr)
+		{
+			pEntry->State.bDepthTestEnabled = bDepthTestEnabled;
+			pEntry->State.bDepthWriteEnabled = bDepthWriteEnabled;
+			pEntry->State.eDepthCompare = eDepthCompare;
+		}
+	}
+
 	void GraphicsSystem::PipelineBuilderSetBlendEnabled(RhiPipelineBuilderHandle uBuilder, bool bBlendEnabled)
 	{
 		PipelineBuilderEntry* pEntry = FindPipelineBuilder(uBuilder);

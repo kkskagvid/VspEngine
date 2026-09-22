@@ -21,7 +21,8 @@ namespace Vsp
 	// The Vulkan backend behind the wrapped graphics API. It is the
 	// orchestrator that owns and wires the functional units together:
 	//   - VulkanContext (instance + surface + device facade)
-	//   - VulkanSwapChain (swapchain, image views, framebuffers, render pass)
+	//   - VulkanSwapChain (swapchain, image views, depth images, framebuffers,
+	//     the render pass with its color AND depth attachments)
 	//   - VulkanBuffer   (per-frame camera uniforms and every managed buffer)
 	//   - VulkanImage    (textures created through CreateTexture)
 	//   - VulkanDescriptors (bindless layout/pool/sets - the only supported path)
@@ -36,6 +37,11 @@ namespace Vsp
 	// It only runs the Vulkan 1.3 bindless implementation: devices below
 	// Vulkan 1.3 (or without bindless descriptor indexing) are rejected
 	// during device negotiation - there is no Vulkan 1.2 fallback path.
+	//
+	// The name says "2D" for historical reasons: the backend serves whatever a
+	// render pipeline records, and the engine has no separate 2D path - 2D
+	// content is 3D content on a plane, drawn through the same render pass and
+	// the same depth buffer.
 	// All errors are logged through the Log module; nothing throws and every
 	// creation function returns an invalid (0) handle on failure.
 	// -------------------------------------------------------------------------
@@ -134,9 +140,23 @@ namespace Vsp
 			VkFence inFlightFence = VK_NULL_HANDLE;
 		};
 
+		// The engine's camera block: binding 0 of the engine descriptor set. A
+		// shader declares the members it needs (the first one is
+		// "column_major float4x4 ViewProjectionMatrix"), and the render pipeline
+		// decides WHICH camera fills it by handing one to the frame
+		// (VspRhi_SetFrameCamera).
 		struct CameraUniformData
 		{
-			float m4ViewProjection[16];   // std140 mat4 (projection only: positions arrive as push constants)
+			float m4ViewProjection[16];
+			float m4View[16];
+			float m4Projection[16];
+			float m4CameraToWorld[16];
+
+			// xyz = world position, w = aperture as an f-number.
+			float fCameraPosition[4];
+
+			// x = focus distance, y = near clip plane, z = far clip plane.
+			float fLens[4];
 		};
 
 		// -------- Creation / destruction helpers --------

@@ -57,21 +57,32 @@ if (-not (Test-Path (Join-Path $runDirectory "Launch.exe"))) {
 
 Get-ChildItem $runDirectory -Filter "shot*.bmp" -ErrorAction SilentlyContinue | Remove-Item -Force
 
-# The scheduled key presses start 800 ms into the run and the last one fires at
-# 7100 ms, so the run has to cover that much engine time: 445 frames of 16.6667
-# ms end at 7417 ms.
+# The scheduled key presses start 800 ms into the run and each one advances the
+# cursor by its hold time plus 300 ms. The first half drives the triangle
+# (D, W, A, S, R, T x4); the second half exercises what the 3D work added:
+# Z/X move it behind the cube and back (the depth test), F5 records the scene,
+# C cycles the camera through its three projection modes.
+#
+# Z fires at 7400 ms, X at 7700, F5 at 8000 and the three camera presses at 8300,
+# 8600 and 8900, so the captures below sit between them: 7400-7700 for the
+# "behind the cube" shot, and one after each camera switch.
+#
+# 580 frames of 16.6667 ms end at 9667 ms, which covers the last key (9200 ms).
 $acceptanceArguments = @(
-    "--silent", "--frames=445", "--fixed-delta-time=16.6667",
+    "--silent", "--frames=580", "--fixed-delta-time=16.6667",
     "--key", "0x44:1500", "--key", "0x57:800", "--key", "0x41:800", "--key", "0x53:800", "--key", "0x52:0",
     "--key", "0x54:0", "--key", "0x54:0", "--key", "0x54:0", "--key", "0x54:0",
+    "--key", "0x5A:0", "--key", "0x58:0", "--key", "0x74:0",
+    "--key", "0x43:0", "--key", "0x43:0", "--key", "0x43:0",
     "--capture", "40:shot0_initial.bmp", "--capture", "148:shot1_after_D.bmp",
     "--capture", "210:shot2_after_W.bmp", "--capture", "276:shot3_after_A.bmp",
     "--capture", "342:shot4_after_S.bmp", "--capture", "358:shot5_after_R.bmp",
     "--capture", "376:shot6_T_red.bmp", "--capture", "394:shot7_T_blue.bmp",
-    "--capture", "412:shot8_T_green.bmp", "--capture", "430:shot9_T_multi.bmp"
+    "--capture", "412:shot8_T_green.bmp", "--capture", "430:shot9_T_multi.bmp",
+    "--capture", "452:shot10_behind_cube.bmp", "--capture", "470:shot11_back_in_front.bmp",
+    "--capture", "508:shot12_camera_perspective.bmp", "--capture", "526:shot13_camera_physical.bmp",
+    "--capture", "544:shot14_camera_orthographic.bmp"
 )
-
-# Make the Khronos validation layer visible to the Vulkan loader. The engine
 # enables it automatically in Debug builds, but only when the loader can see it:
 # an SDK that was never registered machine-wide is only found through
 # VK_LAYER_PATH, which is why the path is set here.
@@ -129,6 +140,63 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
+# ---------------------------------------------------------------------------
+# The 3D scene checks that are not about pixels.
+#
+# The demo records its scene to JSON (F5 above) and cycles the camera through
+# its three projection modes; both leave evidence the shots cannot show, so they
+# are read from the file and the log of the run.
+# ---------------------------------------------------------------------------
+$scenePath = Join-Path $runDirectory "DemoScene.json"
+
+if (-not (Test-Path $scenePath)) {
+    Write-Error "The demo did not record its scene: $scenePath is missing."
+    exit 1
+}
+
+$scene = Get-Content $scenePath -Raw | ConvertFrom-Json
+if ($scene.objects.Count -lt 4) {
+    Write-Error "The recorded scene holds $($scene.objects.Count) object(s); the demo scene has at least four."
+    exit 1
+}
+
+# Every object records BOTH coordinate spaces.
+$withoutLocal = @($scene.objects | Where-Object { $null -eq $_.localPosition })
+$withoutWorld = @($scene.objects | Where-Object { $null -eq $_.worldPosition })
+if ($withoutLocal.Count -gt 0 -or $withoutWorld.Count -gt 0) {
+    Write-Error "A recorded object is missing its local or its world coordinates."
+    exit 1
+}
+
+# The cube hangs off a rig, so its local position (0, 0, 0) and its world
+# position (0, 0, -3) differ: that difference is the parent chain being
+# recorded, which is the whole point of storing both spaces.
+$cube = $scene.objects | Where-Object { $_.name -eq "DemoCube" } | Select-Object -First 1
+$rig = $scene.objects | Where-Object { $_.name -eq "DemoRig" } | Select-Object -First 1
+if ($null -eq $cube -or $null -eq $rig) {
+    Write-Error "The recorded scene is missing the demo rig or the demo cube."
+    exit 1
+}
+if ([math]::Abs($cube.localPosition.z) -gt 0.001 -or [math]::Abs($cube.worldPosition.z + 3.0) -gt 0.001) {
+    Write-Error ("The cube was recorded with local z=" + $cube.localPosition.z + " world z=" + $cube.worldPosition.z +
+        "; the scene graph should put it at local 0 and world -3.")
+    exit 1
+}
+if ($cube.parentGameObjectHandle -eq 0) {
+    Write-Error "The cube was recorded without its parent, so the hierarchy did not survive."
+    exit 1
+}
+Write-Output ("Scene file: " + $scene.objects.Count + " object(s), the cube is local z=" + $cube.localPosition.z +
+    " world z=" + $cube.worldPosition.z + " under a parent.")
+
+# The camera modes the run exercised, read out of the log.
+$cameraModes = Select-String -Path $runLog.FullName -Pattern "camera -> (orthographic|perspective|physical)"
+$modeNames = @($cameraModes | ForEach-Object { $_.Matches[0].Groups[1].Value } | Select-Object -Unique)
+if ($modeNames.Count -lt 3) {
+    Write-Error ("The run used " + $modeNames.Count + " camera projection mode(s): " + ($modeNames -join ", "))
+    exit 1
+}
+Write-Output ("Camera modes exercised: " + ($modeNames -join ", "))
 # ---------------------------------------------------------------------------
 # The engine must REFUSE a shader whose bindings are not its own.
 #

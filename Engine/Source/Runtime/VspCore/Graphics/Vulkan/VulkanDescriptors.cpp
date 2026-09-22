@@ -77,17 +77,24 @@ namespace Vsp
 		bindings[ShaderBindings::k_nCameraUniformBuffer].binding = ShaderBindings::k_nCameraUniformBuffer;
 		bindings[ShaderBindings::k_nCameraUniformBuffer].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 		bindings[ShaderBindings::k_nCameraUniformBuffer].descriptorCount = 1;
-		bindings[ShaderBindings::k_nCameraUniformBuffer].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+		// The camera block is per-frame data either stage may read (a vertex stage
+		// transforms by it, a fragment stage takes the camera position from it), so
+		// the layout declares it for both stages - a pipeline whose shader reads a
+		// binding from a stage the layout does not cover is invalid.
+		bindings[ShaderBindings::k_nCameraUniformBuffer].stageFlags =
+			VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 
 		bindings[ShaderBindings::k_nBindlessTextures].binding = ShaderBindings::k_nBindlessTextures;
 		bindings[ShaderBindings::k_nBindlessTextures].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
 		bindings[ShaderBindings::k_nBindlessTextures].descriptorCount = k_nMaxBindlessTextureCount;
-		bindings[ShaderBindings::k_nBindlessTextures].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+		bindings[ShaderBindings::k_nBindlessTextures].stageFlags =
+			VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 
 		bindings[ShaderBindings::k_nBindlessSampler].binding = ShaderBindings::k_nBindlessSampler;
 		bindings[ShaderBindings::k_nBindlessSampler].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
 		bindings[ShaderBindings::k_nBindlessSampler].descriptorCount = 1;
-		bindings[ShaderBindings::k_nBindlessSampler].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+		bindings[ShaderBindings::k_nBindlessSampler].stageFlags =
+			VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 
 		// One flag entry per layout binding: binding 0 and 2 are single
 		// descriptors, binding 1 is partially bound (only the slots the engine

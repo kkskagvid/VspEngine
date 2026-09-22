@@ -49,8 +49,13 @@ namespace Assembly.Rendering
 			return (TriangleColorMode)(int)material.GetFloat(ColorModePropertyName, (float)TriangleColorMode.MultiColor);
 		}
 
-		/// <summary>The color the given mode overrides the vertex colors with.</summary>
-		public static void GetOverrideColor(TriangleColorMode colorMode, out float red, out float green, out float blue)
+		/// <summary>
+		/// The color the given mode draws the triangle with, when the mode is not
+		/// <see cref="TriangleColorMode.MultiColor"/> - that one keeps the vertex
+		/// colors, so the flat color it returns is white, which multiplies the
+		/// vertex colors by one.
+		/// </summary>
+		public static void GetFlatColor(TriangleColorMode colorMode, out float red, out float green, out float blue)
 		{
 			red = colorMode == TriangleColorMode.Red ? 1.0f : 0.0f;
 			green = colorMode == TriangleColorMode.Green ? 1.0f : 0.0f;

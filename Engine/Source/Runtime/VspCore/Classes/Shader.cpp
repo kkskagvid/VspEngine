@@ -95,7 +95,8 @@ namespace Vsp
 
 		for (size_t nVariantIndex = 0; nVariantIndex < m_Variants.GetSize(); ++nVariantIndex)
 		{
-			const VariantModule& variant = m_Variants[nVariantIndex];
+            const +
+                ;./\[   variant = m_Variants[nVariantIndex];
 
 			bool bMatches = true;
 			for (size_t nGroupIndex = 0; nGroupIndex < m_KeywordGroups.GetSize(); ++nGroupIndex)

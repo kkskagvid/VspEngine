@@ -72,11 +72,17 @@ namespace Hlslcc
 			Fragment = 4,
 		};
 
+		// Number of operands a type instruction may carry. A struct keeps one
+		// operand per member PLUS its result id, so the limit has to be larger
+		// than the largest struct the reflection reports - otherwise the last
+		// members of a big block would silently disappear from the reflection.
+		static constexpr uint32_t k_nMaxTypeOperandCount = 64;
+
 		// One type instruction, kept as it was read.
 		struct TypeRecord
 		{
 			uint32_t uOpcode = 0;
-			uint32_t uOperands[8] = {};
+			uint32_t uOperands[k_nMaxTypeOperandCount] = {};
 			uint32_t uOperandCount = 0;
 
 			bool IsValid() const { return uOpcode != 0; }
@@ -274,7 +280,9 @@ namespace Hlslcc
 					const uint32_t uResultId = pOperands[0];
 					TypeRecord& record = Types[uResultId];
 					record.uOpcode = uOpcode;
-					record.uOperandCount = uOperandCount < 8 ? uOperandCount : 8;
+					record.uOperandCount = (uOperandCount < k_nMaxTypeOperandCount)
+						? uOperandCount
+						: k_nMaxTypeOperandCount;
 					for (uint32_t uOperandIndex = 0; uOperandIndex < record.uOperandCount; ++uOperandIndex)
 					{
 						record.uOperands[uOperandIndex] = pOperands[uOperandIndex];

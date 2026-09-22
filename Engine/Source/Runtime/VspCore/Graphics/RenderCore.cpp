@@ -122,6 +122,12 @@ namespace Vsp
 		command.uResourceHandle = uVertexBuffer;
 	}
 
+	void RenderCore::BindIndexBuffer(RhiBufferHandle uIndexBuffer)
+	{
+		RhiCommand& command = AddCommand(RhiCommandType::BindIndexBuffer);
+		command.uResourceHandle = uIndexBuffer;
+	}
+
 	void RenderCore::PushConstants(uint32 uShaderStageFlags, uint32 uByteOffset, const void* pData, uint32 uByteCount)
 	{
 		RhiCommand& command = AddCommand(RhiCommandType::PushConstants);
@@ -148,5 +154,13 @@ namespace Vsp
 		RhiCommand& command = AddCommand(RhiCommandType::Draw);
 		command.uValueA = uVertexCount;
 		command.uValueB = uFirstVertex;
+	}
+
+	void RenderCore::DrawIndexed(uint32 uIndexCount, uint32 uFirstIndex, uint32 uFirstVertex)
+	{
+		RhiCommand& command = AddCommand(RhiCommandType::DrawIndexed);
+		command.uValueA = uIndexCount;
+		command.uValueB = uFirstIndex;
+		command.uValueC = uFirstVertex;
 	}
 }

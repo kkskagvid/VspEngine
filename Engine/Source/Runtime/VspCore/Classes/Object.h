@@ -46,6 +46,7 @@ namespace Vsp
 		Component = 3,
 		Shader = 4,
 		Material = 5,
+		Camera = 6,
 	};
 
 	// Builds the handle of the object stored in slot uSlotIndex of its kind.

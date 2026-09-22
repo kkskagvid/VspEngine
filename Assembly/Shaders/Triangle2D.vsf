@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Triangle2D - the engine's built-in 2D shader (.vsf).
+// Triangle2D - the demo shader (.vsf).
 //
 // A .vsf file holds everything one shader needs:
 //   Properties  the values the editor shows,
@@ -10,11 +10,16 @@
 // The Pass blocks live INSIDE the Shader block, and a Shader block may hold
 // several of them.
 //
+// The shader draws in 3D: every draw carries its own world matrix, and the
+// camera block comes from the camera the game's render pipeline handed to the
+// frame. The colored triangle of the demo is one more 3D mesh - the engine has
+// no separate 2D path.
+//
 // HLSLCC turns this file into
-//   Triangle2D.vert.spv / Triangle2D.frag.spv     the default variant
-//   Triangle2D.<variant>.vert.spv / .frag.spv     the other kept variants
-//   Triangle2D.shader.json                        what the engine loads
-//   Triangle2D.reflection.json                    the full reflection
+//   Triangle2D.vsfo                    the container the ENGINE loads
+//   Triangle2D.vert.spv / .frag.spv    the modules, for a graphics debugger
+//   Triangle2D.shader.json             the manifest, for tools
+//   Triangle2D.reflection.json         the full reflection
 // ---------------------------------------------------------------------------
 
 Properties
@@ -50,7 +55,16 @@ Shader "Vsp/Triangle2D"
         PassVertexOutput PassVertex(PassVertexInput input)
         {
             PassVertexOutput output;
-            output.Position = mul(ViewProjectionMatrix, float4(input.Position + PushConstants.PositionOffset, 0.0, 1.0));
+
+            // Local -> world -> clip. The world matrix is per draw, so one mesh
+            // can be drawn anywhere without rebuilding the buffer.
+            float4 worldPosition = mul(PushConstants.WorldMatrix, float4(input.Position, 1.0f));
+            output.Position = mul(ViewProjectionMatrix, worldPosition);
+            output.WorldPosition = worldPosition.xyz;
+
+            // The rotation of the world matrix carries the normal; scaled axes
+            // are normalized again so a non-uniform scale cannot tilt it.
+            output.WorldNormal = VspSafeNormalize(mul(input.Normal, (float3x3)PushConstants.WorldMatrix), input.Normal);
             output.Color = input.Color;
             output.Uv = input.Uv;
             return output;
@@ -65,9 +79,9 @@ Shader "Vsp/Triangle2D"
             // The "always kept" variant: every pixel gets the same color.
             float4 baseColor = PushConstants.TintColor;
         #else
-            // MultiColor keeps the per-vertex colors; every other mode replaces
-            // them with the flat override color.
-            float4 baseColor = (PushConstants.ColorMode == 3) ? input.Color : PushConstants.OverrideColor;
+            // Vertex colors are the demo's multicolor mode; every other mode
+            // replaces them with the flat override color.
+            float4 baseColor = (PushConstants.ColorMode == 3) ? input.Color : PushConstants.BaseColor;
         #endif
 
         #if defined(_TINT_ENABLED)
@@ -75,12 +89,23 @@ Shader "Vsp/Triangle2D"
             baseColor *= PushConstants.TintColor;
         #endif
 
+            // One directional light, shaded with the builtin library's helpers.
             // The demo texture is white, so multiplying by it keeps the colors
-            // exact while the bindless lookup - through the builtin library - is
-            // exercised on every pixel.
-            float3 sampledColor = VspSampleTexture(PushConstants.TextureIndex, input.Uv).rgb;
+            // exact while the bindless lookup is exercised on every pixel.
+            float3 normal = VspSafeNormalize(input.WorldNormal, float3(0.0f, 0.0f, 1.0f));
+            float3 directionToLight = VspSafeNormalize(-PushConstants.LightDirection.xyz, float3(0.0f, 0.0f, 1.0f));
+            float fDiffuse = VspSaturate(dot(normal, directionToLight)) * PushConstants.LightDirection.w;
 
-            return float4(baseColor.rgb * sampledColor, baseColor.a);
+            // A highlight the 2D content switches off (specular strength 0), so
+            // its pixels are exactly the material color.
+            float3 viewDirection = VspViewDirection(input.WorldPosition, CameraPosition.xyz);
+            float3 halfVector = VspSafeNormalize(directionToLight + viewDirection, normal);
+            float fSpecularPower = VspRemap(PushConstants.Roughness, 0.0f, 1.0f, 128.0f, 8.0f);
+            float fSpecular = pow(VspSaturate(dot(normal, halfVector)), fSpecularPower) * PushConstants.SpecularStrength;
+
+            float3 sampledColor = VspSampleTexture(PushConstants.TextureIndex, input.Uv).rgb;
+            float3 litColor = baseColor.rgb * sampledColor * (fDiffuse + fSpecular);
+            return float4(litColor, baseColor.a);
         }
     }
 }

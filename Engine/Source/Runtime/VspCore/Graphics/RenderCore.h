@@ -57,6 +57,15 @@ namespace Vsp
 		const FrameClearColor& GetClearColor() const { return m_ClearColor; }
 		void SetClearColor(float fColorR, float fColorG, float fColorB, float fColorA);
 
+		// -------- Camera --------
+		// The camera the frame is rendered from. Like the clear color this is
+		// frame state rather than a command: the render pipeline sets it while it
+		// records, and the backend reads it when it fills the camera uniform
+		// buffer. A frame nobody set a camera for keeps the previous one (and the
+		// backend's default before that).
+		const RhiFrameCamera& GetFrameCamera() const { return m_FrameCamera; }
+		void SetFrameCamera(const RhiFrameCamera& frameCamera) { m_FrameCamera = frameCamera; }
+
 		// -------- Command recording --------
 		void BeginRenderPass();
 		void EndRenderPass();
@@ -64,8 +73,10 @@ namespace Vsp
 		void SetScissor(int32 nX, int32 nY, uint32 uWidth, uint32 uHeight);
 		void BindPipeline(RhiPipelineHandle uPipeline);
 		void BindVertexBuffer(RhiBufferHandle uVertexBuffer);
+		void BindIndexBuffer(RhiBufferHandle uIndexBuffer);
 		void PushConstants(uint32 uShaderStageFlags, uint32 uByteOffset, const void* pData, uint32 uByteCount);
 		void Draw(uint32 uVertexCount, uint32 uFirstVertex);
+		void DrawIndexed(uint32 uIndexCount, uint32 uFirstIndex, uint32 uFirstVertex);
 
 		const ArrayList<RhiCommand>& GetCommands() const { return m_Commands; }
 
@@ -80,6 +91,7 @@ namespace Vsp
 		bool m_bFrameEnded = false;
 		bool m_bCommandLimitReported = false;
 		FrameClearColor m_ClearColor;
+		RhiFrameCamera m_FrameCamera;
 		ArrayList<RhiCommand> m_Commands;
 
 		// Receives commands recorded past k_nMaxRecordedCommandCount so an

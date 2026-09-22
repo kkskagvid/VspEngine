@@ -114,6 +114,39 @@ namespace VspEngine
 		internal static extern void VspTransform_SetLocalScale(uint transformHandle, float scaleX, float scaleY, float scaleZ);
 
 		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspTransform_GetWorldPosition(uint transformHandle, [Out] float[] outXyz);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspTransform_SetWorldPosition(uint transformHandle, float positionX, float positionY, float positionZ);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspTransform_GetWorldRotation(uint transformHandle, [Out] float[] outXyz);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspTransform_GetWorldScale(uint transformHandle, [Out] float[] outXyz);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspTransform_GetLocalMatrix(uint transformHandle, [Out] float[] outMatrix16);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspTransform_GetWorldMatrix(uint transformHandle, [Out] float[] outMatrix16);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspTransform_GetWorldToLocalMatrix(uint transformHandle, [Out] float[] outMatrix16);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern uint VspTransform_GetParent(uint transformHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern int VspTransform_SetParent(uint transformHandle, uint parentTransformHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern int VspTransform_GetChildCount(uint transformHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern uint VspTransform_GetChild(uint transformHandle, int childIndex);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
 		internal static extern int VspTransform_IsDirty(uint transformHandle);
 
 		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
@@ -144,10 +177,110 @@ namespace VspEngine
 		internal static extern uint VspScene_GetLiveGameObjectCount();
 
 		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern uint VspScene_GetGameObjectHandle(uint gameObjectIndex);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
 		internal static extern uint VspScene_GetLiveTransformCount();
 
 		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
 		internal static extern uint VspScene_GetLiveComponentCount();
+
+		// ---- Cameras ----
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern uint VspCamera_Create(uint gameObjectHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern int VspCamera_Destroy(uint cameraHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern uint VspCamera_GetGameObject(uint cameraHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern int VspCamera_GetProjectionMode(uint cameraHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspCamera_SetProjectionMode(uint cameraHandle, int projectionMode);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern float VspCamera_GetFieldOfView(uint cameraHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspCamera_SetFieldOfView(uint cameraHandle, float fieldOfView);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern float VspCamera_GetEffectiveFieldOfView(uint cameraHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern float VspCamera_GetOrthographicSize(uint cameraHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspCamera_SetOrthographicSize(uint cameraHandle, float orthographicSize);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern float VspCamera_GetNearClipPlane(uint cameraHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspCamera_SetNearClipPlane(uint cameraHandle, float nearClipPlane);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern float VspCamera_GetFarClipPlane(uint cameraHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspCamera_SetFarClipPlane(uint cameraHandle, float farClipPlane);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern float VspCamera_GetAspect(uint cameraHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspCamera_SetAspect(uint cameraHandle, float aspect);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern float VspCamera_GetFocalLength(uint cameraHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspCamera_SetFocalLength(uint cameraHandle, float focalLength);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern float VspCamera_GetSensorWidth(uint cameraHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspCamera_SetSensorWidth(uint cameraHandle, float sensorWidth);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern float VspCamera_GetSensorHeight(uint cameraHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspCamera_SetSensorHeight(uint cameraHandle, float sensorHeight);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern float VspCamera_GetAperture(uint cameraHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspCamera_SetAperture(uint cameraHandle, float aperture);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern float VspCamera_GetFocusDistance(uint cameraHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspCamera_SetFocusDistance(uint cameraHandle, float focusDistance);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspCamera_GetViewMatrix(uint cameraHandle, [Out] float[] outMatrix16);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspCamera_GetProjectionMatrix(uint cameraHandle, [Out] float[] outMatrix16);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspCamera_GetViewProjectionMatrix(uint cameraHandle, [Out] float[] outMatrix16);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspCamera_GetPosition(uint cameraHandle, [Out] float[] outXyz);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern uint VspScene_GetLiveCameraCount();
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern uint VspScene_GetCameraHandle(uint cameraIndex);
 
 		// ---- Shader assets (what HLSLCC compiled) ----
 		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
