@@ -190,6 +190,7 @@ xcopy /Y /D /Q "$(SolutionDir)Engine\Shaders\Builtin\Vsp\*.hlsl" "$(OutDir)Built
     <ClInclude Include="ShaderSourceInjector.h" />
     <ClInclude Include="SpirvBindingAssigner.h" />
     <ClInclude Include="SpirvReflectionReader.h" />
+    <ClInclude Include="VsfoFormat.h" />
     <ClInclude Include="VspShaderFile.h" />
     <ClInclude Include="VsfoWriter.h" />
   </ItemGroup>

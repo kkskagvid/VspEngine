@@ -5,10 +5,12 @@ namespace Vsp
 	// -------------------------------------------------------------------------
 	// Object
 	// -------------------------------------------------------------------------
-	// Root of the engine's class hierarchy. Every class/struct type that a
-	// Callback returns must derive from Object (fundamental return types such
-	// as int or double need no base class). The virtual destructor lets
-	// derived instances be destroyed safely through an Object pointer.
+	// Optional common base of the engine's class hierarchy. Deriving from it is
+	// a convenience, NOT a requirement: nothing in Core/Templates - Callback,
+	// UnicastDelegate, MulticastDelegate, ArrayList - demands it of a type it
+	// stores or returns. A type that does derive gets the virtual destructor
+	// below, so derived instances can be destroyed safely through an Object
+	// pointer; a type that does not is used just as well.
 	// -------------------------------------------------------------------------
 	class Object
 	{

@@ -55,6 +55,19 @@ namespace Vsp
 		};
 		ArrayList<KeySimulationStep> KeySimulationSteps;
 
+		// Posts synthetic WM_MOUSEMOVE messages that put the pointer at a client
+		// coordinate, which is how a camera that reads the mouse delta is
+		// exercised without a hand on the mouse. Deltas come from successive
+		// positions, so the steps are posted in order.
+		struct MouseSimulationStep
+		{
+			int32 nClientX = 0;
+			int32 nClientY = 0;
+			uint32 uStartMilliseconds = 0;         // Elapsed-time offset from loop start.
+			bool bHasExplicitStartTime = false;    // True when the step pinned its own offset.
+		};
+		ArrayList<MouseSimulationStep> MouseSimulationSteps;
+
 		// Saves the presented framebuffer (BMP) after the given frame index.
 		struct FrameCapture
 		{

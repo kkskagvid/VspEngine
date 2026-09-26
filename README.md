@@ -88,15 +88,17 @@ shader file is ever read. A game takes over from its `IGameModule`:
 ```csharp
 public sealed class Game : IGameModule
 {
-    public void OnGameLoad() => RenderPipelineManager.ActivePipeline = new TriangleRenderPipeline();
+    public void OnGameLoad() => RenderPipelineManager.ActivePipeline = new LitCubeRenderPipeline();
     public void OnGameUnload() => RenderPipelineManager.ActivePipeline = null;
 }
 ```
 
 The engine calls `OnGameLoad` once, right after it loaded the game assembly.
-`Assembly/Rendering/TriangleRenderPipeline.cs` is the worked example: it is
+`Assembly/Rendering/LitCubeRenderPipeline.cs` is the worked example: it is
 ordinary game code that loads its shader (`Shader.Load`), builds one graphics
-pipeline per shader variant and draws the demo triangle.
+pipeline per shader variant, assembles the frame as a **render graph** (see
+"8. A frame is a render graph") and draws the demo's lit cube plus its flat
+interface.
 
 ### 4. Shaders are .vsf files compiled by HLSLCC; the engine only loads the SPIR-V
 
@@ -106,14 +108,15 @@ HLSL compiler.** VspCore neither includes nor links HLSLCC - it reads the files 
 compiler wrote:
 
 ```
-Assembly/Shaders/Triangle2D.vsf        the shader the GAME ships
+Assembly/Shaders/LitCube.vsf           the shaders the GAME ships
+Assembly/Shaders/UiQuad.vsf
         |  HLSLCC (during the Assembly's build)
         v
 <run directory>/Shaders/               everything the ENGINE loads
-        Triangle2D.vsfo                ONE container: every module + its reflection
-        Triangle2D.vert.spv ...        the modules on their own (debugger food)
-        Triangle2D.shader.json         the manifest, for tools
-        Triangle2D.reflection.json     the reflection, for tools
+        LitCube.vsfo                   ONE container per shader: every module + its reflection
+        LitCube.vert.spv ...           the modules on their own (debugger food)
+        LitCube.shader.json            the manifest, for tools
+        LitCube.reflection.json        the reflection, for tools
 ```
 
 The shader is game content: `Assembly/Shaders` holds it, and `Assembly.csproj`
@@ -182,11 +185,11 @@ them:
 ```hlsl
 Properties
 {
-    _ColorMode ("Color Mode", Float) = 3
-    _Tint ("Tint", Color) = (1, 1, 1, 1)
+    _BaseColor ("Base Color", Color) = (1, 1, 1, 1)
+    _Ambient ("Ambient", Float) = 0.35
 }
 
-Shader "Vsp/Triangle2D"
+Shader "Assembly/LitCube"
 {
     Queue = "Geometry"
     Variant _TINT_ENABLED              // strippable keyword group
@@ -197,7 +200,7 @@ Shader "Vsp/Triangle2D"
         #pragma fragment PassFragment
         #pragma multi_variant_local _FLAT_COLOR
 
-        #include "Triangle2DCommon.hlsl" // Pass blocks may include HLSL
+        #include "LitCubeCommon.hlsl" // Pass blocks may include HLSL
 
         PassVertexOutput PassVertex(PassVertexInput input) { ... }
         float4 PassFragment(PassFragmentInput input) : SV_Target0 { ... }
@@ -239,13 +242,13 @@ The same declarations can be written in the `Shader` block (`Variant`,
 **HLSLCC writes** (the Assembly's build runs exactly this)
 
 ```
-HLSLCC.exe Assembly/Shaders/Triangle2D.vsf --output-directory <run>\Shaders [--used-variant _TINT_ENABLED]
-  -> out/Triangle2D.vsfo                                  the container the ENGINE loads
-  -> out/Triangle2D.vert.spv / Triangle2D.frag.spv        the default variant
-  -> out/Triangle2D.<keywords>.vert.spv / .frag.spv       the other kept variants
+HLSLCC.exe Assembly/Shaders/LitCube.vsf --output-directory <run>\Shaders [--used-variant _UNLIT]
+  -> out/LitCube.vsfo                                     the container the ENGINE loads
+  -> out/LitCube.vert.spv / LitCube.frag.spv              the default variant
+  -> out/LitCube.<keywords>.vert.spv / .frag.spv          the other kept variants
   -> out/<name>.<pass>.vert.spv / .frag.spv               one module pair per Pass
-  -> out/Triangle2D.shader.json                           the manifest, for tools
-  -> out/Triangle2D.reflection.json                       full reflection of the default variant
+  -> out/LitCube.shader.json                              the manifest, for tools
+  -> out/LitCube.reflection.json                          full reflection of the default variant
 ```
 
 **The engine loads what HLSLCC wrote.** `Graphics/ShaderLibrary` reads a
@@ -363,14 +366,96 @@ A renderable component points at a **material**; the material points at a
 | ----- | ---- | ---- |
 | Native | `Classes/Shader`   | the compiled modules of every variant, the queue, the properties, the keyword groups |
 | Native | `Classes/Material` | one shader plus the values and keywords a draw uses |
-| C#     | `VspEngine.Shader`  | reference handle: `Shader.Load("Triangle2D")` reads the compiled shader |
+| C#     | `VspEngine.Shader`  | reference handle: `Shader.Load("LitCube")` reads the compiled shader |
 | C#     | `VspEngine.Material` | reference handle: `SetFloat`, `SetVector`, `SetKeywordEnabled`, `ResolveVariantIndex` |
 
-`Assembly/Rendering/TriangleRenderPipeline.cs` builds **one graphics pipeline per
+`Assembly/Rendering/LitCubeRenderPipeline.cs` builds **one graphics pipeline per
 shader variant** and picks between them from each drawable's material, so a variant
 is only paid for when something actually selects it. The engine names no shader
-property: `_ColorMode` and `_Tint` live in `Assembly/Rendering/TriangleMaterial.cs`,
+property: `_BaseColor` and `_Ambient` live in `Assembly/Rendering/LitCubeMaterial.cs`,
 next to the shader that declares them.
+
+### 8. A frame is a render graph
+
+A pipeline that draws more than one thing stops being a list of calls and becomes a
+graph of passes. `VspEngine.Rendering.RenderGraph` is that graph:
+
+```csharp
+frameGraph.Reset();
+RenderGraphTextureHandle fontAtlas = frameGraph.CreateTexture("UiFontAtlas", 1024, 1024, slot);
+
+frameGraph.AddPass("Cube").WriteBackBuffer().SetExecute(DrawCubePass).Done();
+frameGraph.AddPass("Interface").WriteBackBuffer()
+          .ReadTexture(fontAtlas).SetExecute(DrawInterfacePass).Done();
+frameGraph.AddPass("DiagnosticsOverlay").WriteBackBuffer()
+          .SetEnabled(false).SetExecute(DrawOverlayPass).Done();   // culled
+
+if (frameGraph.Compile())
+{
+    frameGraph.Execute(context);      // the surviving passes, in dependency order
+}
+```
+
+`Compile()` culls every pass that cannot reach the back buffer, orders what is left
+with a stable topological sort (so independent passes keep the order they were added
+in), refuses a graph with no back-buffer pass and reports a cycle by name instead of
+hanging. It also tracks each resource's first and last use - its lifetime - and the
+peak number of live resources. Logging in a graph that is compiled once per frame
+would bury the log, so nothing is written on the success path: a pipeline that wants
+the details asks for `GetDebugSummary()`.
+
+### 9. The interface, and the text in it
+
+`VspEngine.UI` is a small flat-style widget framework: `Canvas` is the root and
+owns the theme, the fonts and the render-target size; `Image` is a filled rectangle
+(or a textured one) with an optional hairline border; `Text` is a run of text;
+`Button` is the state machine - rest, hover, press, release - with a click that
+fires only when the release lands inside it. `UiRenderer` owns what the widgets do
+not: the shader, one pipeline, one dynamic vertex and index buffer for the whole
+frame, and the 1x1 white texture solid fills sample.
+
+Text does not come from a bitmap font baked into the engine. `Core/Text` rasterizes
+a real face with **FreeType** into a 1024x1024 coverage atlas (white RGB, coverage in
+alpha) on demand, and lays a UTF-8 run out into one glyph quad per code point, with
+kerning from the face's `kern` table. A shader samples the atlas' alpha and
+multiplies it by the vertex colour, which is why a solid panel, a glyph and an icon
+are all the same draw.
+
+Every string a player reads goes through **`Core/String/I18N`**, whose text is an
+**ICU `UnicodeString`** and whose locales are **ICU `Locale`** objects:
+
+- a `UnicodeString` is a length-counted UTF-16 string that already knows the Unicode
+  rules the engine would otherwise have to write itself - code point access that never
+  splits a surrogate pair, substring, search and comparison in code point order, and
+  UTF-8 conversion that always produces well-formed text;
+- an `ic::Locale` parses `"zh-CN"`, `"zh_Hans_CN"` and `"zh-CN-u-nu-latn"` itself,
+  and `Locale::getDefault()` is what tells the engine what the machine is set to;
+- a translation crosses the C ABI as **UTF-16 code units** - the encoding the native
+  string already holds and the one a .NET `string` is made of - so the managed side
+  gets the text with no conversion in between. The engine's own `VspString` stays the
+  UTF-8 type of the file system, the log line and the C ABI; `I18N::FromUtf8` and
+  `I18N::ToUtf8` are the only two places the encodings meet.
+
+A key (`demo.title`) is resolved in the current locale, then in the fallback locale,
+and finally resolves to the key itself - so a half-translated interface shows something
+a developer can act on instead of a blank label. Catalogs are JSON files, one per
+locale, staged next to the executable. `Text` takes a `TranslationKey` or a
+`Literal`, and the widgets never see a hardcoded string.
+
+### 10. Errors, and how the engine reports them
+
+The runtime is built with `/EHs-c-` and `_HAS_EXCEPTIONS=0`, so **nothing throws**
+and every failure travels through a return value. There are exactly two kinds, and
+each has one prescribed reaction (`Core/Diagnostics/ErrorHandling.h`):
+
+| Kind | Reaction |
+| ---- | -------- |
+| **Non-fatal** - the engine can keep running | log the reason, then return the EMPTY value (`nullptr`, 0, `false`, an invalid handle, an empty `VspString`); a void function just returns. `VSP_RETURN_EMPTY` / `VSP_RETURN_VOID` |
+| **Fatal** - the engine cannot continue | log the reason, then call `ProcessFailedExit`, which writes the fatal entry with the collected log history, flushes every backend, shows the crash prompt when prompts are enabled and terminates with a non-zero exit code |
+
+`ProcessFailedExit` is declared `[[noreturn]]`, so every call site reads as "the
+engine stops here", and `Log` itself no longer terminates: writing a fatal entry
+collects the crash report, killing the process is the exit path's job.
 
 ## Features
 
@@ -415,6 +500,31 @@ next to the shader that declares them.
 - **Materials** (`Classes/Material` + `VspEngine.Material`): a component draws with
   a material, the material owns the shader plus its property values and keywords,
   and the pipeline keeps one graphics pipeline per shader variant.
+- **A render graph in C#** (`VspEngine.Rendering.RenderGraph`): passes declare what
+  they read and write, the graph culls what cannot reach the back buffer, orders the
+  rest by dependency with a stable topological sort, refuses a graph with no
+  back-buffer pass or with a cycle, and reports resource lifetimes and the peak
+  number of live resources.
+- **Native vector and matrix maths** (`VspCore/Math`): `Vector2`, `Vector3`,
+  `Vector4`, `Matrix4x4` (column-major, the engine's Euler convention and Vulkan
+  clip space) and `Quaternion`, exported to managed code as `VspMath_*` and wrapped
+  by `VspEngine.NativeMath` - so the engine has one implementation of its own
+  conventions instead of two that can drift apart.
+- **A UI framework** (`VspEngine.UI`): `Canvas`, `Image`, `Text` and `Button` in a
+  flat, minimal style - solid fills, one accent colour, hairline borders, no
+  gradients and no shadows - drawn through the same camera and the same render pass
+  as the 3D scene.
+- **Real text, localised** (`Core/Text` + `Core/String/I18N`): FreeType rasterizes
+  the face into a coverage atlas on demand, text is laid out one glyph quad per code
+  point, and every string is a key resolved against a JSON catalog per locale with a
+  fallback locale and the key itself as the last resort. The localisation service holds
+  its text as **ICU `UnicodeString`** and its locales as **ICU `Locale`**, and hands a
+  translation to managed code as UTF-16 code units - the encoding both sides already
+  use.
+- **The engine's error rule** (`Core/Diagnostics/ErrorHandling.h`): a non-fatal
+  failure logs and returns the empty value, a fatal one logs and calls
+  `ProcessFailedExit`, which reports the collected log history and terminates with a
+  non-zero exit code. `Log` itself never terminates the process.
 - **Complete keyboard + mouse input** (`Core/Input/InputManager`): held/pressed/released
   edge state, mouse position/delta/wheel, typed characters. Window messages flow
   Win32 -> events -> InputManager -> scripts.
@@ -482,33 +592,63 @@ next to the shader that declares them.
 
 ## Demo (acceptance test)
 
-`Assembly/TriangleController.cs` (the game Assembly loaded by the engine) drives a
-3D scene: a **camera**, a **cube** hanging off a rig, and the multicolor triangle -
-the demo's 2D content, drawn as a mesh in the same 3D scene.
+`Assembly/CubeController.cs` (the game Assembly loaded by the engine) drives the
+demo: a **lit, per-face coloured cube** seen through a **third-person camera that
+follows it**, plus a flat interface drawn on top of the scene.
 
-| Key | Action                                                        |
-| --- | ------------------------------------------------------------- |
-| W   | move the triangle up (world +Y)                                |
-| A   | move it left (world -X)                                        |
-| S   | move it down (world -Y)                                        |
-| D   | move it right (world +X)                                       |
-| Q / E | move it away from / towards the camera (world Z)             |
-| R   | reset its position                                             |
-| T   | cycle its color: red -> blue -> green -> multicolor            |
-| Z / X | send it behind the cube / bring it back (the depth test)     |
-| C   | cycle the camera: orthographic -> perspective -> physical       |
-| F5 / F9 | record the scene to `DemoScene.json` / read it back        |
+The camera opens 45 degrees above the horizon, behind the cube, and always looks AT
+it: the pointer turns the ORBIT, so the cube stays centred whatever the view does.
+The light shines straight down (90 degrees to the horizon), so the top face is
+fully lit while the four sides receive only the ambient fill - which is what makes
+the shape read as a solid.
 
-The script owns no render state: it writes world positions and material properties
-into the native scene, and the game's render pipeline reads them while it builds
-the frame. `Z` is the visible proof that the depth buffer works - the triangle is
-drawn *after* the cube, so only depth testing can hide it.
+| Input | Action                                                          |
+| ----- | --------------------------------------------------------------- |
+| W / A / S / D | move the cube over the ground, relative to the camera    |
+| Mouse         | orbit the camera around the cube (it always looks at it) |
+| Mouse wheel   | move the camera closer to / further from the cube        |
+| T             | flip the spin: clockwise about Y, or counter-clockwise   |
+| R             | send the cube back to the origin                         |
+
+The cube spins about its own Y axis from the first frame on; T only decides WHICH
+WAY. Every static string the interface shows is a localisation KEY
+(`demo.title`, `demo.hint`, ...) resolved by the engine's native
+`Core/String/I18N` service from `Assembly/Locales/<locale>.json`, so the same
+build reads correctly in English and in Chinese.
+
+The script owns no render state: it writes world positions and rotations into the
+native scene, and the game's render pipeline reads them while it builds the frame.
 
 ## Building
 
 Requirements: Visual Studio 2026 (v145 toolset), .NET SDK 10 and a Vulkan SDK
 (the project looks for `Engine/Source/Thirdparty/Vulkan` first, then the
 `VULKAN_SDK` environment variable).
+
+The runtime links two **static** third-party libraries, and each ships BOTH CRT
+flavours because the linker refuses to mix a release-built static library into a
+`/MDd` image (`LNK2038`):
+
+| Library | Release | Debug | Source |
+| ------- | ------- | ----- | ------ |
+| FreeType 2.14.3 | `Engine/Binaries/freetype/freetype.lib` | `freetyped.lib` | `Engine/Source/Thirdparty/FreeType2` |
+| ICU 77.1 (common + i18n, data stubbed) | `Engine/Binaries/ICU/icu.lib` | `icud.lib` | `Engine/Source/Thirdparty/ICU/icu4c-77_1` |
+
+ICU's debug library is built from the recipe the repository already carries, with
+the CMake that ships with Visual Studio:
+
+```
+cmake -S Engine/Source/Thirdparty/ICU/icu4c-77_1/BuildToStaticLibrary ^
+      -B Engine/Intermediate/ICU/build -G "Visual Studio 18 2026" -A x64 ^
+      -DCMAKE_CXX_STANDARD=17 ^
+      -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY=Engine/Intermediate/ICU/lib
+cmake --build Engine/Intermediate/ICU/build --config Debug --parallel
+copy Engine\Intermediate\ICU\lib\Debug\icu.lib Engine\Binaries\ICU\icud.lib
+```
+
+It needs no ICU data files: the runtime uses `UnicodeString` and `Locale`, and
+neither reads locale data, which is why the recipe builds ICU with
+`UCONFIG_NO_FILE_IO` and `stubdata.cpp`.
 
 Shaders are `.vsf` files and are compiled to SPIR-V by **HLSLCC**, which needs the
 DirectX Shader Compiler (`dxcompiler.dll`). It is loaded at runtime from, in
@@ -608,31 +748,31 @@ powershell -NoProfile -ExecutionPolicy Bypass -File Engine\Tools\Acceptance\RunA
 The script runs both halves of the acceptance test:
 
 1. **Shader compilation** (`VerifyShaderCompilation.ps1`) runs `HLSLCC.exe` over
-   the game's `Assembly/Shaders/Triangle2D.vsf` - the one file that defines both
-   `PassVertex` and `PassFragment` - and checks that
+   the game's two shaders - `Assembly/Shaders/LitCube.vsf` (the lit cube) and
+   `Assembly/Shaders/UiQuad.vsf` (the flat interface) - and checks that
 
    - the `Properties` block, the `Shader` block, the `Pass` block nested inside
-     it, both entry-point pragmas and the `#include` of the Pass block are all
+     it, the entry-point pragmas and the `#include` of the Pass block are all
      read out of the file,
    - one SPIR-V binary per stage of the default variant is written, each starting
      with the SPIR-V magic number and carrying the entry point of its stage,
    - `spirv-val` accepts both modules (when the SDK ships it),
-   - the reflection document describes both stages, the four vertex attributes,
-     the camera uniform buffer, the bindless sampled-image array, the sampler and
-     the 128-byte, eight-member push-constant block (the block carries a draw's
-     world matrix, which is why it is the size Vulkan guarantees),
+   - the reflection document describes both stages, the vertex attributes, the
+     resources and the push-constant block, and **every resource sits on the
+     engine's own binding**: a uniform buffer on `k_nCameraUniformBuffer`, a
+     sampled image on `k_nBindlessTextures`, a sampler on `k_nBindlessSampler`.
+     That check is what fails when a shader that declares FEWER resources than the
+     engine provides is numbered as if the missing kinds were still there,
    - **the `.vsfo` container** the engine loads is well formed: the magic number,
      the version, the section table inside the file, one index entry per module of
      every variant, the stage/entry-point/pass/variant each entry names, the
      modules byte-identical to the loose `.spv` files, and the reflection the
-     entries summarise and point at (camera block, bindless array, sampler, the
-     128-byte push-constant block),
+     entries summarise and point at,
    - the manifest names the shader, its queue, its properties, its keyword groups
      and the module file of every stage - and every module it names exists,
-   - the strip rules hold: without `--used-variant` the strippable group ships
-     only its default state while `multi_variant_local` ships both, reporting
-     `_TINT_ENABLED` swaps which state ships, and reporting both states keeps
-     both,
+   - the strip rules hold: without `--used-variant` a strippable group ships only
+     its default state, reporting a keyword swaps which state ships, and reporting
+     every state keeps every state,
    - a `Shader` block with **two** `Pass` blocks compiles both of them
      (`MultiPassTest.Forward.*.spv` and `MultiPassTest.Tinted.*.spv`), and a
      `Pass` written outside the `Shader` block is rejected with a clear error,
@@ -648,28 +788,38 @@ The script runs both halves of the acceptance test:
 
 2. **Engine behaviour** builds the solution, enables the Vulkan validation layer
    when an SDK is present, runs the demo with
-   `--fixed-delta-time=16.6667 --frames=445` together with the scheduled key
-   presses and captures below, **fails on any `[ERROR]`, `[WARNING]` or
-   `[FATAL]` entry in the engine log**, and finally checks the captured frames
-   with `AnalyzeShots.ps1`:
+   `--fixed-delta-time=16.6667 --frames=460` together with the scheduled key
+   presses, mouse moves and captures below, **fails on any `[ERROR]`, `[WARNING]`
+   or `[FATAL]` entry in the engine log**, and checks the captured frames with
+   `AnalyzeShots.ps1`:
 
-   - movement direction (D/W/A/S), reset position (R) and all four color modes (T),
-   - **the depth test**: sent behind the cube with `Z`, the triangle has to
-     disappear - it is drawn after the cube, so only a depth buffer can hide it -
-     and `X` has to bring it back,
-   - **the three projections**: the same scene through an orthographic, a 45-degree
-     perspective and a 50 mm physical camera produces three different images, with
-     the perspective one showing less of the triangle than the orthographic one and
-     the 50 mm lens framing tighter still.
+   - **the cube is on screen in every capture** - the camera follows it, so it can
+     never leave the frame however far it moves,
+   - it is **colourful**: several face colours appear over the run (the per-face
+     colours are what the spin makes visible),
+   - the **light comes from straight above**: the upper part of the cube is far
+     brighter than the lower part,
+   - the **interface is drawn on top** of the scene, in the corner its panel is
+     pinned to.
 
-   It then reads what the run left behind: the `DemoScene.json` the demo recorded
-   (at least four objects, every one with local AND world coordinates, and the cube
-   at local z=0 / world z=-3 under its parent - the hierarchy surviving the round
-   trip) and the log (all three camera projection modes exercised).
+   What a still frame cannot show is read out of the demo's once-a-second state
+   lines instead, because a cube a follow camera keeps centred looks the same
+   wherever it is:
+
+   - **W / D / A moved it** the way the camera's frame says they should, and **R**
+     put it back at the origin,
+   - **T flipped the spin** to counter-clockwise and the second T flipped it back,
+     while the cube kept spinning the whole time,
+   - the camera stayed **45 degrees above the cube at a fixed distance** - the
+     follow camera never lost it - and a **300-pixel mouse move turned the yaw by
+     exactly the 45 degrees the sensitivity asks for**, without touching the pitch,
+   - the **localisation catalog was read** (`Locales/<locale>.json`, staged next
+     to the executable by the Assembly's build), and both shaders and the render
+     graph reported themselves ready.
 
    It then patches the binding of the camera block **inside the container** and
    runs the engine once more: the load must be refused, by name, with
-   "the shader 'Triangle2D' reads 'CameraUniformBuffer' ... at set 0 binding 5, but
+   "the shader 'LitCube' reads 'CameraUniformBuffer' ... at set 0 binding 5, but
    the engine provides it at set 0 binding 0". That closes the loop from the bytes
    on disk to the error message.
 
@@ -682,21 +832,20 @@ powershell -NoProfile -ExecutionPolicy Bypass -File Engine\Tools\Acceptance\Veri
 The equivalent command line:
 
 ```
-Launch.exe --silent --frames=445 --fixed-delta-time=16.6667 ^
-  --key 0x44:1500 --key 0x57:800 --key 0x41:800 --key 0x53:800 --key 0x52:0 ^
-  --key 0x54:0 --key 0x54:0 --key 0x54:0 --key 0x54:0 ^
-  --capture 40:shot0_initial.bmp --capture 148:shot1_after_D.bmp ^
-  --capture 210:shot2_after_W.bmp --capture 276:shot3_after_A.bmp ^
-  --capture 342:shot4_after_S.bmp --capture 358:shot5_after_R.bmp ^
-  --capture 376:shot6_T_red.bmp --capture 394:shot7_T_blue.bmp ^
-  --capture 412:shot8_T_green.bmp --capture 430:shot9_T_multi.bmp
+Launch.exe --silent --frames=460 --fixed-delta-time=16.6667 ^
+  --key 0x54:0 --key 0x57:1500 --key 0x44:1500 --key 0x41:1500 ^
+  --key 0x54:0 --key 0x52:0 ^
+  --mouse 400:300:6300 --mouse 700:300:6400 ^
+  --capture 40:shot0_initial.bmp --capture 60:shot1_after_T.bmp ^
+  --capture 150:shot2_after_W.bmp --capture 235:shot3_after_D.bmp ^
+  --capture 350:shot4_after_A.bmp --capture 430:shot5_after_reset.bmp
 ```
 
 ## Layout
 
 - `Engine/Source/Runtime/VspCore`    - the native engine DLL. `Classes/` owns the object model, `Graphics/` the wrapped graphics API and the backends, `Scripting/` the CoreCLR host and every export managed code P/Invokes. All Windows-only code is encapsulated in its `Common/` folder behind `#if VSP_PLATFORM_WINDOWS`.
-- `Engine/Source/Runtime/VspEngine`  - the engine's managed runtime assembly (VspEngine.dll): the object model reference handles, the Input/Time facades, the interop bridge, the RHI wrappers and the render-pipeline framework.
-- `Assembly`                          - the game Assembly (Assembly.dll): the user scripts (the demo `TriangleController`), the render pipeline the game installs (`Rendering/`) and the shaders it ships (`Assembly/Shaders/*.vsf`), which HLSLCC compiles during its build.
+- `Engine/Source/Runtime/VspEngine`  - the engine's managed runtime assembly (VspEngine.dll): the object model reference handles, the Input/Time facades, the interop bridge, the RHI wrappers, the render-pipeline framework with the render graph (`Rendering/`), the UI framework (`UI/`), the localisation facade (`I18N.cs`) and the native-maths facade (`NativeMath.cs`).
+- `Assembly`                          - the game Assembly (Assembly.dll): the user script (the demo `CubeController`), the render pipeline the game installs (`Rendering/`, including its render graph and the third-person camera rig), the flat interface it builds (`UI/`), the translation catalogs it ships (`Locales/*.json`) and the shaders it ships (`Assembly/Shaders/*.vsf`), which HLSLCC compiles during its build.
 - `Engine/Source/Runtime/Launch`     - the host executable: parses the command line, runs `GameEngine`.
 - `Engine/Source/Programs/HLSLCC`  - the HLSL cross compiler `HLSLCC.exe`: the .vsf parser, Vulkan namespace injection, the DXC backend, the engine's binding rules, SPIR-V reflection and the `.vsfo` container writer. Nothing links it into the runtime.
 - `Engine/Source/Shared`            - `VsfoFormat.h`, the one definition of the shader-container format that both HLSLCC (writer) and VspCore (reader) compile.
@@ -707,5 +856,10 @@ Launch.exe --silent --frames=445 --fixed-delta-time=16.6667 ^
 - `Engine/Intermediate`       - all build outputs: binaries, obj/, NuGet restore caches, generated shader header.
 - `Engine/Tools/Build`        - the build steps: `CompileShaders.ps1` compiles a game's `.vsf` shaders into the run directory's `Shaders` folder.
 - `Engine/Tools/Acceptance`   - the acceptance runner, the shader-compilation verifier and the captured-frame analyzer.
+- `Engine/Source/Runtime/VspCore/Math` - the engine's own vector and matrix maths (`Vector2/3/4`, `Matrix4x4`, `Quaternion`), exported to managed code as `VspMath_*`.
+- `Engine/Source/Runtime/VspCore/Core/Text` - the native text service (`Font`, `TextSystem`): FreeType rasterization into a coverage atlas, laid out into glyph quads.
+- `Engine/Source/Runtime/VspCore/Core/String/I18N` - the localisation service: locales, JSON catalogs, fallback and lookup.
+- `Engine/Source/Runtime/VspCore/Core/Diagnostics/ErrorHandling.h` - the engine's error rule and `ProcessFailedExit`.
+- `Engine/Intermediate/Binaries/<config>/Locales` - the game's translation catalogs, staged next to the executable.
 - `Engine/Intermediate/Binaries/<config>/Shaders` - the compiled shaders the engine loads: the `.vsfo` container per shader, next to the loose SPIR-V modules and the JSON documents the tools read.
 - `Engine/Intermediate/Binaries/<config>/Builtin` - the HLSL builtin library staged next to HLSLCC.exe.

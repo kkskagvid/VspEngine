@@ -16,15 +16,15 @@ namespace Assembly
 	/// </summary>
 	public sealed class Game : IGameModule
 	{
-		private TriangleRenderPipeline? pipeline;
+		private LitCubeRenderPipeline? pipeline;
 
 		public void OnGameLoad()
 		{
-			pipeline = new TriangleRenderPipeline();
+			pipeline = new LitCubeRenderPipeline();
 			RenderPipelineManager.ActivePipeline = pipeline;
 
-			Debug.Log("Game: installed " + nameof(TriangleRenderPipeline)
-				+ " (shader '" + TriangleRenderPipeline.ShaderName + "' is loaded on its first frame).");
+			Debug.Log("Game: installed " + nameof(LitCubeRenderPipeline)
+				+ " (shader '" + LitCubeRenderPipeline.ShaderName + "' is loaded on its first frame).");
 		}
 
 		public void OnGameUnload()

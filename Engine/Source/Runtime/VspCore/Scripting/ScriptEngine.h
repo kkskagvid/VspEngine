@@ -95,6 +95,26 @@ namespace Vsp
 		void ReleaseRenderPipeline();
 
 		uint32 GetScriptInstanceCount() const { return static_cast<uint32>(m_ScriptInstances.GetSize()); }
+
+		// InstanceID of the instance at the given position in the registry, or 0
+		// when the index does not address one. The host walks this to run the
+		// lifecycle of every instance it created.
+		ScriptInstanceId GetScriptInstanceIdAt(uint32 uInstanceIndex) const
+		{
+			return (uInstanceIndex < m_ScriptInstances.GetSize())
+				? m_ScriptInstances[uInstanceIndex].uInstanceId
+				: 0;
+		}
+
+		// Game object handle of the instance at the given position (0 when the
+		// index does not address one).
+		NativeObjectHandle GetScriptGameObjectHandleAt(uint32 uInstanceIndex) const
+		{
+			return (uInstanceIndex < m_ScriptInstances.GetSize())
+				? m_ScriptInstances[uInstanceIndex].uGameObjectHandle
+				: k_nInvalidObjectHandle;
+		}
+
 		ScriptInstanceId GetPrimaryScriptInstanceId() const
 		{
 			return m_ScriptInstances.IsEmpty() ? 0 : m_ScriptInstances[0].uInstanceId;

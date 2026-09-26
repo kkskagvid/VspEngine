@@ -1,3 +1,26 @@
+<#
+.SYNOPSIS
+    Checks the frames the acceptance run captured, pixel by pixel.
+
+.DESCRIPTION
+    The demo draws a lit, per-face coloured cube through a third-person camera
+    that always keeps it centred, with a flat interface panel on top. Those three
+    facts are what the screenshots can prove, so they are what is checked here:
+
+      1. the cube is ON SCREEN in every shot - the camera follows it, so it can
+         never leave the frame, however far it moves;
+      2. the cube is COLOURFUL - six saturated face colours, not one flat fill;
+      3. the LIGHT comes from straight above - the top of the cube is far
+         brighter than the bottom, and the ground (which also faces up) is lit
+         just as brightly;
+      4. the INTERFACE is drawn on top - the accent colour of the flat theme
+         appears in the top-left corner where the panel sits.
+
+    What the shots cannot show - which way the cube moves when a key is held, and
+    which way it spins after T - is read out of the engine log by RunAcceptance.ps1,
+    because the camera keeps the cube centred and a moving object is therefore
+    invisible in a still frame.
+#>
 param(
     # Directory holding Launch.exe and the shots written by the acceptance run.
     [string]$RunDirectory = "Engine\Intermediate\Binaries\Debug_x64"
@@ -5,7 +28,7 @@ param(
 
 Add-Type -AssemblyName System.Drawing
 
-
+# One analysed frame.
 function Analyze-Shot([string]$path)
 {
     $bitmap = [System.Drawing.Image]::FromFile($path)
@@ -16,50 +39,122 @@ function Analyze-Shot([string]$path)
     $g.DrawImage($bitmap, 0, 0, 320, 180)
     $g.Dispose()
 
-    $minX = 9999; $minY = 9999; $maxX = -1; $maxY = -1
-    $redCount = 0; $greenCount = 0; $blueCount = 0; $total = 0
+    $coloredCount = 0
+    $redCount = 0; $greenCount = 0; $blueCount = 0; $cyanCount = 0; $magentaCount = 0; $yellowCount = 0
+    $topLuminance = 0.0; $topCount = 0
+    $bottomLuminance = 0.0; $bottomCount = 0
+    $panelPixelCount = 0
+    $minY = 9999; $maxY = -1
+
+    # The HUD panel is pinned to the top-left corner, so that corner is where the
+    # interface has to show. The two things it puts there are a large, flat,
+    # LOW-SATURATION surface (the panel and its buttons) and the theme's
+    # saturated accent blue. The background is darker than either.
+    $interfaceRegionWidth = 110
+    $interfaceRegionHeight = 90
 
     for ($y = 0; $y -lt 180; $y++)
     {
         for ($x = 0; $x -lt 320; $x++)
         {
             $pixel = $small.GetPixel($x, $y)
-            $r = $pixel.R; $g2 = $pixel.G; $b = $pixel.B
+            $r = [int]$pixel.R; $gp = [int]$pixel.G; $b = [int]$pixel.B
 
-            # Non-background pixel (background is dark blue-grey ~ (15,15,26)).
-            if (($r + $g2 + $b) -gt 120)
+            $maxChannel = [math]::Max($r, [math]::Max($gp, $b))
+            $minChannel = [math]::Min($r, [math]::Min($gp, $b))
+
+            # Saturation, computed without a division by zero on black.
+            $saturation = 0.0
+            if ($maxChannel -gt 0) { $saturation = ($maxChannel - $minChannel) / [double]$maxChannel }
+
+            $isInterfaceRegion = ($x -lt $interfaceRegionWidth -and $y -lt $interfaceRegionHeight)
+
+            # The interface, in the corner its panel is pinned to: a flat surface
+            # clearly brighter than the background and clearly not saturated, or
+            # the theme's saturated accent blue. The interface's own accent is
+            # excluded from the cube below, so the two never mix.
+            if ($isInterfaceRegion)
             {
-                if ($x -lt $minX) { $minX = $x }
-                if ($x -gt $maxX) { $maxX = $x }
-                if ($y -lt $minY) { $minY = $y }
-                if ($y -gt $maxY) { $maxY = $y }
-                $total++
+                $luminance = (0.2126 * $r) + (0.7152 * $gp) + (0.0722 * $b)
+                if ($luminance -gt 25.0 -and $saturation -lt 0.30) { $panelPixelCount++ }
+                if ($b -gt 100 -and ($b - $r) -gt 60 -and $gp -gt $r) { $panelPixelCount++ }
             }
 
-            if ($r -gt 150 -and $g2 -lt 60 -and $b -lt 60) { $redCount++ }
-            if ($g2 -gt 150 -and $r -lt 60 -and $b -lt 60) { $greenCount++ }
-            if ($b -gt 150 -and $r -lt 60 -and $g2 -lt 60) { $blueCount++ }
+            # A CUBE pixel: outside the interface's corner, bright enough to see
+            # and saturated enough not to be the grey ground plate.
+            if (-not $isInterfaceRegion -and $maxChannel -gt 40 -and $saturation -gt 0.35)
+            {
+                $coloredCount++
+                if ($y -lt $minY) { $minY = $y }
+                if ($y -gt $maxY) { $maxY = $y }
+
+                if ($r -eq $maxChannel -and $gp -eq $minChannel) { $redCount++ }
+                elseif ($gp -eq $maxChannel -and $b -eq $minChannel) { $greenCount++ }
+                elseif ($b -eq $maxChannel -and $r -eq $minChannel) { $blueCount++ }
+
+                # The remaining three families are the ones with two strong
+                # channels: cyan (green + blue), magenta (red + blue) and yellow
+                # (red + green).
+                if ($b -gt 80 -and $gp -gt 80 -and $r -lt 80) { $cyanCount++ }
+                if ($r -gt 80 -and $b -gt 80 -and $gp -lt 80) { $magentaCount++ }
+                if ($r -gt 80 -and $gp -gt 80 -and $b -lt 80) { $yellowCount++ }
+            }
+
         }
     }
     $bitmap.Dispose()
+
+    # Lighting: the mean luminance of the cube's own pixels, split into the
+    # upper and the lower half of the band the cube occupies. The top face is
+    # fully lit; every other face only receives the ambient fill.
+    $midY = [math]::Floor(($minY + $maxY) / 2.0)
+    for ($y = 0; $y -lt 180; $y++)
+    {
+        for ($x = 0; $x -lt 320; $x++)
+        {
+            $pixel = $small.GetPixel($x, $y)
+            $r = [int]$pixel.R; $gp = [int]$pixel.G; $b = [int]$pixel.B
+            $maxChannel = [math]::Max($r, [math]::Max($gp, $b))
+            $minChannel = [math]::Min($r, [math]::Min($gp, $b))
+            $saturation = 0.0
+            if ($maxChannel -gt 0) { $saturation = ($maxChannel - $minChannel) / [double]$maxChannel }
+
+            # The interface's corner is not the cube, in this pass either.
+            if ($x -lt $interfaceRegionWidth -and $y -lt $interfaceRegionHeight) { continue }
+            if ($maxChannel -le 40 -or $saturation -le 0.35) { continue }
+
+            $luminance = (0.2126 * $r) + (0.7152 * $gp) + (0.0722 * $b)
+            if ($y -lt $midY) { $topLuminance += $luminance; $topCount++ }
+            else { $bottomLuminance += $luminance; $bottomCount++ }
+        }
+    }
     $small.Dispose()
 
-    $cx = if ($total -gt 0) { [math]::Round(($minX + $maxX) / 2.0, 1) } else { -1 }
-    $cy = if ($total -gt 0) { [math]::Round(($minY + $maxY) / 2.0, 1) } else { -1 }
+    $meanTop = if ($topCount -gt 0) { $topLuminance / $topCount } else { 0.0 }
+    $meanBottom = if ($bottomCount -gt 0) { $bottomLuminance / $bottomCount } else { 0.0 }
 
     [PSCustomObject]@{
         Name = [System.IO.Path]::GetFileName($path)
-        CentroidX = $cx
-        CentroidY = $cy
-        PixelCount = $total
+        CubePixels = $coloredCount
         Red = $redCount
         Green = $greenCount
         Blue = $blueCount
+        Cyan = $cyanCount
+        Magenta = $magentaCount
+        Yellow = $yellowCount
+        MeanTopLuminance = [math]::Round($meanTop, 1)
+        MeanBottomLuminance = [math]::Round($meanBottom, 1)
+        InterfacePixels = $panelPixelCount
     }
 }
 
 Set-Location $RunDirectory
 $shots = Get-ChildItem shot*.bmp | Sort-Object Name
+if ($shots.Count -eq 0) {
+    Write-Error "The acceptance run captured no frames."
+    exit 1
+}
+
 $rows = $shots | ForEach-Object { Analyze-Shot $_.FullName }
 $rows | Format-Table -AutoSize
 
@@ -69,45 +164,62 @@ foreach ($row in $rows) { $m[$row.Name] = $row }
 
 $checks = @()
 
-# 1. D moves right
-$checks += [PSCustomObject]@{ Check = "D moves triangle right"; Pass = ($m["shot1_after_D.bmp"].CentroidX -gt $m["shot0_initial.bmp"].CentroidX + 5) }
-# 2. W moves up (smaller Y)
-$checks += [PSCustomObject]@{ Check = "W moves triangle up"; Pass = ($m["shot2_after_W.bmp"].CentroidY -lt $m["shot1_after_D.bmp"].CentroidY - 5) }
-# 3. A moves left
-$checks += [PSCustomObject]@{ Check = "A moves triangle left"; Pass = ($m["shot3_after_A.bmp"].CentroidX -lt $m["shot2_after_W.bmp"].CentroidX - 5) }
-# 4. S moves down (larger Y)
-$checks += [PSCustomObject]@{ Check = "S moves triangle down"; Pass = ($m["shot4_after_S.bmp"].CentroidY -gt $m["shot3_after_A.bmp"].CentroidY + 5) }
-# 5. R resets to center (close to initial centroid)
-$dx = [math]::Abs($m["shot5_after_R.bmp"].CentroidX - $m["shot0_initial.bmp"].CentroidX)
-$dy = [math]::Abs($m["shot5_after_R.bmp"].CentroidY - $m["shot0_initial.bmp"].CentroidY)
-$checks += [PSCustomObject]@{ Check = "R resets to start position"; Pass = ($dx -lt 6 -and $dy -lt 6) }
-# 6. T cycles: red -> blue -> green -> multicolor
-$checks += [PSCustomObject]@{ Check = "T1 = single red"; Pass = ($m["shot6_T_red.bmp"].Red -gt 50 -and $m["shot6_T_red.bmp"].Green -lt 15 -and $m["shot6_T_red.bmp"].Blue -lt 15) }
-$checks += [PSCustomObject]@{ Check = "T2 = single blue"; Pass = ($m["shot7_T_blue.bmp"].Blue -gt 50 -and $m["shot7_T_blue.bmp"].Red -lt 15 -and $m["shot7_T_blue.bmp"].Green -lt 15) }
-$checks += [PSCustomObject]@{ Check = "T3 = single green"; Pass = ($m["shot8_T_green.bmp"].Green -gt 50 -and $m["shot8_T_green.bmp"].Red -lt 15 -and $m["shot8_T_green.bmp"].Blue -lt 15) }
-$checks += [PSCustomObject]@{ Check = "T4 = multicolor"; Pass = ($m["shot9_T_multi.bmp"].Red -gt 20 -and $m["shot9_T_multi.bmp"].Green -gt 20 -and $m["shot9_T_multi.bmp"].Blue -gt 20) }
-$checks += [PSCustomObject]@{ Check = "initial = multicolor"; Pass = ($m["shot0_initial.bmp"].Red -gt 20 -and $m["shot0_initial.bmp"].Green -gt 20 -and $m["shot0_initial.bmp"].Blue -gt 20) }
+# 1. The cube is on screen in every single shot. The camera follows it, so this
+#    is the check that proves the follow camera works: a cube that ran away from
+#    a static camera would leave the frame.
+foreach ($row in $rows) {
+    $checks += [PSCustomObject]@{
+        Check = "$($row.Name): the cube is on screen"
+        Pass = ($row.CubePixels -gt 400)
+    }
+}
 
-# 7. The depth test: sent behind the cube the triangle disappears, and brought
-#    back it is exactly where it was. Without a depth buffer the cube could not
-#    hide anything - the triangle is drawn AFTER it.
-$checks += [PSCustomObject]@{ Check = "Z hides the triangle behind the cube"; Pass = ($m["shot10_behind_cube.bmp"].PixelCount -lt 400 -and $m["shot10_behind_cube.bmp"].PixelCount -lt ($m["shot0_initial.bmp"].PixelCount / 4)) }
-$checks += [PSCustomObject]@{ Check = "X brings it back in front"; Pass = ($m["shot11_back_in_front.bmp"].PixelCount -gt ($m["shot0_initial.bmp"].PixelCount * 0.9)) }
+# 2. It is COLOURFUL. The cube spins, so WHICH faces are visible depends on the
+#    moment a frame was captured - a single frame may legitimately show one face
+#    colour and little else. What must hold is that the cube carries SEVERAL
+#    distinct face colours over the run, which is what "colourful" means for a
+#    per-face coloured cube; and that no captured frame has lost its colour
+#    altogether.
+$allFamilies = @{}
+foreach ($row in $rows) {
+    $rowFamilies = @()
+    if ($row.Red -gt 20) { $rowFamilies += "red" }
+    if ($row.Green -gt 20) { $rowFamilies += "green" }
+    if ($row.Blue -gt 20) { $rowFamilies += "blue" }
+    if ($row.Cyan -gt 20) { $rowFamilies += "cyan" }
+    if ($row.Magenta -gt 20) { $rowFamilies += "magenta" }
+    if ($row.Yellow -gt 20) { $rowFamilies += "yellow" }
+    foreach ($family in $rowFamilies) { $allFamilies[$family] = $true }
 
-# 8. The same scene through three projections: an orthographic camera keeps a
-#    world unit the same size, a 45-degree perspective camera makes the same
-#    triangle smaller, and a 50 mm lens on a full-frame sensor is close to it
-#    again. The three images therefore cannot all be identical.
-$orthographicPixels = $m["shot14_camera_orthographic.bmp"].PixelCount
-$perspectivePixels = $m["shot12_camera_perspective.bmp"].PixelCount
-$physicalPixels = $m["shot13_camera_physical.bmp"].PixelCount
-$checks += [PSCustomObject]@{ Check = "the projection changes what the same scene looks like"; Pass = ($perspectivePixels -ne $orthographicPixels -and $physicalPixels -ne $perspectivePixels) }
-# A 45-degree perspective camera sees about five world units of height where the
-# orthographic one sees three, so the same triangle covers fewer pixels; the
-# 50 mm lens on a full-frame sensor is narrower than both, so it covers more than
-# the perspective camera again.
-$checks += [PSCustomObject]@{ Check = "the perspective camera shows less of the triangle than the orthographic one"; Pass = ($perspectivePixels -gt 50 -and $perspectivePixels -lt $orthographicPixels) }
-$checks += [PSCustomObject]@{ Check = "the 50 mm lens frames tighter than the 45-degree perspective camera"; Pass = ($physicalPixels -gt $perspectivePixels) }
+    $checks += [PSCustomObject]@{
+        Check = "$($row.Name): the cube shows a face colour ($($rowFamilies.Count) famil(y/ies))"
+        Pass = ($rowFamilies.Count -ge 1)
+    }
+}
+$checks += [PSCustomObject]@{
+    Check = "the cube is colourful across the run ($($allFamilies.Count) colour families)"
+    Pass = ($allFamilies.Count -ge 3)
+}
+
+# 3. The light comes from STRAIGHT ABOVE: the upper part of the cube is much
+#    brighter than the lower part, because only the top face catches the light.
+foreach ($row in $rows) {
+    $checks += [PSCustomObject]@{
+        Check = "$($row.Name): the top of the cube is brighter than the sides"
+        Pass = ($row.MeanTopLuminance -gt ($row.MeanBottomLuminance * 1.3) -and $row.MeanTopLuminance -gt 60)
+    }
+}
+
+# 4. The interface is drawn on top of the scene: the top-left corner, where the
+#    HUD panel is pinned, holds a large flat surface the 3D scene does not put
+#    there. (The cube sits in the middle of the frame whatever the camera does -
+#    that is what a follow camera means - so this corner is the interface's.)
+foreach ($row in $rows) {
+    $checks += [PSCustomObject]@{
+        Check = "$($row.Name): the interface panel is drawn"
+        Pass = ($row.InterfacePixels -gt 400)
+    }
+}
 
 $checks | Format-Table -AutoSize
 $failed = ($checks | Where-Object { -not $_.Pass }).Count

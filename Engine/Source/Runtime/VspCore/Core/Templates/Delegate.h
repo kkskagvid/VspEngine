@@ -26,8 +26,9 @@ namespace Vsp
 	// -------------------------------------------------------------------------
 	// Single-cast delegate: binds exactly one function at a time, and binding a
 	// new function replaces the previous one. It supports a return value and is
-	// built on Callback, so class/struct return types must derive from
-	// Vsp::Object while fundamental types (int, double, ...) need no base class.
+	// built on Callback, so its return type carries the same single
+	// requirement: void, or a default-constructible type. Inheriting from
+	// Vsp::Object is allowed but never required.
 	//
 	//     UnicastDelegate<int(int)> Delegate;
 	//     Delegate.Bind([](int Value) { return Value * 2; });

@@ -3,9 +3,7 @@ using System.Numerics;
 namespace Assembly.Rendering
 {
 	/// <summary>
-	/// The meshes the demo draws: a colored triangle (the demo's "2D" content,
-	/// placed in 3D like everything else) and a cube, whose twelve triangles are
-	/// drawn from eight shared corners through an index buffer.
+	/// The meshes the demo draws.
 	///
 	/// A mesh here is just the two arrays a draw needs; the engine never sees a
 	/// mesh type, only buffers.
@@ -27,64 +25,50 @@ namespace Assembly.Rendering
 		public int TriangleCount => Indices.Length / 3;
 
 		/// <summary>
-		/// The demo triangle: three corners with distinct vertex colors, facing
-		/// +Z. Its vertices carry their own colors, which is what the multicolor
-		/// mode shows.
-		/// </summary>
-		public static DemoMesh CreateColoredTriangle()
-		{
-			DemoVertex[] vertices =
-			{
-				// bottom-left (red)     bottom-right (green)   top (blue)
-				new DemoVertex(new Vector3(-0.6f, -0.5f, 0.0f), new Vector3(0, 0, 1), new Vector4(1, 0, 0, 1), new Vector2(0.0f, 0.0f)),
-				new DemoVertex(new Vector3( 0.6f, -0.5f, 0.0f), new Vector3(0, 0, 1), new Vector4(0, 1, 0, 1), new Vector2(1.0f, 0.0f)),
-				new DemoVertex(new Vector3( 0.0f,  0.6f, 0.0f), new Vector3(0, 0, 1), new Vector4(0, 0, 1, 1), new Vector2(0.5f, 1.0f)),
-			};
-
-			return new DemoMesh(vertices, new uint[] { 0, 1, 2 });
-		}
-
-		/// <summary>
-		/// A unit cube centred on the origin, one corner color per face. Each
-		/// face keeps its own four corners (and its own normal), so the shape
-		/// reads as a solid instead of one smooth blob.
+		/// The demo's unit cube: centred on the origin, one SATURATED colour per
+		/// face so the shape reads as a solid and a spin about Y is unmistakable.
+		///
+		/// Each face keeps its own four corners and its own normal, so flat
+		/// shading gives every side a single tone instead of smearing one corner
+		/// colour into the next.
 		/// </summary>
 		public static DemoMesh CreateUnitCube()
 		{
 			DemoVertex[] vertices =
 			{
-				// +Z (front)                                   -Z (back)
-				Corner(-0.5f, -0.5f,  0.5f, 0, 0, 1, 0.8f, 0.8f, 0.9f),
-				Corner( 0.5f, -0.5f,  0.5f, 0, 0, 1, 0.8f, 0.8f, 0.9f),
-				Corner( 0.5f,  0.5f,  0.5f, 0, 0, 1, 0.8f, 0.8f, 0.9f),
-				Corner(-0.5f,  0.5f,  0.5f, 0, 0, 1, 0.8f, 0.8f, 0.9f),
+				// +Z (front) - red                                    -Z (back) - cyan
+				Corner(-0.5f, -0.5f,  0.5f, 0, 0, 1, 0.95f, 0.26f, 0.21f),
+				Corner( 0.5f, -0.5f,  0.5f, 0, 0, 1, 0.95f, 0.26f, 0.21f),
+				Corner( 0.5f,  0.5f,  0.5f, 0, 0, 1, 0.95f, 0.26f, 0.21f),
+				Corner(-0.5f,  0.5f,  0.5f, 0, 0, 1, 0.95f, 0.26f, 0.21f),
 
-				Corner(-0.5f, -0.5f, -0.5f, 0, 0, -1, 0.6f, 0.6f, 0.7f),
-				Corner(-0.5f,  0.5f, -0.5f, 0, 0, -1, 0.6f, 0.6f, 0.7f),
-				Corner( 0.5f,  0.5f, -0.5f, 0, 0, -1, 0.6f, 0.6f, 0.7f),
-				Corner( 0.5f, -0.5f, -0.5f, 0, 0, -1, 0.6f, 0.6f, 0.7f),
+				Corner(-0.5f, -0.5f, -0.5f, 0, 0, -1, 0.13f, 0.83f, 0.82f),
+				Corner(-0.5f,  0.5f, -0.5f, 0, 0, -1, 0.13f, 0.83f, 0.82f),
+				Corner( 0.5f,  0.5f, -0.5f, 0, 0, -1, 0.13f, 0.83f, 0.82f),
+				Corner( 0.5f, -0.5f, -0.5f, 0, 0, -1, 0.13f, 0.83f, 0.82f),
 
-				// +X (right)                                   -X (left)
-				Corner( 0.5f, -0.5f,  0.5f, 1, 0, 0, 0.7f, 0.7f, 0.8f),
-				Corner( 0.5f, -0.5f, -0.5f, 1, 0, 0, 0.7f, 0.7f, 0.8f),
-				Corner( 0.5f,  0.5f, -0.5f, 1, 0, 0, 0.7f, 0.7f, 0.8f),
-				Corner( 0.5f,  0.5f,  0.5f, 1, 0, 0, 0.7f, 0.7f, 0.8f),
+				// +X (right) - green                                  -X (left) - magenta
+				Corner( 0.5f, -0.5f,  0.5f, 1, 0, 0, 0.30f, 0.85f, 0.39f),
+				Corner( 0.5f, -0.5f, -0.5f, 1, 0, 0, 0.30f, 0.85f, 0.39f),
+				Corner( 0.5f,  0.5f, -0.5f, 1, 0, 0, 0.30f, 0.85f, 0.39f),
+				Corner( 0.5f,  0.5f,  0.5f, 1, 0, 0, 0.30f, 0.85f, 0.39f),
 
-				Corner(-0.5f, -0.5f, -0.5f, -1, 0, 0, 0.5f, 0.5f, 0.6f),
-				Corner(-0.5f, -0.5f,  0.5f, -1, 0, 0, 0.5f, 0.5f, 0.6f),
-				Corner(-0.5f,  0.5f,  0.5f, -1, 0, 0, 0.5f, 0.5f, 0.6f),
-				Corner(-0.5f,  0.5f, -0.5f, -1, 0, 0, 0.5f, 0.5f, 0.6f),
+				Corner(-0.5f, -0.5f, -0.5f, -1, 0, 0, 0.85f, 0.30f, 0.75f),
+				Corner(-0.5f, -0.5f,  0.5f, -1, 0, 0, 0.85f, 0.30f, 0.75f),
+				Corner(-0.5f,  0.5f,  0.5f, -1, 0, 0, 0.85f, 0.30f, 0.75f),
+				Corner(-0.5f,  0.5f, -0.5f, -1, 0, 0, 0.85f, 0.30f, 0.75f),
 
-				// +Y (top)                                     -Y (bottom)
-				Corner(-0.5f,  0.5f,  0.5f, 0, 1, 0, 0.9f, 0.9f, 1.0f),
-				Corner( 0.5f,  0.5f,  0.5f, 0, 1, 0, 0.9f, 0.9f, 1.0f),
-				Corner( 0.5f,  0.5f, -0.5f, 0, 1, 0, 0.9f, 0.9f, 1.0f),
-				Corner(-0.5f,  0.5f, -0.5f, 0, 1, 0, 0.9f, 0.9f, 1.0f),
+				// +Y (top) - yellow (the face the overhead light lands on)
+				// -Y (bottom) - blue
+				Corner(-0.5f,  0.5f,  0.5f, 0, 1, 0, 0.98f, 0.82f, 0.25f),
+				Corner( 0.5f,  0.5f,  0.5f, 0, 1, 0, 0.98f, 0.82f, 0.25f),
+				Corner( 0.5f,  0.5f, -0.5f, 0, 1, 0, 0.98f, 0.82f, 0.25f),
+				Corner(-0.5f,  0.5f, -0.5f, 0, 1, 0, 0.98f, 0.82f, 0.25f),
 
-				Corner(-0.5f, -0.5f, -0.5f, 0, -1, 0, 0.4f, 0.4f, 0.5f),
-				Corner( 0.5f, -0.5f, -0.5f, 0, -1, 0, 0.4f, 0.4f, 0.5f),
-				Corner( 0.5f, -0.5f,  0.5f, 0, -1, 0, 0.4f, 0.4f, 0.5f),
-				Corner(-0.5f, -0.5f,  0.5f, 0, -1, 0, 0.4f, 0.4f, 0.5f),
+				Corner(-0.5f, -0.5f, -0.5f, 0, -1, 0, 0.25f, 0.45f, 0.95f),
+				Corner( 0.5f, -0.5f, -0.5f, 0, -1, 0, 0.25f, 0.45f, 0.95f),
+				Corner( 0.5f, -0.5f,  0.5f, 0, -1, 0, 0.25f, 0.45f, 0.95f),
+				Corner(-0.5f, -0.5f,  0.5f, 0, -1, 0, 0.25f, 0.45f, 0.95f),
 			};
 
 			// Two triangles per face, wound counter-clockwise when seen from
@@ -106,13 +90,33 @@ namespace Assembly.Rendering
 			return new DemoMesh(vertices, indices);
 		}
 
+		/// <summary>
+		/// A flat square on the XZ plane with its normal pointing up. The demo
+		/// hangs it under the cube as a ground plate, which is what makes the
+		/// movement and the camera orbit legible: without a fixed reference the
+		/// cube would look stationary while the world slid past.
+		/// </summary>
+		public static DemoMesh CreateGroundPlane(float halfExtent)
+		{
+			Vector4 groundColor = new Vector4(0.30f, 0.33f, 0.38f, 1.0f);
+			DemoVertex[] vertices =
+			{
+				new DemoVertex(new Vector3(-halfExtent, 0.0f, -halfExtent), new Vector3(0, 1, 0), groundColor),
+				new DemoVertex(new Vector3(-halfExtent, 0.0f,  halfExtent), new Vector3(0, 1, 0), groundColor),
+				new DemoVertex(new Vector3( halfExtent, 0.0f,  halfExtent), new Vector3(0, 1, 0), groundColor),
+				new DemoVertex(new Vector3( halfExtent, 0.0f, -halfExtent), new Vector3(0, 1, 0), groundColor),
+			};
+
+			return new DemoMesh(vertices, new uint[] { 0, 1, 2, 0, 2, 3 });
+		}
+
 		private static DemoVertex Corner(
 			float x, float y, float z,
 			float normalX, float normalY, float normalZ,
 			float r, float g, float b)
 		{
 			return new DemoVertex(
-				new Vector3(x, y, z), new Vector3(normalX, normalY, normalZ), new Vector4(r, g, b, 1.0f), new Vector2(0.0f, 0.0f));
+				new Vector3(x, y, z), new Vector3(normalX, normalY, normalZ), new Vector4(r, g, b, 1.0f));
 		}
 	}
 }

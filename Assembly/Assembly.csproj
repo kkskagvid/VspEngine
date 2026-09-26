@@ -54,4 +54,19 @@
               ContinueOnError="true" />
     </Target>
 
+    <!--
+      The game owns its translation catalogs too. The engine reads
+      <executable directory>Locales<locale>.json, so the build stages them
+      next to the executable exactly like the compiled shaders.
+    -->
+    <Target Name="CopyGameLocales" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true'">
+        <ItemGroup>
+            <GameLocaleFiles Include="$(MSBuildProjectDirectory)\Locales\*.json" />
+        </ItemGroup>
+        <Copy SourceFiles="@(GameLocaleFiles)"
+              DestinationFolder="$(EngineIntermediateRoot)\Binaries\$(Configuration)_$(Platform)\Locales"
+              SkipUnchangedFiles="true"
+              ContinueOnError="true" />
+    </Target>
+
 </Project>

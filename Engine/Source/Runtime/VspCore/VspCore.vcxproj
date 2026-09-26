@@ -29,6 +29,16 @@
     <ClInclude Include="Classes\Transform.h" />
     <ClInclude Include="Common\NativeApi.h" />
     <ClInclude Include="Common\PlatformMisc.h" />
+    <ClInclude Include="Common\VsfoFormat.h" />
+    <ClInclude Include="Core\Diagnostics\ErrorHandling.h" />
+    <ClInclude Include="Core\Text\Font.h" />
+    <ClInclude Include="Core\Text\TextSystem.h" />
+    <ClInclude Include="Math\Mathf.h" />
+    <ClInclude Include="Math\Matrix4x4.h" />
+    <ClInclude Include="Math\Quaternion.h" />
+    <ClInclude Include="Math\Vector2.h" />
+    <ClInclude Include="Math\Vector3.h" />
+    <ClInclude Include="Math\Vector4.h" />
     <ClInclude Include="Platforms\Windows\WindowsWindow.h" />
     <ClInclude Include="Core\Application.h" />
     <ClInclude Include="Core\Core.h" />
@@ -97,6 +107,13 @@
     <ClCompile Include="Core\Templates\Allocator.cpp" />
     <ClCompile Include="Core\Window.cpp" />
     <ClCompile Include="Core\Events\EventDispatcher.cpp" />
+    <ClCompile Include="Core\Diagnostics\ErrorHandling.cpp" />
+    <ClCompile Include="Core\String\I18N.cpp" />
+    <ClCompile Include="Core\Text\Font.cpp" />
+    <ClCompile Include="Core\Text\TextSystem.cpp" />
+    <ClCompile Include="Math\Mathf.cpp" />
+    <ClCompile Include="Math\Matrix4x4.cpp" />
+    <ClCompile Include="Math\Quaternion.cpp" />
     <ClCompile Include="Platforms\Windows\DllMain.cpp" />
     <ClCompile Include="Common\PlatformMisc.cpp" />
     <ClCompile Include="Platforms\Windows\WindowsWindow.cpp" />
@@ -123,6 +140,9 @@
     <ClCompile Include="Graphics\Vulkan\VulkanRHI.cpp" />
     <ClCompile Include="Graphics\Vulkan\VulkanSwapChain.cpp" />
     <ClCompile Include="Graphics\Vulkan\VulkanRenderer2D.cpp" />
+    <ClCompile Include="Scripting\I18NExports.cpp" />
+    <ClCompile Include="Scripting\MathExports.cpp" />
+    <ClCompile Include="Scripting\TextExports.cpp" />
     <ClCompile Include="Scripting\NativeExports.cpp" />
     <ClCompile Include="Scripting\AssetExports.cpp" />
     <ClCompile Include="Scripting\CameraExports.cpp" />
@@ -230,13 +250,13 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;VSP_BUILD_DLL;_HAS_EXCEPTIONS=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;VSP_BUILD_DLL;_HAS_EXCEPTIONS=0;U_STATIC_IMPLEMENTATION;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <ExceptionHandling>false</ExceptionHandling>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>RuntimePCH.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(SolutionDir)Engine\Source;$(SolutionDir)Engine\Source\Runtime\VspCore;$(SolutionDir)Engine\Source\Runtime\VspCore\Common;$(SolutionDir)Engine\Source\Thirdparty\fmt\include;$(SolutionDir)Engine\Source\Thirdparty\glm;$(SolutionDir)Engine\Source\Thirdparty\Vulkan\Include;$(VULKAN_SDK)\Include;$(SolutionDir)Engine\Source\Thirdparty\FreeType2\freetype-2.14.3\include;$(SolutionDir)Engine\Source\Thirdparty\HarfBuzz\harfbuzz-14.2.0\src;$(SolutionDir)Engine\Source\Thirdparty\dotnet\runtime10.0.10\</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)Engine\Source;$(SolutionDir)Engine\Source\Runtime\VspCore;$(SolutionDir)Engine\Source\Runtime\VspCore\Common;$(SolutionDir)Engine\Source\Thirdparty\fmt\include;$(SolutionDir)Engine\Source\Thirdparty\glm;$(SolutionDir)Engine\Source\Thirdparty\Vulkan\Include;$(VULKAN_SDK)\Include;$(SolutionDir)Engine\Source\Thirdparty\FreeType2\freetype-2.14.3\include;$(SolutionDir)Engine\Source\Thirdparty\ICU\icu4c-77_1\include;$(SolutionDir)Engine\Source\Thirdparty\dotnet\runtime10.0.10\</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <LanguageStandard_C>stdc11</LanguageStandard_C>
       <CompileAs>CompileAsCpp</CompileAs>
@@ -245,8 +265,13 @@
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
-      <AdditionalLibraryDirectories>$(SolutionDir)Engine\Binaries\ICU\;$(SolutionDir)Engine\Binaries\mimalloc\;$(SolutionDir)Engine\Binaries\freetype;$(SolutionDir)Engine\Binaries\harfbuzz\;$(SolutionDir)Engine\Binaries\Vulkun</AdditionalLibraryDirectories>
-      <AdditionalDependencies>icu.lib;mimalloc.lib;freetype.lib;harfbuzz.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)Engine\Binaries\ICU\;$(SolutionDir)Engine\Binaries\mimalloc\;$(SolutionDir)Engine\Binaries\freetype;$(SolutionDir)Engine\Binaries\Vulkun</AdditionalLibraryDirectories>
+      <!-- The debug build links the DEBUG companions of the two static third-party
+           libraries the runtime uses: a release-built static library carries the
+           release CRT and its own _ITERATOR_DEBUG_LEVEL, which the linker refuses
+           to mix into a /MDd image. advapi32 supplies the registry calls ICU's
+           timezone probe makes. -->
+      <AdditionalDependencies>icud.lib;mimalloc.lib;freetyped.lib;advapi32.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -255,13 +280,13 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;VSP_BUILD_DLL;_HAS_EXCEPTIONS=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;VSP_BUILD_DLL;_HAS_EXCEPTIONS=0;U_STATIC_IMPLEMENTATION;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <ExceptionHandling>false</ExceptionHandling>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>RuntimePCH.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>$(SolutionDir)Engine\Source;$(SolutionDir)Engine\Source\Runtime\VspCore;$(SolutionDir)Engine\Source\Runtime\VspCore\Common;$(SolutionDir)Engine\Source\Thirdparty\fmt\include;$(SolutionDir)Engine\Source\Thirdparty\glm;$(SolutionDir)Engine\Source\Thirdparty\Vulkan\Include;$(VULKAN_SDK)\Include;$(SolutionDir)Engine\Source\Thirdparty\FreeType2\freetype-2.14.3\include;$(SolutionDir)Engine\Source\Thirdparty\HarfBuzz\harfbuzz-14.2.0\src;$(SolutionDir)Engine\Source\Thirdparty\dotnet\runtime10.0.10\</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)Engine\Source;$(SolutionDir)Engine\Source\Runtime\VspCore;$(SolutionDir)Engine\Source\Runtime\VspCore\Common;$(SolutionDir)Engine\Source\Thirdparty\fmt\include;$(SolutionDir)Engine\Source\Thirdparty\glm;$(SolutionDir)Engine\Source\Thirdparty\Vulkan\Include;$(VULKAN_SDK)\Include;$(SolutionDir)Engine\Source\Thirdparty\FreeType2\freetype-2.14.3\include;$(SolutionDir)Engine\Source\Thirdparty\ICU\icu4c-77_1\include;$(SolutionDir)Engine\Source\Thirdparty\dotnet\runtime10.0.10\</AdditionalIncludeDirectories>
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
       <LanguageStandard_C>stdc11</LanguageStandard_C>
       <Optimization>MaxSpeed</Optimization>
@@ -271,8 +296,8 @@
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
-      <AdditionalLibraryDirectories>$(SolutionDir)Engine\Binaries\ICU\;$(SolutionDir)Engine\Binaries\mimalloc\;$(SolutionDir)Engine\Binaries\freetype;$(SolutionDir)Engine\Binaries\harfbuzz\;$(SolutionDir)Engine\Binaries\Vulkun</AdditionalLibraryDirectories>
-      <AdditionalDependencies>icu.lib;mimalloc.lib;freetype.lib;harfbuzz.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)Engine\Binaries\ICU\;$(SolutionDir)Engine\Binaries\mimalloc\;$(SolutionDir)Engine\Binaries\freetype;$(SolutionDir)Engine\Binaries\Vulkun</AdditionalLibraryDirectories>
+      <AdditionalDependencies>icu.lib;mimalloc.lib;freetype.lib;advapi32.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

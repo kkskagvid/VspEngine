@@ -16,15 +16,23 @@ namespace Hlslcc
 	// [[vk::binding]] itself: the ENGINE decides where its resources live, and
 	// this is where that decision is applied to the compiled SPIR-V.
 	//
-	// The engine's set is descriptor set 0, and its bindings are numbered from 0
-	// by RESOURCE KIND, in this order:
+	// The engine's set is descriptor set 0, and each RESOURCE KIND has its own
+	// binding there (VspCore/Graphics/ShaderBindings.h):
 	//
-	//   uniform buffers -> sampled images -> samplers -> storage buffers ->
-	//   storage images -> combined image samplers
+	//   uniform buffers -> 0    sampled images -> 1    samplers -> 2
 	//
 	// so the engine's camera block lands on binding 0, the bindless texture array
 	// on binding 1 and the shared sampler on binding 2, whatever a shader calls
-	// them and in whatever order it declares them.
+	// them and in whatever order it declares them. A shader that declares no
+	// resource of some kind does NOT shift the kinds after it: a shader that only
+	// samples textures still reads them at binding 1. Kinds the engine does not
+	// number (storage buffers, storage images, combined image samplers) keep the
+	// binding the HLSL compiler gave them.
+	//
+	// More than one resource of one numbered kind is numbered on from that kind's
+	// binding, so a shader that declares two sampled images puts them at 1 and 2.
+	// The engine only ever provides one of each, which is what the runtime check
+	// on load is for.
 	//
 	// The numbering runs over the WHOLE PASS, not over one stage: the vertex and
 	// the fragment stage of a pass share one descriptor set, so a resource both

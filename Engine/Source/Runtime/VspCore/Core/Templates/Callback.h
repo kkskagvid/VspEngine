@@ -20,10 +20,11 @@ namespace Vsp
 	//     Callback<int(int)>  C2(&SomeFunction);
 	//     Callback<int()>     C3(&SomeObject, &ObjectType::GetValue);
 	//
-	// Constraint (TARGET): when the return type is a class/struct it MUST
-	// derive from Vsp::Object; void, fundamental types (int, double, bool, ...),
-	// enums and pointers need no base class. The check is enforced at compile
-	// time with a static_assert.
+	// The return type carries no inheritance requirement: void, fundamental
+	// types (int, double, bool, ...), enums, pointers and plain classes/structs
+	// are all accepted, whether or not they derive from Vsp::Object. The only
+	// requirement is that a non-void return type is default-constructible,
+	// because invoking an unbound callback has to produce a value.
 	//
 	// Every invoker is carved out of the callback's private Allocator (OS
 	// layout), so no C++ exceptions are involved anywhere in this class.
@@ -153,11 +154,11 @@ namespace Vsp
 	public:
 		using InvokerBaseType = CallbackDetail::InvokerBase<ReturnType, ArgumentTypes...>;
 
-		// TARGET: a class/struct return type must derive from Object; void,
-		// fundamental types, enums and pointers need no base class.
-		static_assert(std::is_void_v<ReturnType> || std::is_fundamental_v<ReturnType> ||
-			std::is_enum_v<ReturnType> || std::is_pointer_v<ReturnType> || std::is_base_of_v<Object, ReturnType>,
-			"Callback: a class/struct return type must inherit from Vsp::Object; fundamental types (int, double, ...) need no base class.");
+		// No inheritance requirement: the return type only has to be one the
+		// unbound-invocation fallback can produce, i.e. void or default
+		// constructible.
+		static_assert(std::is_void_v<ReturnType> || std::is_default_constructible_v<ReturnType>,
+			"Callback: a non-void return type must be default-constructible, because invoking an unbound callback produces a default-constructed value.");
 
 		// -------- Construction --------
 		Callback() {}

@@ -164,21 +164,19 @@ namespace Vsp
 		return s_bCrashPromptEnabled;
 	}
 
-	void Log::PresentCrashReport(const VspString& sFatalLine, const VspString& sHistoryText)
+	void Log::CollectCrashReport(const VspString& sReason, VspString& outReportText)
 	{
-		VspString sReport;
-		sReport.Append("A fatal error occurred and the engine will terminate.\n");
-		sReport.Append("========================================\n");
-		sReport.Append(sFatalLine);
-		sReport.Append("\n========================================\n");
-		sReport.Append("Collected log history:\n");
-		sReport.Append(sHistoryText);
-		sReport.Append("========================================\n");
+		VspString sHistoryText;
+		CollectHistory(sHistoryText);
 
-		// Prompt the user with the collected information, then crash.
-		PlatformMisc::ShowErrorPrompt("Vsp Engine - Fatal Error", sReport.GetData());
-
-		std::abort();
+		outReportText = nullptr;
+		outReportText.Append("A fatal error occurred and the engine will terminate.\n");
+		outReportText.Append("========================================\n");
+		outReportText.Append(sReason);
+		outReportText.Append("\n========================================\n");
+		outReportText.Append("Collected log history:\n");
+		outReportText.Append(sHistoryText);
+		outReportText.Append("========================================\n");
 	}
 
 	// =========================================================================
@@ -214,24 +212,16 @@ namespace Vsp
 			return;
 		}
 
-		// Fatal: collect the gathered information and prompt the crash.
-		VspString sHistoryText;
-		CollectHistory(sHistoryText);
+		// Fatal: the reason alone is not enough to debug, so the recent history
+		// travels with it. Terminating the process is ProcessFailedExit's job
+		// (Core/Diagnostics/ErrorHandling.h), not the log's.
+		VspString sReportText;
+		CollectCrashReport(sMessage, sReportText);
 		Flush();
 
-		if (s_bCrashPromptEnabled)
+		for (size_t nIndex = 0; nIndex < s_Backends.GetSize(); ++nIndex)
 		{
-			PresentCrashReport(sLine, sHistoryText);
-		}
-		else
-		{
-			// Prompts disabled (automation): report to the backends only.
-			const VspString sReportLine = VspFormat::Format(
-				"[FTL] Crash report follows (prompt disabled).\n{}", sHistoryText);
-			for (size_t nIndex = 0; nIndex < s_Backends.GetSize(); ++nIndex)
-			{
-				s_Backends[nIndex]->WriteLogEntry(eLevel, pTag, sReportLine);
-			}
+			s_Backends[nIndex]->WriteLogEntry(eLevel, pTag, sReportText);
 		}
 	}
 }

@@ -94,5 +94,8 @@
     <ClInclude Include="VsfoWriter.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="VsfoFormat.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

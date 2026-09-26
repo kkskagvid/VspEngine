@@ -1,6 +1,7 @@
 #include "RuntimePCH.h"
 
 #include <chrono>
+#include <cstdlib>
 
 #include "Core/Logging/Log.h"
 #include "Common/PlatformMisc.h"
@@ -174,6 +175,25 @@ namespace Vsp
 #endif
 	}
 
+	void PlatformMisc::PostWindowMouseMoveMessage(void* pWindowHandle, int32 nClientX, int32 nClientY)
+	{
+		if (pWindowHandle == nullptr)
+		{
+			return;
+		}
+
+#if VSP_PLATFORM_WINDOWS
+		// lParam carries the client coordinate as two 16-bit halves, which is
+		// what GET_X_LPARAM/GET_Y_LPARAM read back.
+		const LPARAM nPackedCoordinate =
+			MAKELPARAM(static_cast<WORD>(static_cast<SHORT>(nClientX)),
+				static_cast<WORD>(static_cast<SHORT>(nClientY)));
+		::PostMessageW(static_cast<HWND>(pWindowHandle), WM_MOUSEMOVE, 0, nPackedCoordinate);
+#else
+		LOG_ERROR(kLogTag, "PostWindowMouseMoveMessage is not implemented on this platform.");
+#endif
+	}
+
 	// -------------------------------------------------------------------------
 	// Debugger / user prompts
 	// -------------------------------------------------------------------------
@@ -201,6 +221,23 @@ namespace Vsp
 #else
 		LOG_ERROR(kLogTag, "{}: {}", pTitleUtf8 != nullptr ? pTitleUtf8 : "Error",
 			pMessageUtf8 != nullptr ? pMessageUtf8 : "");
+#endif
+	}
+
+	// -------------------------------------------------------------------------
+	// Process lifetime
+	// -------------------------------------------------------------------------
+
+	void PlatformMisc::TerminateProcess(int32 nExitCode)
+	{
+#if VSP_PLATFORM_WINDOWS
+		// ExitProcess (not ::TerminateProcess on our own handle) so the CRT and
+		// every loaded DLL still get their detach notification, which is what
+		// closes the log file cleanly.
+		::ExitProcess(static_cast<UINT>(nExitCode));
+#else
+		// Portable fallback: a normal, non-zero exit.
+		std::exit(static_cast<int>(nExitCode));
 #endif
 	}
 

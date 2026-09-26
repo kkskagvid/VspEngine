@@ -1,0 +1,61 @@
+// ---------------------------------------------------------------------------
+// UiQuad - the demo's interface shader (.vsf).
+//
+// Draws the flat interface: one textured, per-vertex coloured quad per shape,
+// with the texture's alpha used as coverage. Solid fills sample a 1x1 white
+// texture, glyphs sample the font's coverage atlas, and an icon would sample
+// its own texture - all through the same bindless slot the draw names in its
+// push constants.
+//
+// HLSLCC turns this file into
+//   UiQuad.vsfo                    the container the ENGINE loads
+//   UiQuad.vert.spv / .frag.spv    the modules, for a graphics debugger
+//   UiQuad.shader.json             the manifest, for tools
+//   UiQuad.reflection.json         the full reflection
+// ---------------------------------------------------------------------------
+
+Properties
+{
+    _Tint ("Tint", Color) = (1, 1, 1, 1)
+}
+
+Shader "Assembly/UiQuad"
+{
+    // A queue of its own: the interface is drawn after the scene, whatever the
+    // game's own geometry says about its queue.
+    Queue = "Overlay"
+
+    Pass
+    {
+        #pragma vertex UiPassVertex
+        #pragma fragment UiPassFragment
+
+        #include "UiQuadCommon.hlsl"
+
+        // -------------------------------------------------------------------
+        // Entry point: vertex stage
+        // -------------------------------------------------------------------
+        UiVertexOutput UiPassVertex(UiVertexInput input)
+        {
+            UiVertexOutput output;
+
+            // The position is already clip space; the depth is pinned to the
+            // near plane so the interface sits in front of everything the scene
+            // drew without disabling the depth test.
+            output.Position = float4(input.Position, 0.0f, 1.0f);
+            output.Uv = input.Uv;
+            output.Color = input.Color;
+            return output;
+        }
+
+        // -------------------------------------------------------------------
+        // Entry point: fragment stage
+        // -------------------------------------------------------------------
+        float4 UiPassFragment(UiFragmentInput input) : SV_Target0
+        {
+            float fCoverage = VspSampleTexture(PushConstants.TextureIndex, input.Uv).a;
+            float4 color = input.Color * PushConstants.TintColor;
+            return float4(color.rgb, color.a * fCoverage);
+        }
+    }
+}

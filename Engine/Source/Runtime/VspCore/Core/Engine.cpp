@@ -2,6 +2,7 @@
 
 #include "Classes/Scene.h"
 #include "Common/PlatformMisc.h"
+#include "Core/Diagnostics/ErrorHandling.h"
 #include "Core/Application.h"
 #include "Core/Engine.h"
 #include "Core/Input/InputManager.h"
@@ -34,8 +35,9 @@ namespace Vsp
 		int32 nWindowHeight = 0;
 		float fElapsedSeconds = 0.0f;
 
-		// Key-simulation bookkeeping (acceptance tests).
+		// Key- and mouse-simulation bookkeeping (acceptance tests).
 		size_t nNextKeyStepIndex = 0;
+		size_t nNextMouseStepIndex = 0;
 		uint32 uPendingKeyUpCode = 0;
 		uint32 uKeyUpDueMilliseconds = 0;
 
@@ -204,15 +206,23 @@ namespace Vsp
 			return false;
 		}
 
+		// Every instance the host created gets its OnInit and its OnStart; the
+		// first one is remembered as the primary because the frame-capture
+		// diagnostics report its transform.
 		m_pImpl->uPrimaryScriptInstanceId = scriptEngine.GetPrimaryScriptInstanceId();
 		for (uint32 uIndex = 0; uIndex < scriptEngine.GetScriptInstanceCount(); ++uIndex)
 		{
-			// Simple sequential walk: init + start every instance.
-			if (uIndex == 0)
+			const ScriptInstanceId uInstanceId = scriptEngine.GetScriptInstanceIdAt(uIndex);
+			if (uInstanceId == 0)
 			{
-				scriptEngine.CallScriptInit(m_pImpl->uPrimaryScriptInstanceId);
-				scriptEngine.CallScriptStart(m_pImpl->uPrimaryScriptInstanceId);
+				// A script that failed to be created is already reported; the
+				// engine keeps starting the others rather than dropping them.
+				VSP_LOG_ERROR(kLogTag, "Script instance {} could not be started.", uIndex);
+				continue;
 			}
+
+			scriptEngine.CallScriptInit(uInstanceId);
+			scriptEngine.CallScriptStart(uInstanceId);
 		}
 
 		// 4. Report what the renderer negotiated.
@@ -292,6 +302,22 @@ namespace Vsp
 					LOG_INFO(kLogTag, "Simulating key up 0x{:X} at {} ms.", m_pImpl->uPendingKeyUpCode, uElapsedMilliseconds);
 					PlatformMisc::PostWindowKeyMessage(pWindowHandle, m_pImpl->uPendingKeyUpCode, false);
 					m_pImpl->uPendingKeyUpCode = 0;
+				}
+
+				// Synthetic mouse movement: a pointer position per scheduled
+				// step, posted through the same window message a physical mouse
+				// produces, so the whole input path runs unchanged.
+				ArrayList<GameEngineConfig::MouseSimulationStep>& mouseSteps =
+					m_pImpl->Config.MouseSimulationSteps;
+				while (m_pImpl->nNextMouseStepIndex < mouseSteps.GetSize() &&
+					mouseSteps[m_pImpl->nNextMouseStepIndex].uStartMilliseconds <= uElapsedMilliseconds)
+				{
+					const GameEngineConfig::MouseSimulationStep& mouseStep =
+						mouseSteps[m_pImpl->nNextMouseStepIndex];
+					LOG_INFO(kLogTag, "Simulating mouse move to ({}, {}) at {} ms.",
+						mouseStep.nClientX, mouseStep.nClientY, uElapsedMilliseconds);
+					PlatformMisc::PostWindowMouseMoveMessage(pWindowHandle, mouseStep.nClientX, mouseStep.nClientY);
+					++m_pImpl->nNextMouseStepIndex;
 				}
 			}
 

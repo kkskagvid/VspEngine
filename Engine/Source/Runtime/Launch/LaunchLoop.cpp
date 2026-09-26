@@ -31,7 +31,9 @@ namespace Vsp
 		VspString sRuntimeConfigPath;            // defaults to <exe dir>\Launch.runtimeconfig.json
 		VspString sDotNetRootPath;               // defaults to <exe dir>\Binaries\dotnet\runtime\10.0.10
 		ArrayList<GameEngineConfig::KeySimulationStep> KeySimulationSteps;
+		ArrayList<GameEngineConfig::MouseSimulationStep> MouseSimulationSteps;
 		uint32 uKeyScriptCursorMilliseconds = 800;   // First synthetic key fires 800 ms in.
+		uint32 uMouseScriptCursorMilliseconds = 800; // First synthetic mouse move fires 800 ms in.
 		ArrayList<GameEngineConfig::FrameCapture> FrameCaptures;
 	};
 
@@ -55,6 +57,43 @@ namespace Vsp
 
 		outStep.uVirtualKeyCode = static_cast<uint32>(wcstoul(sKeyPart.ToWideText().GetData(), nullptr, 0));
 		outStep.uHoldMilliseconds = static_cast<uint32>(wcstoul(sDurationPart.ToWideText().GetData(), nullptr, 10));
+		return true;
+	}
+
+	// Parses "X:Y" or "X:Y:MS" into a synthetic mouse-move step (client
+	// coordinates, and optionally the elapsed-time offset it fires at).
+	static bool ParseMouseSimulationValue(const wchar_t* pValue, GameEngineConfig::MouseSimulationStep& outStep)
+	{
+		if (pValue == nullptr)
+		{
+			return false;
+		}
+
+		VspString sValue(pValue);
+		const size_t nXColonIndex = sValue.Find(":");
+		if (nXColonIndex == VspString::InvalidIndex)
+		{
+			return false;
+		}
+
+		const size_t nYColonIndex = sValue.Find(":", nXColonIndex + 1);
+		const size_t nYEndIndex = (nYColonIndex == VspString::InvalidIndex) ? sValue.GetByteLength() : nYColonIndex;
+
+		VspString sXPart = sValue.GetSubString(0, nXColonIndex);
+		VspString sYPart = sValue.GetSubString(nXColonIndex + 1, nYEndIndex - nXColonIndex - 1);
+
+		outStep.nClientX = static_cast<int32>(wcstol(sXPart.ToWideText().GetData(), nullptr, 10));
+		outStep.nClientY = static_cast<int32>(wcstol(sYPart.ToWideText().GetData(), nullptr, 10));
+
+		// The optional third field pins the step to an elapsed-time offset
+		// instead of the running cursor, which is how a test places a mouse move
+		// between two key presses.
+		if (nYColonIndex != VspString::InvalidIndex)
+		{
+			VspString sTimePart = sValue.GetSubString(nYColonIndex + 1, sValue.GetByteLength() - nYColonIndex - 1);
+			outStep.uStartMilliseconds = static_cast<uint32>(wcstoul(sTimePart.ToWideText().GetData(), nullptr, 10));
+			outStep.bHasExplicitStartTime = true;
+		}
 		return true;
 	}
 
@@ -203,7 +242,7 @@ namespace Vsp
 				sArgument.Equals("--title") || sArgument.Equals("--engine-assembly") ||
 				sArgument.Equals("--assembly") ||
 				sArgument.Equals("--runtime-config") || sArgument.Equals("--dotnet-root") ||
-				sArgument.Equals("--key") || sArgument.Equals("--capture");
+				sArgument.Equals("--key") || sArgument.Equals("--mouse") || sArgument.Equals("--capture");
 			if (bNeedsValue && nIndex + 1 < nArgumentCount)
 			{
 				const wchar_t* pValue = pArguments[nIndex + 1];
@@ -251,6 +290,19 @@ namespace Vsp
 						step.uStartMilliseconds = options.uKeyScriptCursorMilliseconds;
 						options.uKeyScriptCursorMilliseconds += step.uHoldMilliseconds + 300;
 						options.KeySimulationSteps.Add(step);
+					}
+				}
+				else if (sArgument.Equals("--mouse"))
+				{
+					GameEngineConfig::MouseSimulationStep mouseStep;
+					if (ParseMouseSimulationValue(pValue, mouseStep))
+					{
+						if (!mouseStep.bHasExplicitStartTime)
+						{
+							mouseStep.uStartMilliseconds = options.uMouseScriptCursorMilliseconds;
+							options.uMouseScriptCursorMilliseconds += 100;
+						}
+						options.MouseSimulationSteps.Add(mouseStep);
 					}
 				}
 				else if (sArgument.Equals("--capture"))
@@ -318,6 +370,7 @@ namespace Vsp
 		config.sRuntimeConfigPath = options.sRuntimeConfigPath;
 		config.sDotNetRootPath = options.sDotNetRootPath;
 		config.KeySimulationSteps = options.KeySimulationSteps;
+		config.MouseSimulationSteps = options.MouseSimulationSteps;
 		config.FrameCaptures = options.FrameCaptures;
 
 		GameEngine engine;

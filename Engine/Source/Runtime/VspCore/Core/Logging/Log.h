@@ -15,9 +15,14 @@ namespace Vsp
 	// replaceable: AddBackend / RemoveBackend / ClearBackends.
 	//
 	// The facade also keeps a bounded history of recent entries. When a Fatal
-	// entry is written, the history is collected into a crash report and a
-	// crash prompt is shown (unless prompts are disabled), after which the
-	// process aborts. The engine never throws.
+	// entry is written, the reason and the history are collected into a crash
+	// report and forwarded to every backend, so the log file says what happened
+	// and what led to it.
+	//
+	// Log does NOT terminate the process: killing the engine is the job of
+	// ProcessFailedExit (Core/Diagnostics/ErrorHandling.h), which writes the
+	// fatal entry, flushes, shows the crash prompt when prompts are enabled and
+	// then exits with a non-zero code. The engine never throws.
 	// -------------------------------------------------------------------------
 	class RUNTIME_API Log
 	{
@@ -39,13 +44,16 @@ namespace Vsp
 		static void SetCrashPromptEnabled(bool bEnabled);
 		static bool IsCrashPromptEnabled();
 
+		// Builds the crash report a fatal error is presented with: the reason
+		// followed by the collected log history. ProcessFailedExit uses it.
+		static void CollectCrashReport(const VspString& sReason, VspString& outReportText);
+
 		// -------- Writing --------
 		static void Write(LogLevel eLevel, const char* pTag, const VspString& sMessage);
 		static void Flush();
 
 	private:
 		static void AppendToHistory(const VspString& sLine);
-		static void PresentCrashReport(const VspString& sFatalLine, const VspString& sHistoryText);
 	};
 }
 

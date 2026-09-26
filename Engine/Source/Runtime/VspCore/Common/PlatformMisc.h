@@ -48,12 +48,24 @@ namespace Vsp
 		// the given native window handle.
 		static void PostWindowKeyMessage(void* pWindowHandle, uint32 uVirtualKeyCode, bool bKeyDown);
 
+		// Posts a synthetic mouse-move message that puts the pointer at the
+		// given CLIENT coordinate. The engine's mouse delta follows from
+		// successive positions, so posting a series of these moves a camera
+		// exactly as a physical mouse does.
+		static void PostWindowMouseMoveMessage(void* pWindowHandle, int32 nClientX, int32 nClientY);
+
 		// -------- Debugger / user prompts --------
 		static void WriteToDebugOutput(const char* pMessageUtf8);
 
 		// Shows a modal error prompt (crash report). The process is expected
 		// to terminate right after.
 		static void ShowErrorPrompt(const char* pTitleUtf8, const char* pMessageUtf8);
+
+		// -------- Process lifetime --------
+		// Ends the current process immediately with the given exit code. Only
+		// the fatal-error path (ProcessFailedExit) calls this: every other
+		// failure returns an empty value instead of killing the engine.
+		static void TerminateProcess(int32 nExitCode);
 
 		// -------- Time --------
 		// Milliseconds since the system started (used for log timestamps).

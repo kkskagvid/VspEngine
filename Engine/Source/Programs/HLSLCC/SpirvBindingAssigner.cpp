@@ -24,6 +24,40 @@ namespace Hlslcc
 		// Descriptor set every engine resource lives in.
 		constexpr uint32_t k_nEngineDescriptorSet = 0;
 
+		// Where each kind starts inside that set. The numbers MUST match
+		// VspCore/Graphics/ShaderBindings.h: the engine's set has ONE binding per
+		// kind, and a shader that happens to declare no resource of some kind
+		// must not shift the kinds that follow it. A shader that declares only a
+		// sampled image therefore still reads it at the engine's sampled-image
+		// binding instead of at binding 0.
+		struct KindBindingBase
+		{
+			ShaderResourceKind eKind;
+			uint32_t uBindingBase;
+		};
+
+		const KindBindingBase k_KindBindingBases[] =
+		{
+			{ ShaderResourceKind::UniformBuffer, 0 },   // k_nCameraUniformBuffer
+			{ ShaderResourceKind::SampledImage,  1 },   // k_nBindlessTextures
+			{ ShaderResourceKind::Sampler,       2 },   // k_nBindlessSampler
+		};
+		constexpr uint32_t k_nKindBindingBaseCount = sizeof(k_KindBindingBases) / sizeof(k_KindBindingBases[0]);
+
+		// The binding a kind starts at, or -1 when the engine does not number
+		// that kind at all (it then keeps the binding HLSL gave it).
+		int32_t GetKindBindingBase(ShaderResourceKind eKind)
+		{
+			for (uint32_t uBaseIndex = 0; uBaseIndex < k_nKindBindingBaseCount; ++uBaseIndex)
+			{
+				if (k_KindBindingBases[uBaseIndex].eKind == eKind)
+				{
+					return static_cast<int32_t>(k_KindBindingBases[uBaseIndex].uBindingBase);
+				}
+			}
+			return -1;
+		}
+
 		// One resource of the pass: what it is, what it is called and every place
 		// the module(s) describe it.
 		struct PassResource
@@ -121,9 +155,19 @@ namespace Hlslcc
 		}
 
 		// ---- Number them by kind, in the engine's order ----
-		uint32_t uNextBinding = 0;
+		// Every kind starts at the binding the engine reserves for it, so the
+		// numbers depend on WHICH KINDS a shader declares, never on HOW MANY
+		// resources of the other kinds it happens to use. Within one kind the
+		// resources keep declaration order.
 		for (uint32_t uKindIndex = 0; uKindIndex < k_nKindCount; ++uKindIndex)
 		{
+			const int32_t nBindingBase = GetKindBindingBase(k_eKindOrder[uKindIndex]);
+			if (nBindingBase < 0)
+			{
+				continue;   // A kind the engine does not number keeps its binding.
+			}
+
+			uint32_t uKindBinding = static_cast<uint32_t>(nBindingBase);
 			for (PassResource& passResource : passResources)
 			{
 				if (passResource.eKind != k_eKindOrder[uKindIndex])
@@ -131,8 +175,8 @@ namespace Hlslcc
 					continue;
 				}
 
-				passResource.uBinding = uNextBinding;
-				++uNextBinding;
+				passResource.uBinding = uKindBinding;
+				++uKindBinding;
 			}
 		}
 

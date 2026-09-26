@@ -1,0 +1,14 @@
+{
+    "locale": "en-US",
+    "entries":
+    {
+        "demo.title": "Vsp Engine - Lit Cube",
+        "demo.status": "cube ({0}, {1}, {2}) / spins {3} about Y",
+        "demo.button.spin": "clockwise",
+        "demo.button.reset": "Reset Cube",
+        "demo.button.camera": "Reset Camera",
+        "demo.hint": "W/A/S/D move  |  mouse orbits the camera  |  wheel zooms  |  T flips the spin  |  R resets   (yaw {0}, pitch {1})",
+        "demo.spin.clockwise": "clockwise",
+        "demo.spin.counterClockwise": "counter-clockwise"
+    }
+}
