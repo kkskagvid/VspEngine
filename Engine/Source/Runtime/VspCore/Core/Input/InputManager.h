@@ -25,12 +25,52 @@ namespace Vsp
 		static constexpr int32 k_nMouseButtonCount = 8;
 		static constexpr int32 k_nTypedCharacterQueueCapacity = 64;
 
+		// -----------------------------------------------------------------
+		// Cursor
+		// -----------------------------------------------------------------
+		// How the pointer behaves while the game is played. The engine owns the
+		// pointer's freedom of movement, which is what a camera the mouse turns
+		// needs: while the cursor is LOCKED the pointer is hidden and put back at
+		// the centre of the window after every frame, so what it reports is a
+		// movement of the HAND and never runs out of screen.
+		// -----------------------------------------------------------------
+		enum class CursorMode : uint32
+		{
+			// The ordinary pointer: visible, and free to leave the window.
+			Visible = 0,
+
+			// Visible, but held inside the window's client area.
+			Confined = 1,
+
+			// Hidden, and recentred after every frame: the mode a mouse look uses.
+			Locked = 2,
+		};
+
 		static InputManager& Get();
 
 		// Frame lifecycle: call BeginFrame before processing window messages
 		// and EndFrame after rendering.
 		void BeginFrame();
 		void EndFrame();
+
+		// -------- Cursor --------
+		// The window the pointer belongs to. The host sets it once, when the
+		// window exists; without one the cursor calls do nothing at all.
+		void SetCursorWindowHandle(void* pWindowHandle) { m_pCursorWindowHandle = pWindowHandle; }
+		void* GetCursorWindowHandle() const { return m_pCursorWindowHandle; }
+
+		CursorMode GetCursorMode() const { return m_eCursorMode; }
+		void SetCursorMode(CursorMode eCursorMode);
+
+		// True while the pointer is hidden and recentred every frame.
+		bool IsCursorLocked() const { return m_eCursorMode == CursorMode::Locked; }
+
+		// Whether a game may take the pointer at all. True for a player at the
+		// controls; a run that must leave the machine alone - an automated test on
+		// someone's desktop - turns it off, and a game asking for a locked cursor
+		// then keeps the ordinary one (which the engine says once, in the log).
+		bool IsCursorLockAllowed() const { return m_bIsCursorLockAllowed; }
+		void SetCursorLockAllowed(bool bIsCursorLockAllowed);
 
 		// Forwards engine events into the input state.
 		void OnEvent(Event& eEvent);
@@ -58,6 +98,12 @@ namespace Vsp
 
 	private:
 		InputManager() = default;
+
+		// Pushes the current mode onto the platform: the pointer's visibility and
+		// whether it is held inside the window. Called when the mode changes and
+		// again every frame, so a window that was in the background catches up by
+		// itself as soon as it is not.
+		void ApplyCursorMode();
 
 		void HandleKeyPressed(int32 nKeyCode, int32 nRepeatCount);
 		void HandleKeyReleased(int32 nKeyCode);
@@ -87,6 +133,28 @@ namespace Vsp
 		float m_fScrollX = 0.0f;
 		float m_fScrollY = 0.0f;
 		bool m_bHasMousePosition = false;
+
+		// Window the pointer belongs to, and how it is allowed to behave.
+		void* m_pCursorWindowHandle = nullptr;
+		CursorMode m_eCursorMode = CursorMode::Visible;
+
+		// Where the engine last put the pointer while the cursor was locked. A move
+		// that reports exactly this place is the engine's own recentring rather
+		// than a movement of the hand, and turns nothing.
+		float m_fCursorCentreX = 0.0f;
+		float m_fCursorCentreY = 0.0f;
+		bool m_bHasCursorCentre = false;
+
+		// What the pointer is doing right now, so the mode is only pushed onto the
+		// platform - and reported - when it actually changes.
+		bool m_bIsCursorLocked = false;
+
+		// Host policy: whether a game is allowed to take the pointer.
+		bool m_bIsCursorLockAllowed = true;
+
+		// True once the engine has explained that it kept the pointer because the
+		// run does not allow taking it, so the line is written once and not per frame.
+		bool m_bHasReportedLockRefusal = false;
 
 		// Ring buffer of typed Unicode code points.
 		uint32 m_TypedCharacterQueue[k_nTypedCharacterQueueCapacity] = {};

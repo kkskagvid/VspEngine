@@ -31,4 +31,19 @@
         <RootNamespace>VspEngine</RootNamespace>
     </PropertyGroup>
 
+    <!--
+      The engine owns runtime shaders too - the sky it paints into every frame -
+      and they are compiled into the same place a game's are: the run directory's
+      Shaders folder, which is the one folder the runtime loads shaders from. The
+      engine ships the shader; HLSLCC turns it into the container the engine reads.
+
+      The step is skipped (without failing the build) while HLSLCC.exe has not been
+      built yet, so the build works in any project order; the solution makes this
+      project depend on HLSLCC and the acceptance run compiles them explicitly.
+    -->
+    <Target Name="CompileEngineShaders" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true'">
+        <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\..\..\Tools\Build\CompileShaders.ps1&quot; -ShaderSourceDirectory &quot;$(MSBuildProjectDirectory)\..\..\..\Shaders\Runtime&quot; -OutputDirectory &quot;$(EngineIntermediateRoot)\Binaries\$(Configuration)_$(Platform)\Shaders&quot;"
+              ContinueOnError="true" />
+    </Target>
+
 </Project>

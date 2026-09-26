@@ -186,10 +186,17 @@ namespace Vsp
 			vertexAttributes[uAttributeIndex].offset = attribute.uByteOffset;
 		}
 
+		// A pipeline with neither a stride nor an attribute reads no vertex at all:
+		// the sky's fullscreen triangle takes its three corners from
+		// SV_VertexID, so its draw binds no vertex buffer. Declaring an unused
+		// binding for it would be a binding the driver has to be told about for
+		// nothing, so the pipeline declares one only when it has vertex input.
+		const bool bHasVertexInput = state.uVertexStride > 0 || state.uVertexAttributeCount > 0;
+
 		VkPipelineVertexInputStateCreateInfo vertexInputInfo = {};
 		vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-		vertexInputInfo.vertexBindingDescriptionCount = 1;
-		vertexInputInfo.pVertexBindingDescriptions = &vertexBinding;
+		vertexInputInfo.vertexBindingDescriptionCount = bHasVertexInput ? 1u : 0u;
+		vertexInputInfo.pVertexBindingDescriptions = bHasVertexInput ? &vertexBinding : nullptr;
 		vertexInputInfo.vertexAttributeDescriptionCount = state.uVertexAttributeCount;
 		vertexInputInfo.pVertexAttributeDescriptions = vertexAttributes;
 

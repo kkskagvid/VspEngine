@@ -1,6 +1,7 @@
 #include "RuntimePCH.h"
 
 #include "Classes/Scene.h"
+#include "Classes/Time.h"
 #include "Common/PlatformMisc.h"
 #include "Core/Diagnostics/ErrorHandling.h"
 #include "Core/Application.h"
@@ -10,8 +11,9 @@
 #include "Graphics/GraphicsSystem.h"
 #include "Graphics/RenderCore.h"
 #include "Graphics/Vulkan/VulkanRenderer2D.h"
-#include "Scripting/ScriptCore.h"
+#include "Physics/PhysicsWorld.h"
 #include "Scripting/ScriptEngine.h"
+#include "Scripting/ScriptTypes.h"
 
 namespace Vsp
 {
@@ -33,7 +35,6 @@ namespace Vsp
 		uint32 uPrimaryScriptInstanceId = 0;
 		int32 nWindowWidth = 0;
 		int32 nWindowHeight = 0;
-		float fElapsedSeconds = 0.0f;
 
 		// Key- and mouse-simulation bookkeeping (acceptance tests).
 		size_t nNextKeyStepIndex = 0;
@@ -74,23 +75,35 @@ namespace Vsp
 
 		void UpdateScripts()
 		{
-			ScriptEngine& scriptEngine = ScriptEngine::Get();
-			ScriptCore& scriptCore = ScriptCore::Get();
-
-			// Acceptance runs replace the wall clock with a fixed step so the
-			// whole run is reproducible; the wall-clock timer keeps ticking
-			// either way, so switching back needs no special handling.
-			const float fWallClockDeltaSeconds = TickFrameTimer();
-			const float fDeltaSeconds = (Config.fFixedDeltaSeconds > 0.0f)
-				? Config.fFixedDeltaSeconds
-				: fWallClockDeltaSeconds;
-			fElapsedSeconds += fDeltaSeconds;
-
-			scriptCore.SetDeltaTime(fDeltaSeconds);
-			scriptCore.SetElapsedTime(fElapsedSeconds);
+			// The clock is advanced FIRST, so everything that runs this frame -
+			// the scripts below, the render pipeline and the frame-rate readout -
+			// reads the same delta and the same elapsed time.
+			//
+			// The host measures; Classes/Time decides what the measurement means:
+			// a fixed step replaces it in an acceptance run (which is what makes
+			// the run reproducible), the stall guard clamps it, and the time
+			// scale turns it into engine time.
+			Time::Get().AdvanceFrame(TickFrameTimer());
 
 			// Drive every managed script instance (Unity-style OnUpdate).
-			scriptEngine.UpdateAllScripts();
+			ScriptEngine::Get().UpdateAllScripts();
+		}
+
+		// Advances the physics simulation by the frame's own delta time.
+		//
+		// The order inside a frame is what makes this a simulation rather than a
+		// replay: the scripts run FIRST, so a velocity or a force they set
+		// belongs to this frame's step, and the render flow runs LAST, so the
+		// frame draws where the bodies ended up. A game can take the step over
+		// (Physics.AutoSimulation = false) and call Physics.Step itself.
+		void UpdatePhysics()
+		{
+			if (!PhysicsWorld::Get().IsAutoSimulationEnabled())
+			{
+				return;
+			}
+
+			PhysicsWorld::Get().Step(Time::Get().GetDeltaTime());
 		}
 
 		// Runs the managed render pipeline: it builds the frame's draw list
@@ -134,6 +147,16 @@ namespace Vsp
 			m_pImpl->pRenderer.reset();
 		}
 
+		// The pointer is given back before anything else goes: a cursor left hidden
+		// or confined would follow the user out of the engine.
+		InputManager& inputManager = InputManager::Get();
+		inputManager.SetCursorMode(InputManager::CursorMode::Visible);
+		inputManager.SetCursorWindowHandle(nullptr);
+
+		// The physics world is a view over the scene, so it forgets what it
+		// gathered before the scene goes.
+		PhysicsWorld::Get().Clear();
+
 		// The scene owns every native object the managed handles addressed; the
 		// scripts are gone, so its tables go with them.
 		Scene::Get().Clear();
@@ -157,6 +180,21 @@ namespace Vsp
 
 		m_pImpl->Config = config;
 
+		// The frame clock is configured before the first frame runs: a fixed step
+		// is what makes an automated run reproducible, 0 keeps the wall clock.
+		Time& frameClock = Time::Get();
+		frameClock.ResetFrameClock();
+		frameClock.SetFixedDeltaSeconds(config.fFixedDeltaSeconds);
+		LOG_INFO(kLogTag, "Frame clock: {}.",
+			frameClock.IsFixedTimeStep() ? "fixed step, reproducible run" : "wall clock");
+
+		// The simulation is a view over the scene - it owns no objects of its own -
+		// so all there is to report here is how it will run.
+		LOG_INFO(kLogTag, "Physics world ready (gravity {} down, {} solver pass(es) per step, automatic step {}).",
+			PhysicsWorld::Get().GetGravity().fY,
+			PhysicsWorld::Get().GetSolverIterationCount(),
+			PhysicsWorld::Get().IsAutoSimulationEnabled() ? "on" : "off");
+
 		// The CoreCLR host needs DOTNET_ROOT pointing at the shipped runtime,
 		// so nethost/get_hostfxr_path and hostpolicy resolve from there.
 		PlatformMisc::SetEnvironmentVariableValue("DOTNET_ROOT", config.sDotNetRootPath);
@@ -173,6 +211,13 @@ namespace Vsp
 			return false;
 		}
 		m_pImpl->RefreshWindowSize();
+
+		// The input layer owns the pointer from here on: it is what hides it and
+		// puts it back at the centre of the window while a script has the cursor
+		// locked (see InputManager::CursorMode).
+		InputManager& cursorInput = InputManager::Get();
+		cursorInput.SetCursorWindowHandle(m_pImpl->pApplication->GetWindow()->GetNativeWindowHandle());
+		cursorInput.SetCursorLockAllowed(config.bAllowCursorLock);
 
 		// 2. Vulkan renderer (logs its own errors, including unsupported devices).
 		m_pImpl->pRenderer = std::make_unique<VulkanRenderer2D>();
@@ -252,8 +297,10 @@ namespace Vsp
 				break;
 			}
 
-			// 1. Window messages -> events -> input state.
-			InputManager::Get().BeginFrame();
+			// 1. The rendering system opens the frame: its command list starts empty
+			//    and the input state the frame reads begins here. Window messages
+			//    then flow into that state.
+			GraphicsSystem::Get().BeginFrame();
 			m_pImpl->pApplication->Update();
 
 			if (!m_pImpl->pApplication->IsRunning())
@@ -264,6 +311,7 @@ namespace Vsp
 			// 2. Scripts (C#) update, then the managed render flow builds
 			//    the frame's render commands.
 			m_pImpl->UpdateScripts();
+			m_pImpl->UpdatePhysics();
 			m_pImpl->RunRenderFlow();
 
 			// 2b. Synthetic key simulation (acceptance tests): post real window
@@ -272,8 +320,11 @@ namespace Vsp
 			{
 				void* pWindowHandle =
 					m_pImpl->pApplication->GetWindow()->GetNativeWindowHandle();
+				// The scheduled steps are placed on the ENGINE clock, which is
+				// the same clock the scripts read, so a reproducible run keeps
+				// its schedule on any machine.
 				const uint32 uElapsedMilliseconds =
-					static_cast<uint32>(m_pImpl->fElapsedSeconds * 1000.0f);
+					static_cast<uint32>(Time::Get().GetElapsedTime() * 1000.0f);
 
 				ArrayList<GameEngineConfig::KeySimulationStep>& steps =
 					m_pImpl->Config.KeySimulationSteps;
@@ -349,8 +400,8 @@ namespace Vsp
 
 					LOG_INFO(kLogTag, "Capture at frame {}: script position={:p}, deltaTime={}, elapsed={} ms.",
 						m_pImpl->uFrameCount, Position2D{ fPositionX, fPositionY },
-						ScriptCore::Get().GetDeltaTime(),
-						static_cast<uint32>(m_pImpl->fElapsedSeconds * 1000.0f));
+						Time::Get().GetDeltaTime(),
+						static_cast<uint32>(Time::Get().GetElapsedTime() * 1000.0f));
 
 					if (!m_pImpl->pRenderer->CaptureFramebuffer(capture.sFilePath))
 					{
@@ -373,8 +424,10 @@ namespace Vsp
 					static_cast<uint32>(m_pImpl->nWindowHeight));
 			}
 
-			// 5. Frame bookkeeping.
-			InputManager::Get().EndFrame();
+			// 5. Frame bookkeeping: the rendering system closes the frame, which is
+			//    what clears the input edges and the mouse movement the frame
+			//    accumulated.
+			GraphicsSystem::Get().EndFrame();
 			++m_pImpl->uFrameCount;
 		}
 

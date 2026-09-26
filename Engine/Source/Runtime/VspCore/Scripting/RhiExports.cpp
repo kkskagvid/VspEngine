@@ -157,11 +157,10 @@ CSHARP_EXPORT void VspRhi_DestroyPipeline(uint32 uPipeline)
 }
 
 // -------- Frame recording (the command list of one frame) --------
-
-CSHARP_EXPORT void VspRhi_BeginFrame()
-{
-	Vsp::RenderCore::Get().BeginFrame();
-}
+// The frame itself is opened and closed by the rendering system
+// (GraphicsSystem::BeginFrame/EndFrame), which the host drives once per frame, so
+// the managed side only ever CLOSES the frame it was given - and only through
+// Submit(), which is what tells the backend the command list is complete.
 
 CSHARP_EXPORT void VspRhi_EndFrame()
 {

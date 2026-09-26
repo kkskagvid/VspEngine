@@ -36,6 +36,12 @@ namespace Vsp
 		// 0 = run until the window closes; > 0 = exit after N frames (smoke tests).
 		uint32 uMaxFrameCount = 0;
 
+		// Whether a game may hide the pointer and hold it at the centre of the
+		// window (InputManager::CursorMode::Locked). False makes the run leave the
+		// user's pointer alone, which is what an automated run on someone's desktop
+		// wants; the game is told why in the log.
+		bool bAllowCursorLock = true;
+
 		// 0 = advance the frame clock with the wall clock. A positive value
 		// advances it by exactly this many seconds every frame instead, which
 		// makes an automated run independent of how fast the machine renders:

@@ -65,18 +65,38 @@ namespace VspEngine.Rendering
 		}
 
 		/// <summary>
-		/// Runs one frame: gather the draw list, open the frame, let the active
-		/// pipeline record it and close it if the pipeline did not.
+		/// Runs one frame. The ENGINE frames it - it gathers the draw list, hands the
+		/// frame its camera, opens its render pass and paints the sky into it - and the
+		/// active pipeline records its own passes inside that frame. A frame nobody
+		/// installed a pipeline for is still a frame: it shows the engine's sky.
 		/// </summary>
 		public static void Render()
 		{
 			GatherDrawItems();
 			renderContext.BeginFrame(frameDrawItems, RhiApi.VspRhi_GetBackbufferWidth(), RhiApi.VspRhi_GetBackbufferHeight());
 
-			// Every frame is a fresh command list in the wrapped graphics API.
-			RhiApi.VspRhi_BeginFrame();
-
 			RenderPipeline? pipeline = ActivePipeline;
+			CommandBuffer commandBuffer = renderContext.CommandBuffer;
+
+			// The camera the frame is looked at with. Asking a pipeline for it is what
+			// lets it build its resources before its first pass runs, so the very first
+			// frame already has a camera and a sky.
+			Camera? frameCamera = pipeline?.Camera;
+			if (frameCamera != null)
+			{
+				commandBuffer.SetCamera(frameCamera);
+			}
+
+			// The frame's render pass belongs to the frame, not to a pass of the game:
+			// it is opened here, cleared to the colour the game set, and the engine's
+			// sky is painted into it before the first thing the game draws - so the sky
+			// is behind everything, whatever the pipeline does.
+			commandBuffer.BeginRenderPass(RenderSettings.BackgroundColor);
+			if (frameCamera != null)
+			{
+				SkyboxRenderer.DrawSky(commandBuffer);
+			}
+
 			if (pipeline != null)
 			{
 				try
@@ -86,13 +106,15 @@ namespace VspEngine.Rendering
 				catch (Exception exception)
 				{
 					// A broken pipeline must not tear the process down: report the
-					// failure and let the frame close with whatever was recorded.
+					// failure and close the frame with whatever was recorded.
 					Debug.LogError("RenderPipeline: " + exception.Message);
 				}
 			}
 
-			// Without a pipeline (or after one failed) the frame closes empty and
-			// the window keeps showing the cleared background.
+			// ... and it is closed here, so a pass that forgot to is still inside a
+			// complete frame rather than one the backend refuses.
+			commandBuffer.EndRenderPass();
+
 			renderContext.Submit();
 		}
 
@@ -104,6 +126,7 @@ namespace VspEngine.Rendering
 		{
 			activePipeline?.Dispose();
 			activePipeline = null;
+			SkyboxRenderer.ReleaseResources();
 			frameDrawItems.Clear();
 		}
 

@@ -1,10 +1,12 @@
 #pragma once
 
 #include "Classes/Camera.h"
+#include "Classes/Collider.h"
 #include "Classes/Component.h"
 #include "Classes/GameObject.h"
 #include "Classes/Material.h"
 #include "Classes/Object.h"
+#include "Classes/Rigidbody.h"
 #include "Classes/Shader.h"
 #include "Classes/Transform.h"
 #include "Core/Core.h"
@@ -94,6 +96,37 @@ namespace Vsp
 		uint32 GetLiveCameraCount() const;
 		NativeObjectHandle GetLiveCameraHandle(uint32 uLiveCameraIndex) const;
 
+		// -------- Physics --------
+		// Creates a rigidbody on a game object: the object's transform becomes the
+		// place the simulation moves. Returns the body handle (0 on failure).
+		NativeObjectHandle CreateRigidbody(NativeObjectHandle uGameObjectHandle);
+
+		// Releases one rigidbody. Returns false when the handle does not address
+		// a live body.
+		bool DestroyRigidbody(NativeObjectHandle uRigidbodyHandle);
+
+		Rigidbody* FindRigidbody(NativeObjectHandle uRigidbodyHandle);
+		const Rigidbody* FindRigidbody(NativeObjectHandle uRigidbodyHandle) const;
+
+		// Creates a collider on a game object, which is the shape the physics
+		// simulation tests against everything else. Returns the collider handle
+		// (0 on failure).
+		NativeObjectHandle CreateCollider(NativeObjectHandle uGameObjectHandle);
+
+		// Releases one collider. Returns false when the handle does not address a
+		// live collider.
+		bool DestroyCollider(NativeObjectHandle uColliderHandle);
+
+		Collider* FindCollider(NativeObjectHandle uColliderHandle);
+		const Collider* FindCollider(NativeObjectHandle uColliderHandle) const;
+
+		// Rigidbodies and colliders of the scene, in table order: what a physics
+		// step walks. The index is a position in the live walk, not a slot index.
+		uint32 GetLiveRigidbodyCount() const;
+		NativeObjectHandle GetLiveRigidbodyHandle(uint32 uLiveRigidbodyIndex) const;
+		uint32 GetLiveColliderCount() const;
+		NativeObjectHandle GetLiveColliderHandle(uint32 uLiveColliderIndex) const;
+
 		// -------- Shaders --------
 		// Creates an empty shader the ShaderLibrary fills in while it loads.
 		NativeObjectHandle CreateShader(const VspString& sShaderName);
@@ -158,12 +191,18 @@ namespace Vsp
 
 		bool IsActiveGameObject(NativeObjectHandle uGameObjectHandle) const;
 
+		// Releases every collider and rigidbody the given game object owns;
+		// called while the object itself is being destroyed.
+		void DestroyOwnedPhysicsObjects(NativeObjectHandle uGameObjectHandle);
+
 		ArrayList<GameObject> m_GameObjects;
 		ArrayList<Transform> m_Transforms;
 		ArrayList<Component> m_Components;
 		ArrayList<Shader> m_Shaders;
 		ArrayList<Material> m_Materials;
 		ArrayList<Camera> m_Cameras;
+		ArrayList<Rigidbody> m_Rigidbodies;
+		ArrayList<Collider> m_Colliders;
 
 		// Returned by GetObjectName for handles that do not resolve.
 		VspString m_sEmptyName;

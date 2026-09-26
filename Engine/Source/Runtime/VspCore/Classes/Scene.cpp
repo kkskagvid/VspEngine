@@ -99,6 +99,8 @@ namespace Vsp
 		m_Shaders.Clear();
 		m_Materials.Clear();
 		m_Cameras.Clear();
+		m_Rigidbodies.Clear();
+		m_Colliders.Clear();
 	}
 
 	// -------------------------------------------------------------------------
@@ -142,6 +144,11 @@ namespace Vsp
 		{
 			DestroyComponent(componentHandles[nComponentIndex]);
 		}
+
+		// The physics objects the object owns go with it. Leaving them behind
+		// would keep an invisible shape in the simulation and, worse, keep a
+		// rigidbody driving a transform that no longer exists.
+		DestroyOwnedPhysicsObjects(uGameObjectHandle);
 
 		const NativeObjectHandle uTransformHandle = pGameObject->GetTransformHandle();
 		pGameObject->ResetSceneLinks();
@@ -329,6 +336,179 @@ namespace Vsp
 	}
 
 	// -------------------------------------------------------------------------
+	// Physics
+	// -------------------------------------------------------------------------
+
+	NativeObjectHandle Scene::CreateRigidbody(NativeObjectHandle uGameObjectHandle)
+	{
+		GameObject* pGameObject = FindGameObject(uGameObjectHandle);
+		if (pGameObject == nullptr)
+		{
+			LOG_ERROR(kLogTag, "Cannot create a rigidbody for the unknown game object handle {}.",
+				static_cast<uint32>(uGameObjectHandle));
+			return k_nInvalidObjectHandle;
+		}
+
+		Rigidbody* pRigidbody = AcquireObjectSlot(NativeObjectKind::Rigidbody, m_Rigidbodies, pGameObject->GetName());
+		if (pRigidbody == nullptr)
+		{
+			LOG_ERROR(kLogTag, "Failed to acquire a rigidbody slot.");
+			return k_nInvalidObjectHandle;
+		}
+
+		pRigidbody->SetOwnerGameObjectHandle(uGameObjectHandle);
+		return pRigidbody->GetHandle();
+	}
+
+	bool Scene::DestroyRigidbody(NativeObjectHandle uRigidbodyHandle)
+	{
+		Rigidbody* pRigidbody = FindRigidbody(uRigidbodyHandle);
+		if (pRigidbody == nullptr)
+		{
+			return false;
+		}
+
+		pRigidbody->SetOwnerGameObjectHandle(k_nInvalidObjectHandle);
+		ReleaseObjectSlot(m_Rigidbodies, GetObjectHandleSlotIndex(uRigidbodyHandle));
+		return true;
+	}
+
+	Rigidbody* Scene::FindRigidbody(NativeObjectHandle uRigidbodyHandle)
+	{
+		return ResolveHandle(m_Rigidbodies, uRigidbodyHandle, NativeObjectKind::Rigidbody);
+	}
+
+	const Rigidbody* Scene::FindRigidbody(NativeObjectHandle uRigidbodyHandle) const
+	{
+		return ResolveHandle(m_Rigidbodies, uRigidbodyHandle, NativeObjectKind::Rigidbody);
+	}
+
+	NativeObjectHandle Scene::CreateCollider(NativeObjectHandle uGameObjectHandle)
+	{
+		GameObject* pGameObject = FindGameObject(uGameObjectHandle);
+		if (pGameObject == nullptr)
+		{
+			LOG_ERROR(kLogTag, "Cannot create a collider for the unknown game object handle {}.",
+				static_cast<uint32>(uGameObjectHandle));
+			return k_nInvalidObjectHandle;
+		}
+
+		Collider* pCollider = AcquireObjectSlot(NativeObjectKind::Collider, m_Colliders, pGameObject->GetName());
+		if (pCollider == nullptr)
+		{
+			LOG_ERROR(kLogTag, "Failed to acquire a collider slot.");
+			return k_nInvalidObjectHandle;
+		}
+
+		pCollider->SetOwnerGameObjectHandle(uGameObjectHandle);
+		return pCollider->GetHandle();
+	}
+
+	bool Scene::DestroyCollider(NativeObjectHandle uColliderHandle)
+	{
+		Collider* pCollider = FindCollider(uColliderHandle);
+		if (pCollider == nullptr)
+		{
+			return false;
+		}
+
+		pCollider->SetOwnerGameObjectHandle(k_nInvalidObjectHandle);
+		ReleaseObjectSlot(m_Colliders, GetObjectHandleSlotIndex(uColliderHandle));
+		return true;
+	}
+
+	Collider* Scene::FindCollider(NativeObjectHandle uColliderHandle)
+	{
+		return ResolveHandle(m_Colliders, uColliderHandle, NativeObjectKind::Collider);
+	}
+
+	const Collider* Scene::FindCollider(NativeObjectHandle uColliderHandle) const
+	{
+		return ResolveHandle(m_Colliders, uColliderHandle, NativeObjectKind::Collider);
+	}
+
+	void Scene::DestroyOwnedPhysicsObjects(NativeObjectHandle uGameObjectHandle)
+	{
+		for (size_t nSlotIndex = 0; nSlotIndex < m_Colliders.GetSize(); ++nSlotIndex)
+		{
+			if (m_Colliders[nSlotIndex].IsValid() &&
+				m_Colliders[nSlotIndex].GetOwnerGameObjectHandle() == uGameObjectHandle)
+			{
+				m_Colliders[nSlotIndex].SetOwnerGameObjectHandle(k_nInvalidObjectHandle);
+				ReleaseObjectSlot(m_Colliders, static_cast<uint32>(nSlotIndex));
+			}
+		}
+
+		for (size_t nSlotIndex = 0; nSlotIndex < m_Rigidbodies.GetSize(); ++nSlotIndex)
+		{
+			if (m_Rigidbodies[nSlotIndex].IsValid() &&
+				m_Rigidbodies[nSlotIndex].GetOwnerGameObjectHandle() == uGameObjectHandle)
+			{
+				m_Rigidbodies[nSlotIndex].SetOwnerGameObjectHandle(k_nInvalidObjectHandle);
+				ReleaseObjectSlot(m_Rigidbodies, static_cast<uint32>(nSlotIndex));
+			}
+		}
+	}
+
+	uint32 Scene::GetLiveRigidbodyCount() const
+	{
+		uint32 uLiveCount = 0;
+		for (size_t nSlotIndex = 0; nSlotIndex < m_Rigidbodies.GetSize(); ++nSlotIndex)
+		{
+			uLiveCount += m_Rigidbodies[nSlotIndex].IsValid() ? 1u : 0u;
+		}
+		return uLiveCount;
+	}
+
+	NativeObjectHandle Scene::GetLiveRigidbodyHandle(uint32 uLiveRigidbodyIndex) const
+	{
+		uint32 uLiveIndex = 0;
+		for (size_t nSlotIndex = 0; nSlotIndex < m_Rigidbodies.GetSize(); ++nSlotIndex)
+		{
+			if (!m_Rigidbodies[nSlotIndex].IsValid())
+			{
+				continue;
+			}
+
+			if (uLiveIndex == uLiveRigidbodyIndex)
+			{
+				return m_Rigidbodies[nSlotIndex].GetHandle();
+			}
+			++uLiveIndex;
+		}
+		return k_nInvalidObjectHandle;
+	}
+
+	uint32 Scene::GetLiveColliderCount() const
+	{
+		uint32 uLiveCount = 0;
+		for (size_t nSlotIndex = 0; nSlotIndex < m_Colliders.GetSize(); ++nSlotIndex)
+		{
+			uLiveCount += m_Colliders[nSlotIndex].IsValid() ? 1u : 0u;
+		}
+		return uLiveCount;
+	}
+
+	NativeObjectHandle Scene::GetLiveColliderHandle(uint32 uLiveColliderIndex) const
+	{
+		uint32 uLiveIndex = 0;
+		for (size_t nSlotIndex = 0; nSlotIndex < m_Colliders.GetSize(); ++nSlotIndex)
+		{
+			if (!m_Colliders[nSlotIndex].IsValid())
+			{
+				continue;
+			}
+
+			if (uLiveIndex == uLiveColliderIndex)
+			{
+				return m_Colliders[nSlotIndex].GetHandle();
+			}
+			++uLiveIndex;
+		}
+		return k_nInvalidObjectHandle;
+	}
+
+	// -------------------------------------------------------------------------
 	// Shaders
 	// -------------------------------------------------------------------------
 
@@ -416,6 +596,8 @@ namespace Vsp
 		case NativeObjectKind::Component:  return FindComponent(uHandle) != nullptr;
 		case NativeObjectKind::Shader:     return FindShader(uHandle) != nullptr;
 		case NativeObjectKind::Material:   return FindMaterial(uHandle) != nullptr;
+		case NativeObjectKind::Rigidbody:  return FindRigidbody(uHandle) != nullptr;
+		case NativeObjectKind::Collider:   return FindCollider(uHandle) != nullptr;
 		default:                           return false;
 		}
 	}
@@ -449,6 +631,16 @@ namespace Vsp
 			const Material* pMaterial = FindMaterial(uHandle);
 			return pMaterial != nullptr ? pMaterial->GetName() : m_sEmptyName;
 		}
+		case NativeObjectKind::Rigidbody:
+		{
+			const Rigidbody* pRigidbody = FindRigidbody(uHandle);
+			return pRigidbody != nullptr ? pRigidbody->GetName() : m_sEmptyName;
+		}
+		case NativeObjectKind::Collider:
+		{
+			const Collider* pCollider = FindCollider(uHandle);
+			return pCollider != nullptr ? pCollider->GetName() : m_sEmptyName;
+		}
 		default:
 			return m_sEmptyName;
 		}
@@ -464,6 +656,8 @@ namespace Vsp
 		case NativeObjectKind::Component:  pObject = FindComponent(uHandle); break;
 		case NativeObjectKind::Shader:     pObject = FindShader(uHandle); break;
 		case NativeObjectKind::Material:   pObject = FindMaterial(uHandle); break;
+		case NativeObjectKind::Rigidbody:  pObject = FindRigidbody(uHandle); break;
+		case NativeObjectKind::Collider:   pObject = FindCollider(uHandle); break;
 		default: break;
 		}
 

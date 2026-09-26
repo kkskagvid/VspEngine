@@ -54,12 +54,45 @@ namespace VspEngine
 		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
 		internal static extern float VspInput_GetScrollY();
 
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern int VspInput_GetCursorMode();
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspInput_SetCursorMode(int cursorMode);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern int VspInput_IsCursorLocked();
+
 		// ---- Time ----
 		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
 		internal static extern float VspTime_GetDeltaTime();
 
 		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern float VspTime_GetUnscaledDeltaTime();
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
 		internal static extern float VspTime_GetElapsedTime();
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern float VspTime_GetUnscaledElapsedTime();
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern long VspTime_GetFrameCount();
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern float VspTime_GetFramesPerSecond();
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern float VspTime_GetTimeScale();
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspTime_SetTimeScale(float timeScale);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern int VspTime_IsFixedTimeStep();
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern float VspTime_GetFixedDeltaTime();
 
 		// ---- Scene objects (the data behind Object / GameObject / Transform / Component) ----
 		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
@@ -281,6 +314,203 @@ namespace VspEngine
 
 		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
 		internal static extern uint VspScene_GetCameraHandle(uint cameraIndex);
+
+		// ---- Rigidbodies (the motion of a game object) ----
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern uint VspRigidbody_Create(uint gameObjectHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern int VspRigidbody_Destroy(uint rigidbodyHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern uint VspRigidbody_GetGameObject(uint rigidbodyHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern float VspRigidbody_GetMass(uint rigidbodyHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspRigidbody_SetMass(uint rigidbodyHandle, float mass);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern float VspRigidbody_GetInverseMass(uint rigidbodyHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern int VspRigidbody_IsKinematic(uint rigidbodyHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspRigidbody_SetKinematic(uint rigidbodyHandle, int isKinematic);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern int VspRigidbody_GetUseGravity(uint rigidbodyHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspRigidbody_SetUseGravity(uint rigidbodyHandle, int useGravity);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern float VspRigidbody_GetGravityScale(uint rigidbodyHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspRigidbody_SetGravityScale(uint rigidbodyHandle, float gravityScale);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspRigidbody_GetVelocity(uint rigidbodyHandle, [Out] float[] outXyz);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspRigidbody_SetVelocity(uint rigidbodyHandle, float velocityX, float velocityY, float velocityZ);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspRigidbody_GetAngularVelocity(uint rigidbodyHandle, [Out] float[] outXyz);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspRigidbody_SetAngularVelocity(uint rigidbodyHandle, float velocityX, float velocityY, float velocityZ);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern int VspRigidbody_GetFreezeRotation(uint rigidbodyHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspRigidbody_SetFreezeRotation(uint rigidbodyHandle, int freezeRotation);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern float VspRigidbody_GetLinearDrag(uint rigidbodyHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspRigidbody_SetLinearDrag(uint rigidbodyHandle, float linearDrag);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern float VspRigidbody_GetAngularDrag(uint rigidbodyHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspRigidbody_SetAngularDrag(uint rigidbodyHandle, float angularDrag);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspRigidbody_AddForce(uint rigidbodyHandle, float forceX, float forceY, float forceZ);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspRigidbody_AddImpulse(uint rigidbodyHandle, float impulseX, float impulseY, float impulseZ);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern int VspRigidbody_IsSleeping(uint rigidbodyHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern int VspRigidbody_IsGrounded(uint rigidbodyHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspRigidbody_Wake(uint rigidbodyHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspRigidbody_Sleep(uint rigidbodyHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern uint VspScene_GetLiveRigidbodyCount();
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern uint VspScene_GetRigidbodyHandle(uint rigidbodyIndex);
+
+		// ---- Colliders (the shape of a game object) ----
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern uint VspCollider_Create(uint gameObjectHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern int VspCollider_Destroy(uint colliderHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern uint VspCollider_GetGameObject(uint colliderHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern int VspCollider_GetShape(uint colliderHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspCollider_SetShape(uint colliderHandle, int shape);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspCollider_GetBoxHalfExtents(uint colliderHandle, [Out] float[] outXyz);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspCollider_SetBoxHalfExtents(uint colliderHandle, float halfExtentX, float halfExtentY, float halfExtentZ);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern float VspCollider_GetSphereRadius(uint colliderHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspCollider_SetSphereRadius(uint colliderHandle, float radius);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern int VspCollider_SetMesh(uint colliderHandle, [In] float[] localPositionsXyz, uint vertexCount, [In] uint[] localIndices, uint indexCount);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern uint VspCollider_GetMeshVertexCount(uint colliderHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern uint VspCollider_GetMeshTriangleCount(uint colliderHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspCollider_GetCenter(uint colliderHandle, [Out] float[] outXyz);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspCollider_SetCenter(uint colliderHandle, float centerX, float centerY, float centerZ);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern float VspCollider_GetRestitution(uint colliderHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspCollider_SetRestitution(uint colliderHandle, float restitution);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern float VspCollider_GetFriction(uint colliderHandle);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspCollider_SetFriction(uint colliderHandle, float friction);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspCollider_GetWorldCenter(uint colliderHandle, [Out] float[] outXyz);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspCollider_GetWorldBounds(uint colliderHandle, [Out] float[] outMinimumXyz, [Out] float[] outMaximumXyz);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern uint VspScene_GetLiveColliderCount();
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern uint VspScene_GetColliderHandle(uint colliderIndex);
+
+		// ---- The physics world ----
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspPhysics_Step(float deltaTime);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspPhysics_GetGravity([Out] float[] outXyz);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspPhysics_SetGravity(float gravityX, float gravityY, float gravityZ);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern int VspPhysics_GetAutoSimulation();
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspPhysics_SetAutoSimulation(int autoSimulationEnabled);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern uint VspPhysics_GetSolverIterationCount();
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspPhysics_SetSolverIterationCount(uint solverIterationCount);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern uint VspPhysics_GetContactCount();
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspPhysics_GetContact(uint contactIndex, [Out] uint[] outHandles2, [Out] float[] outValues7);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern void VspPhysics_GetStats([Out] uint[] outValues6);
+
+		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
+		internal static extern uint VspPhysics_Raycast(
+			float originX, float originY, float originZ,
+			float directionX, float directionY, float directionZ,
+			float maximumDistance,
+			uint ignoredGameObjectHandle,
+			[Out] float[] outValues7);
 
 		// ---- Shader assets (what HLSLCC compiled) ----
 		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]

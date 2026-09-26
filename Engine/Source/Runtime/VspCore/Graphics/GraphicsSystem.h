@@ -30,6 +30,19 @@ namespace Vsp
 	public:
 		static GraphicsSystem& Get();
 
+		// -------- Frame --------
+		// The FRAME belongs to the rendering system, and these two calls are what a
+		// frame is: BeginFrame opens it - the frame's command list starts empty and
+		// the per-frame systems are told a new frame has begun - and EndFrame closes
+		// it, putting what a frame accumulates to bed.
+		//
+		// The host calls them once per frame around everything else (messages,
+		// scripts, the recorded frame, the presentation), because only the host
+		// knows where a frame starts and ends. Nothing else opens or closes a frame:
+		// a render pipeline records INTO the frame it was given.
+		void BeginFrame();
+		void EndFrame();
+
 		// -------- Active backend --------
 		// The engine sets the backend once it is initialized and clears it
 		// before the backend goes away.

@@ -2,7 +2,7 @@
 
 #include <cmath>
 
-#include "Scripting/ScriptCore.h"
+#include "Classes/Time.h"
 
 #include "Math/Mathf.h"
 
@@ -197,7 +197,7 @@ namespace Vsp
         float smoothTime, float maxSpeed)
     {
         return SmoothDamp(current, target, currentVelocity,
-            smoothTime, maxSpeed, ScriptCore::Get().GetDeltaTime());
+            smoothTime, maxSpeed, Time::Get().GetDeltaTime());
     }
 
     // ---------- 4 参版本：缺省 maxSpeed=Infinity, deltaTime ← Time::deltaTime ----------
@@ -206,7 +206,7 @@ namespace Vsp
         float smoothTime)
     {
         return SmoothDamp(current, target, currentVelocity,
-            smoothTime, Mathf::Infinity, ScriptCore::Get().GetDeltaTime());
+            smoothTime, Mathf::Infinity, Time::Get().GetDeltaTime());
     }
 
     // ---------- SmoothDampAngle 同构包装 ----------
@@ -225,7 +225,7 @@ namespace Vsp
         float smoothTime, float maxSpeed)
     {
         return SmoothDampAngle(current, target, currentVelocity,
-            smoothTime, maxSpeed, ScriptCore::Get().GetDeltaTime());
+            smoothTime, maxSpeed, Time::Get().GetDeltaTime());
     }
 
     float Mathf::SmoothDampAngle(float current, float target,
@@ -233,7 +233,7 @@ namespace Vsp
         float smoothTime)
     {
         return SmoothDampAngle(current, target, currentVelocity,
-            smoothTime, Mathf::Infinity, ScriptCore::Get().GetDeltaTime());
+            smoothTime, Mathf::Infinity, Time::Get().GetDeltaTime());
     }
 
     // ---------- 循环与往复 ----------

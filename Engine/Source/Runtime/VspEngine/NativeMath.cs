@@ -376,6 +376,18 @@ namespace VspEngine
 			return Read(scratch3C);
 		}
 
+		/// <summary>
+		/// The rotation Right applies after Left: the composition a camera built
+		/// from two angles needs (a tilt, then the turn that carries it around).
+		/// </summary>
+		public static Quaternion QuaternionMultiply(Quaternion left, Quaternion right)
+		{
+			WriteQuaternion(left, scratch4A);
+			WriteQuaternion(right, scratch4B);
+			NativeMathApi.VspMath_QuaternionMultiply(scratch4A, scratch4B, scratch4A);
+			return new Quaternion(scratch4A[0], scratch4A[1], scratch4A[2], scratch4A[3]);
+		}
+
 		/// <summary>Takes a direction through a rotation.</summary>
 		public static Vector3 QuaternionRotateVector(Quaternion rotation, Vector3 direction)
 		{

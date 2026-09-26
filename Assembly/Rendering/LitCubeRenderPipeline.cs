@@ -17,11 +17,15 @@ namespace Assembly.Rendering
 	/// This is GAME code: the engine ships no pipeline of its own, so rendering -
 	/// and with it every shader load - starts here. The flow is
 	///
+	///     Camera                       the camera the engine opens the frame with
 	///     EnsureResources()            shader, meshes, camera rig, UI renderer
-	///     commandBuffer.SetCamera(...)  the camera the frame is drawn from
-	///     commandBuffer.BeginRenderPass(...)
 	///     graph.Compile() + Execute()   the passes, in dependency order
-	///     commandBuffer.EndRenderPass() and submit
+	///     submit
+	///
+	/// The FRAME around those passes is the engine's, not this pipeline's: the
+	/// engine hands it the camera, opens its render pass, clears it and paints the
+	/// sky into it before the first pass below runs - see RenderPipelineManager. A
+	/// pipeline records passes INSIDE a frame; it neither opens nor closes one.
 	///
 	/// and the graph is what decides WHICH passes run and in which order:
 	///
@@ -30,17 +34,24 @@ namespace Assembly.Rendering
 	///     Interface  draws the flat HUD on top, reading the font atlas
 	///     Debug      a pass that exists but is switched off - the graph culls it
 	///
-	/// Everything the frame needs beyond a clear is a pass, which is what makes
-	/// the frame readable and what lets a pass be switched off without touching
-	/// the code around it.
+	/// Everything the frame needs beyond the engine's clear and sky is a pass,
+	/// which is what makes the frame readable and what lets a pass be switched off
+	/// without touching the code around it.
 	/// </summary>
 	public sealed class LitCubeRenderPipeline : RenderPipeline
 	{
 		/// <summary>Name of the compiled 3D shader this pipeline draws with.</summary>
 		public const string ShaderName = "LitCube";
 
-		/// <summary>Background the frame clears to.</summary>
+		/// <summary>Background the frame clears to. The sky covers it, so this is what shows where the sky is not.</summary>
 		public static readonly Color BackgroundColor = new Color(0.05f, 0.06f, 0.09f, 1.0f);
+
+		/// <summary>
+		/// Frame the demo replaces the engine's sky at. The whole of replacing a
+		/// skybox is replacing the material (RenderSettings.Skybox), so this is the
+		/// whole of the demo's sky code - and it is here so a run can show both skies.
+		/// </summary>
+		public const long SkyReplaceFrame = 400;
 
 		/// <summary>
 		/// Direction the demo light TRAVELS: straight down, i.e. shining from
@@ -65,6 +76,13 @@ namespace Assembly.Rendering
 		/// <summary>Half extent of the ground plate, in world units.</summary>
 		public const float GroundHalfExtent = 8.0f;
 
+		/// <summary>
+		/// Height of the ground plate's TOP surface, in world units. It is the
+		/// height a resting body settles at, so it is also what the acceptance
+		/// test checks the cube against.
+		/// </summary>
+		public const float GroundSurfaceHeight = -0.5f;
+
 		private const uint WhiteTextureSize = 8;
 
 		// -------- Resources the pipeline owns --------
@@ -80,6 +98,9 @@ namespace Assembly.Rendering
 		private IndexBuffer? groundIndexBuffer;
 
 		// -------- Scene the pipeline owns --------
+		private GameObject? groundObject;
+		private MeshCollider? groundCollider;
+
 		private GameObject? cameraObject;
 		private Camera? camera;
 		private ThirdPersonCameraRig? cameraRig;
@@ -95,12 +116,10 @@ namespace Assembly.Rendering
 		private bool resourcesReady;
 		private bool resourceCreationFailed;
 		private bool hasLoggedGraphSummary;
+		private bool hasReplacedSky;
 
 		/// <summary>The shader the pipeline loaded, once it has one.</summary>
 		public Shader? Shader => shader;
-
-		/// <summary>The camera the frame renders from.</summary>
-		public Camera? Camera => camera;
 
 		/// <summary>The third-person rig that places the camera.</summary>
 		public ThirdPersonCameraRig? CameraRig => cameraRig;
@@ -112,14 +131,11 @@ namespace Assembly.Rendering
 		{
 			EnsureResources();
 
-			CommandBuffer commandBuffer = context.CommandBuffer;
-
 			if (!resourcesReady)
 			{
-				// Without resources the frame still clears, so the window keeps
-				// showing the background instead of stale pixels.
-				commandBuffer.BeginRenderPass(BackgroundColor);
-				commandBuffer.EndRenderPass();
+				// Without resources the frame is still the engine's - it was opened,
+				// cleared and given a sky before this ran - so there is nothing to do
+				// but let it end.
 				context.Submit();
 				return;
 			}
@@ -131,38 +147,103 @@ namespace Assembly.Rendering
 			int backbufferWidth = context.BackbufferWidth;
 			int backbufferHeight = context.BackbufferHeight;
 
-			// The camera follows whatever the script did this frame, and the
-			// interface reacts to the pointer, both before a single command is
-			// recorded.
+			// The camera follows where the cube IS in the frame being built, which
+			// is where the physics step left it - not where the script saw it
+			// before that step ran. The draw list is the scene as the frame will
+			// draw it, so the camera can never be one step behind the object it
+			// follows.
+			cameraRig?.SetTarget(FindCubePosition());
 			cameraRig?.Update(Time.DeltaTime);
+
+			// The interface reacts to the pointer, before a single command is
+			// recorded.
 			UpdateInterface(backbufferWidth, backbufferHeight);
 
-			// The whole frame renders from this camera: the backend fills the
-			// engine's camera uniform buffer with its matrices and its lens.
-			commandBuffer.SetCamera(camera!);
-			commandBuffer.BeginRenderPass(BackgroundColor);
+			// The render pass, its clear colour and its sky are the ENGINE's: this
+			// pipeline records passes INSIDE the frame it was handed, and the engine
+			// closes it when this method returns. The camera is the one the frame was
+			// given (see Camera), so a shader reads the same view the sky was drawn
+			// with.
+			CommandBuffer commandBuffer = context.CommandBuffer;
+
+			ReplaceSkyMaterialWhenDue();
 
 			BuildFrameGraph(backbufferWidth, backbufferHeight);
 
-			if (!frameGraph.Compile())
+			if (frameGraph.Compile())
 			{
-				// A frame with no pass that writes the back buffer cannot show
-				// anything; the reason is already in the log.
-				commandBuffer.EndRenderPass();
-				context.Submit();
+				frameGraph.Execute(context);
+
+				if (!hasLoggedGraphSummary)
+				{
+					hasLoggedGraphSummary = true;
+					Debug.LogInfo(frameGraph.GetDebugSummary());
+				}
+			}
+
+			context.Submit();
+		}
+
+		/// <summary>
+		/// Replaces the engine's sky with a sky of the game's, once, at a known frame.
+		///
+		/// Nothing here touches a pass, a shader or a pipeline: a sky IS a material,
+		/// and putting a different one in RenderSettings.Skybox is the whole of
+		/// replacing it. This one is another material of the ENGINE's sky shader with
+		/// the values of a dusk; a game wanting a wholly different sky would write its
+		/// own shader and hand over a material of that instead.
+		/// </summary>
+		private void ReplaceSkyMaterialWhenDue()
+		{
+			if (hasReplacedSky || Time.FrameCount < SkyReplaceFrame)
+			{
 				return;
 			}
 
-			frameGraph.Execute(context);
+			hasReplacedSky = true;
 
-			if (!hasLoggedGraphSummary)
+			Material? duskSky = RenderSettings.CreateSkyboxMaterial();
+			if (duskSky == null)
 			{
-				hasLoggedGraphSummary = true;
-				Debug.LogInfo(frameGraph.GetDebugSummary());
+				Debug.LogError("LitCubeRenderPipeline: the replacing sky material could not be created.");
+				return;
 			}
 
-			commandBuffer.EndRenderPass();
-			context.Submit();
+			duskSky.SetVector(SkyboxPropertyNames.ZenithColor, new Vector4(0.24f, 0.16f, 0.38f, 1.0f));
+			duskSky.SetVector(SkyboxPropertyNames.HorizonColor, new Vector4(0.95f, 0.52f, 0.28f, 1.0f));
+			duskSky.SetVector(SkyboxPropertyNames.GroundColor, new Vector4(0.30f, 0.19f, 0.22f, 1.0f));
+			duskSky.SetVector(SkyboxPropertyNames.SunColor, new Vector4(1.0f, 0.78f, 0.45f, 1.0f));
+
+			RenderSettings.Skybox = duskSky;
+
+			Debug.Log("LitCubeRenderPipeline: the sky was replaced at frame " + Time.FrameCount
+				+ " by putting a material of the game's in RenderSettings.Skybox.");
+		}
+
+		/// <summary>
+		/// The names the engine's sky shader gives its values. A material of another
+		/// shader has to declare the same ones for the engine to draw it.
+		/// </summary>
+		private static class SkyboxPropertyNames
+		{
+			public const string ZenithColor = "_ZenithColor";
+			public const string HorizonColor = "_HorizonColor";
+			public const string GroundColor = "_GroundColor";
+			public const string SunColor = "_SunColor";
+		}
+
+		/// <summary>
+		/// The camera the frame is rendered from. The engine asks for it before it
+		/// opens the frame, which is where a pipeline that builds its resources on
+		/// demand builds them - so the first frame already has a camera and a sky.
+		/// </summary>
+		public override Camera? Camera
+		{
+			get
+			{
+				EnsureResources();
+				return camera;
+			}
 		}
 
 		public override void Dispose()
@@ -181,6 +262,11 @@ namespace Assembly.Rendering
 			groundVertexBuffer = null;
 			groundIndexBuffer?.Dispose();
 			groundIndexBuffer = null;
+
+			// Destroying the ground object releases its collider with it.
+			groundCollider = null;
+			groundObject?.Destroy();
+			groundObject = null;
 
 			whiteTexture?.Dispose();
 			whiteTexture = null;
@@ -244,12 +330,23 @@ namespace Assembly.Rendering
 				return;
 			}
 
+			// The collision code is asked a few questions whose answers are
+			// arithmetic before the demo relies on it for anything.
+			PhysicsSelfTest.Run();
+
+			// The frame clears to the colour the game asks for; the engine's frame
+			// driver reads it. Setting it once is enough - it is a setting, not a
+			// command.
+			RenderSettings.BackgroundColor = BackgroundColor;
+
 			resourcesReady = true;
 			Debug.LogInfo("LitCubeRenderPipeline: shader '" + shader.ShaderName + "' ready ("
 				+ shader.VariantCount + " variant(s), queue " + shader.RenderQueue + ").");
 			Debug.LogInfo("LitCubeRenderPipeline: 3D scene ready (cube spins "
 				+ SpinDegreesPerSecond + " deg/s; light shines straight down from ("
 				+ LightDirection.X + ", " + LightDirection.Y + ", " + LightDirection.Z + ")).");
+			Debug.LogInfo("LitCubeRenderPipeline: the frame's sky is the engine's (RenderSettings.Skybox is "
+				+ (RenderSettings.Skybox == null ? "the engine's default" : "a material the game replaced") + ").");
 		}
 
 		private bool CreateMeshes()
@@ -278,6 +375,61 @@ namespace Assembly.Rendering
 				return false;
 			}
 
+			return CreateGround();
+		}
+
+		/// <summary>
+		/// Gives the ground plate a game object and a MESH COLLIDER.
+		///
+		/// The collider is built from the very vertices and indices the plate is
+		/// drawn with, so what the simulation collides with IS the surface on
+		/// screen - there is no second, hand-written description of the same
+		/// shape that could drift away from the first one. The object sits at
+		/// GroundSurfaceHeight, which is where the plate's surface therefore is
+		/// and where a body that lands on it comes to rest.
+		/// </summary>
+		private bool CreateGround()
+		{
+			if (groundMesh == null)
+			{
+				return true;
+			}
+
+			groundObject = GameObject.Create("DemoGround");
+			if (groundObject == null)
+			{
+				FailResourceCreation("the ground object could not be created");
+				return false;
+			}
+			groundObject.Transform.Position = new Vector3(0.0f, GroundSurfaceHeight, 0.0f);
+
+			groundCollider = MeshCollider.Create(groundObject);
+			if (groundCollider == null)
+			{
+				FailResourceCreation("the ground mesh collider could not be created");
+				return false;
+			}
+
+			Vector3[] meshVertices = new Vector3[groundMesh.Vertices.Length];
+			for (int vertexIndex = 0; vertexIndex < groundMesh.Vertices.Length; ++vertexIndex)
+			{
+				meshVertices[vertexIndex] = groundMesh.Vertices[vertexIndex].Position;
+			}
+
+			if (!groundCollider.SetMesh(meshVertices, groundMesh.Indices))
+			{
+				FailResourceCreation("the ground mesh collider refused its mesh");
+				return false;
+			}
+
+			// A floor does not store energy: a body that lands on it keeps the
+			// bounce its own collider asks for and no more.
+			groundCollider.Restitution = 0.0f;
+			groundCollider.Friction = 0.5f;
+
+			Debug.LogInfo("LitCubeRenderPipeline: ground ready (mesh collider with "
+				+ groundCollider.TriangleCount + " triangle(s) at y "
+				+ FormatFloat(GroundSurfaceHeight) + ").");
 			return true;
 		}
 
@@ -447,9 +599,12 @@ namespace Assembly.Rendering
 			commandBuffer.BindVertexBuffer(groundVertexBuffer!);
 			commandBuffer.BindIndexBuffer(groundIndexBuffer!);
 
-			// The plate sits a hair below the cube's centre line so the cube
-			// never intersects it.
-			Matrix4x4 groundMatrix = Matrix4x4.CreateTranslation(0.0f, -0.55f, 0.0f);
+			// The plate is drawn from the transform of the object that carries its
+			// mesh collider, so the surface on screen and the surface a body lands
+			// on are the same surface by construction.
+			Matrix4x4 groundMatrix = (groundObject != null)
+				? groundObject.Transform.LocalToWorldMatrix
+				: Matrix4x4.CreateTranslation(0.0f, GroundSurfaceHeight, 0.0f);
 			LitCubePushConstants pushConstants = BuildPushConstants(groundMatrix, new Vector4(1.0f, 1.0f, 1.0f, 1.0f));
 			commandBuffer.PushConstants(PushConstantStages, in pushConstants);
 			commandBuffer.DrawIndexed((uint)groundMesh.Indices.Length);
@@ -552,8 +707,8 @@ namespace Assembly.Rendering
 				variantIndex = 0;
 			}
 
-			ShaderModule? vertexShader = CreateStageShader(variantIndex, ShaderStage.Vertex);
-			ShaderModule? fragmentShader = CreateStageShader(variantIndex, ShaderStage.Fragment);
+			ShaderModule? vertexShader = CreateStageShader(shader, variantIndex, ShaderStage.Vertex);
+			ShaderModule? fragmentShader = CreateStageShader(shader, variantIndex, ShaderStage.Fragment);
 			if (vertexShader == null || fragmentShader == null)
 			{
 				vertexShader?.Dispose();
@@ -561,12 +716,7 @@ namespace Assembly.Rendering
 				return null;
 			}
 
-			ShaderStageReflectionSummary reflection = shader.GetStageReflection(variantIndex, ShaderStage.Vertex);
-			int pushConstantByteCount = (int)reflection.PushConstantByteSize;
-			if (pushConstantByteCount <= 0)
-			{
-				pushConstantByteCount = Marshal.SizeOf<LitCubePushConstants>();
-			}
+			int pushConstantByteCount = ResolvePushConstantByteCount(shader, variantIndex, Marshal.SizeOf<LitCubePushConstants>());
 
 			GraphicsPipeline? pipeline;
 			using (GraphicsPipelineBuilder builder = new GraphicsPipelineBuilder())
@@ -609,30 +759,65 @@ namespace Assembly.Rendering
 			return pipeline;
 		}
 
-		private ShaderModule? CreateStageShader(int variantIndex, ShaderStage stage)
+		/// <summary>
+		/// <summary>
+		/// Bytes of push-constant data a pipeline must be able to carry: the
+		/// LARGER of what the shader's two stages read, because one pipeline
+		/// shares one push-constant range between them. The sky is why this is a
+		/// maximum rather than one stage's answer - its vertex stage reads no
+		/// push constant at all while its fragment stage reads all 96 bytes.
+		/// </summary>
+		private static int ResolvePushConstantByteCount(Shader sourceShader, int variantIndex, int fallbackByteCount)
 		{
-			int byteCount = shader!.GetStageSpirvSize(variantIndex, stage);
+			ShaderStageReflectionSummary vertexReflection = sourceShader.GetStageReflection(variantIndex, ShaderStage.Vertex);
+			ShaderStageReflectionSummary fragmentReflection = sourceShader.GetStageReflection(variantIndex, ShaderStage.Fragment);
+
+			int byteCount = (int)Math.Max(vertexReflection.PushConstantByteSize, fragmentReflection.PushConstantByteSize);
+			return byteCount > 0 ? byteCount : fallbackByteCount;
+		}
+
+		/// <summary>
+		/// Reads one stage of one variant out of a loaded shader and hands it to
+		/// the backend as a module. Every pipeline the demo builds - the cube's,
+		/// the sky's - goes through here, so a module can only ever come from a
+		/// compiled shader.
+		/// </summary>
+		private static ShaderModule? CreateStageShader(Shader sourceShader, int variantIndex, ShaderStage stage)
+		{
+			int byteCount = sourceShader.GetStageSpirvSize(variantIndex, stage);
 			if (byteCount <= 0)
 			{
-				Debug.LogError("LitCubeRenderPipeline: variant " + variantIndex + " has no " + stage + " module.");
+				Debug.LogError("LitCubeRenderPipeline: shader '" + sourceShader.ShaderName
+					+ "' variant " + variantIndex + " has no " + stage + " module.");
 				return null;
 			}
 
 			byte[] spirvCode = new byte[byteCount];
-			if (!shader.CopyStageSpirv(variantIndex, stage, spirvCode))
+			if (!sourceShader.CopyStageSpirv(variantIndex, stage, spirvCode))
 			{
-				Debug.LogError("LitCubeRenderPipeline: the " + stage + " module of variant " + variantIndex + " could not be read.");
+				Debug.LogError("LitCubeRenderPipeline: the " + stage + " module of shader '" + sourceShader.ShaderName
+					+ "' variant " + variantIndex + " could not be read.");
 				return null;
 			}
 
-			ShaderModule compiledStageShader = new ShaderModule(stage, shader.GetEntryPointName(variantIndex, stage), spirvCode);
+			ShaderModule compiledStageShader = new ShaderModule(
+				stage, sourceShader.GetEntryPointName(variantIndex, stage), spirvCode);
 			if (!compiledStageShader.IsValid)
 			{
-				Debug.LogError("LitCubeRenderPipeline: the backend rejected the " + stage + " module of variant " + variantIndex + ".");
+				Debug.LogError("LitCubeRenderPipeline: the backend rejected the " + stage
+					+ " module of shader '" + sourceShader.ShaderName + "' variant " + variantIndex + ".");
 				return null;
 			}
 			return compiledStageShader;
 		}
+
+		/// <summary>
+		/// Formats a number for a log line with a fixed number of decimals and a
+		/// point as the decimal separator, whatever locale the machine is set to:
+		/// the acceptance run reads these lines.
+		/// </summary>
+		private static string FormatFloat(float value) =>
+			value.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
 
 		private void FailResourceCreation(string reason)
 		{

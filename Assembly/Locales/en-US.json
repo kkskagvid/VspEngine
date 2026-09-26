@@ -2,7 +2,7 @@
     "locale": "en-US",
     "entries":
     {
-        "demo.title": "Vsp Engine - Lit Cube",
+        "demo.title": "Vsp Engine - Grey Cube under a Sky",
         "demo.status": "cube ({0}, {1}, {2}) / spins {3} about Y",
         "demo.button.spin": "clockwise",
         "demo.button.reset": "Reset Cube",

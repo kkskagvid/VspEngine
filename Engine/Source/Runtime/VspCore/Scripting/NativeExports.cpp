@@ -2,10 +2,10 @@
 
 #include <cstring>
 
+#include "Classes/Time.h"
 #include "Common/PlatformMisc.h"
 #include "Core/Input/InputManager.h"
 #include "Core/Logging/Log.h"
-#include "Scripting/ScriptCore.h"
 #include "Scripting/ScriptExport.h"
 
 // -------------------------------------------------------------------------
@@ -80,16 +80,89 @@ CSHARP_EXPORT float VspInput_GetScrollY()
 	return Vsp::InputManager::Get().GetScrollY();
 }
 
+// -------- Cursor --------
+// How the pointer behaves while the game is played. The engine owns the pointer's
+// visibility and its freedom of movement; a game asks for the mode it wants.
+
+CSHARP_EXPORT int32 VspInput_GetCursorMode()
+{
+	return static_cast<int32>(Vsp::InputManager::Get().GetCursorMode());
+}
+
+CSHARP_EXPORT void VspInput_SetCursorMode(int32 nCursorMode)
+{
+	// Anything the engine does not know is the ordinary pointer, which is the safe
+	// answer: it is the mode that leaves the user in control of their machine.
+	Vsp::InputManager::CursorMode eCursorMode = Vsp::InputManager::CursorMode::Visible;
+	if (nCursorMode == static_cast<int32>(Vsp::InputManager::CursorMode::Confined))
+	{
+		eCursorMode = Vsp::InputManager::CursorMode::Confined;
+	}
+	else if (nCursorMode == static_cast<int32>(Vsp::InputManager::CursorMode::Locked))
+	{
+		eCursorMode = Vsp::InputManager::CursorMode::Locked;
+	}
+
+	Vsp::InputManager::Get().SetCursorMode(eCursorMode);
+}
+
+CSHARP_EXPORT int32 VspInput_IsCursorLocked()
+{
+	return Vsp::InputManager::Get().IsCursorLocked() ? 1 : 0;
+}
+
 // -------- Time --------
+// The engine clock (Classes/Time) is the single source of frame timing; these
+// exports are the whole surface managed code sees of it.
 
 CSHARP_EXPORT float VspTime_GetDeltaTime()
 {
-	return Vsp::ScriptCore::Get().GetDeltaTime();
+	return Vsp::Time::Get().GetDeltaTime();
+}
+
+CSHARP_EXPORT float VspTime_GetUnscaledDeltaTime()
+{
+	return Vsp::Time::Get().GetUnscaledDeltaTime();
 }
 
 CSHARP_EXPORT float VspTime_GetElapsedTime()
 {
-	return Vsp::ScriptCore::Get().GetElapsedTime();
+	return Vsp::Time::Get().GetElapsedTime();
+}
+
+CSHARP_EXPORT float VspTime_GetUnscaledElapsedTime()
+{
+	return Vsp::Time::Get().GetUnscaledElapsedTime();
+}
+
+CSHARP_EXPORT int64 VspTime_GetFrameCount()
+{
+	return static_cast<int64>(Vsp::Time::Get().GetFrameCount());
+}
+
+CSHARP_EXPORT float VspTime_GetFramesPerSecond()
+{
+	return Vsp::Time::Get().GetFramesPerSecond();
+}
+
+CSHARP_EXPORT float VspTime_GetTimeScale()
+{
+	return Vsp::Time::Get().GetTimeScale();
+}
+
+CSHARP_EXPORT void VspTime_SetTimeScale(float fTimeScale)
+{
+	Vsp::Time::Get().SetTimeScale(fTimeScale);
+}
+
+CSHARP_EXPORT int32 VspTime_IsFixedTimeStep()
+{
+	return Vsp::Time::Get().IsFixedTimeStep() ? 1 : 0;
+}
+
+CSHARP_EXPORT float VspTime_GetFixedDeltaTime()
+{
+	return Vsp::Time::Get().GetFixedDeltaSeconds();
 }
 
 // -------- Engine paths --------

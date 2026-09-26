@@ -157,7 +157,11 @@ namespace Assembly.UI
 			hintText.Bounds = new UiRect(20.0f, height - 40.0f, width - 40.0f, 24.0f);
 
 			// Placed right before the tree is walked, so it reports where the
-			// pointer is THIS frame.
+			// pointer is THIS frame. While the cursor is locked the pointer is
+			// hidden and parked at the centre of the window, so the marker is put
+			// away with it: a marker that only ever sits in the middle would say
+			// nothing.
+			pointerMarker.IsVisible = !Cursor.IsLocked;
 			pointerMarker.Bounds = new UiRect(input.MousePosition.X - 6.0f, input.MousePosition.Y - 6.0f, 12.0f, 12.0f);
 
 			canvas.Update(input, width, height);

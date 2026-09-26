@@ -5,8 +5,9 @@ Unity-style managed object model and a **programmable render pipeline written in
 C#**, hosted by a native C++20 application that embeds the .NET CoreCLR runtime
 through the CoreCLR Hosting API (nethost + hostfxr). Shaders live in **.vsf**
 files - one file that carries its properties, its settings, its variants and its
-HLSL - and belong to the game Assembly, which compiles them to SPIR-V with
-**HLSLCC**. The runtime never compiles HLSL: it only loads the compiled modules.
+HLSL - and are compiled to SPIR-V with **HLSLCC**: the game Assembly owns the
+shaders of its own scene, and the engine owns the one that paints its sky. The
+runtime never compiles HLSL: it only loads the compiled modules.
 
 Scene objects carry **local** and **world** coordinates, cameras project
 orthographically, perspectively or through a real lens, and everything is drawn in
@@ -16,9 +17,13 @@ content on a plane, seen through the same camera.
 The managed side is split into two assemblies: **VspEngine.dll** (the engine's
 managed runtime: script base types, the object model, the input/time facades, the
 interop bridge and the render-pipeline framework) and **Assembly.dll** (the game
-Assembly: the user scripts, the render pipeline and the shaders). The engine ships
-**no pipeline and no shader of its own** - rendering, and with it every shader
-load, starts when the game says so.
+Assembly: the user scripts, the render pipeline and the shaders of its scene).
+
+The engine ships **no pipeline of its own** - the flow of a frame is a game's to
+write - but it does own the FRAME that flow runs inside: it opens the frame's
+render pass, clears it and paints the **sky** into it before the game's first pass
+runs, and it is what a skybox is configured through (a material in
+`RenderSettings.Skybox`, replaced like any other material).
 
 ## Architecture
 
@@ -40,7 +45,10 @@ The native side of that contract is `Classes/`:
 | `Transform`           | local position / rotation / scale, the parent link and children, and the world matrix derived from them |
 | `Component`           | owner game object, component kind, enable state, render state           |
 | `Camera`              | projection mode, clip planes, the lens of a physical camera, and the view / projection / view-projection matrices that follow from its transform |
+| `Rigidbody`           | mass, velocity, angular velocity, gravity scale, drag and the resting state of an object that moves |
+| `Collider`            | the shape the simulation tests (box, sphere or mesh), its offset, its restitution and its friction |
 | `Scene` (singleton)   | the object tables, slot recycling and handle validation                 |
+| `Time` (singleton)    | the frame clock: delta / elapsed time, the frame count, the frame rate, the time scale and the fixed-step policy |
 
 A handle packs the object kind (bits 28..31), a slot generation (bits 20..27) and
 the 1-based slot index (bits 0..19). Released slots are recycled with a bumped
@@ -75,15 +83,16 @@ around it (`Shader`, `VertexBuffer`, `Texture2D`, `GraphicsPipeline`,
 
 | Type                          | Role                                                            |
 | ----------------------------- | --------------------------------------------------------------- |
-| `RenderPipeline`             | abstract base: `Render(ScriptableRenderContext)` + `Dispose()` |
+| `RenderPipeline`             | abstract base: `Camera`, `Render(ScriptableRenderContext)` + `Dispose()` |
 | `RenderPipelineManager`       | gathers the draw list, opens the frame, runs the active pipeline |
 | `ScriptableRenderContext`     | the command buffer, the draw list and the target size            |
 | `CommandBuffer`               | records the frame through the wrapped graphics API               |
 | `IGameModule`                 | what a game assembly implements to take over at startup          |
 
-**The engine installs nothing.** Until a game installs a pipeline, a frame is
-opened and closed with no draw command, which leaves the window cleared - and no
-shader file is ever read. A game takes over from its `IGameModule`:
+**The engine installs no pipeline.** Until a game installs one, a frame is opened
+and closed with no pass of the game's in it - it shows the engine's sky and
+nothing else, and no shader of the game's is ever read. A game takes over from its
+`IGameModule`:
 
 ```csharp
 public sealed class Game : IGameModule
@@ -110,7 +119,8 @@ compiler wrote:
 ```
 Assembly/Shaders/LitCube.vsf           the shaders the GAME ships
 Assembly/Shaders/UiQuad.vsf
-        |  HLSLCC (during the Assembly's build)
+Engine/Shaders/Runtime/Skybox.vsf      the shader the ENGINE ships (the sky)
+        |  HLSLCC (during each project's build)
         v
 <run directory>/Shaders/               everything the ENGINE loads
         LitCube.vsfo                   ONE container per shader: every module + its reflection
@@ -119,11 +129,14 @@ Assembly/Shaders/UiQuad.vsf
         LitCube.reflection.json        the reflection, for tools
 ```
 
-The shader is game content: `Assembly/Shaders` holds it, and `Assembly.csproj`
-runs `Engine/Tools/Build/CompileShaders.ps1` after its build to compile every
-`.vsf` into the run directory's `Shaders` folder. `Graphics/ShaderLibrary` then
-loads a container into a native shader **when the game asks for one by name**; the
-engine loads no shader at startup.
+Shaders are content, and each side compiles its own: `Assembly.csproj` runs
+`Engine/Tools/Build/CompileShaders.ps1` over `Assembly/Shaders`, and
+`VspEngine.csproj` runs the same step over `Engine/Shaders/Runtime` for the
+shaders the engine ships - the one that paints the sky. Both write into the same
+folder: the run directory's `Shaders`, which is the one place `ShaderLibrary`
+loads a container from **when someone asks for one by name**. The engine asks for
+its sky shader the first time it draws a frame; nothing else is loaded until a game
+asks.
 
 **The `.vsfo` container is what the engine reads.** One file holds every SPIR-V
 module of the shader - all passes, all kept variants, both stages - together with
@@ -353,9 +366,15 @@ builder.SetCullMode(CullMode.Back)
 Meshes are drawn through a vertex buffer and an **index buffer**
 (`DrawIndexed`), each draw carrying its own world matrix in the push-constant
 block, and the camera block supplies the view-projection. There is no 2D
-pipeline, no 2D render pass and no 2D shader convention: the demo's colored
-triangle is a mesh in the same scene as the cube, drawn through the same camera,
-culled and depth-tested exactly like it.
+pipeline, no 2D render pass and no 2D shader convention: the demo's interface is a
+mesh in the same scene as the cube, drawn through the same camera, culled and
+depth-tested exactly like it.
+
+A pipeline does not even need a mesh. The **sky** is one fullscreen triangle whose
+three corners come from `SV_VertexID`: its pipeline states no vertex stride and
+no vertex attribute at all, its draw binds no vertex buffer, and its depth test
+always passes without ever writing depth - which is exactly what lets it be drawn
+first and still leave the depth buffer untouched for the scene to fill.
 
 ### 7. Materials drive what is drawn
 
@@ -375,7 +394,14 @@ is only paid for when something actually selects it. The engine names no shader
 property: `_BaseColor` and `_Ambient` live in `Assembly/Rendering/LitCubeMaterial.cs`,
 next to the shader that declares them.
 
-### 8. A frame is a render graph
+### 8. A frame is a render graph - inside a frame the engine owns
+
+The engine frames every frame: the frame driver (`RenderPipelineManager`) gathers
+the draw list, asks the pipeline for its `Camera`, hands that camera to the frame,
+opens the render pass with the colour a game set in `RenderSettings.BackgroundColor`
+and paints the sky into it - all before a single pass of the game's runs. A pipeline
+records passes INSIDE that frame and neither opens nor closes it, which is what makes
+the sky, the clear and the camera properties of the frame rather than of any pass.
 
 A pipeline that draws more than one thing stops being a list of calls and becomes a
 graph of passes. `VspEngine.Rendering.RenderGraph` is that graph:
@@ -457,6 +483,51 @@ each has one prescribed reaction (`Core/Diagnostics/ErrorHandling.h`):
 engine stops here", and `Log` itself no longer terminates: writing a fatal entry
 collects the crash report, killing the process is the exit path's job.
 
+### 11. A frame is simulated, then drawn
+
+`Physics/` is a simulation over the scene, not a world of its own:
+
+| Type | Role |
+| ---- | ---- |
+| `Classes/Rigidbody` | the MOTION of an object: velocity, angular velocity, mass, gravity, drag, and whether it is resting |
+| `Classes/Collider`  | the SHAPE of an object - box, sphere or triangle mesh - its offset, its restitution and its friction |
+| `Physics/CollisionDetection` | the narrowphase: shape against shape, and rays against shapes, as pure functions on world-space shapes |
+| `Physics/PhysicsWorld` | the step: gather, integrate, broadphase, narrowphase, solve, sleep - plus the raycasts a game asks for |
+
+Two rules make it a simulation rather than a replay. **A collider says what an
+object is; a rigidbody says that it moves** - so an object with a collider and no
+body is the level, and every body collides with it without anything having to be
+marked "static". And **the scene is the only state**: bodies and shapes are read
+from the scene at the start of a step and written back at the end, so a destroyed
+object, a disabled object or a re-parented one is handled by the code that already
+handles it everywhere else.
+
+The engine advances the world once per frame, between the scripts and the frame:
+
+```
+window messages -> input -> scripts OnUpdate -> PhysicsWorld::Step(dt) -> render flow
+```
+
+so a script that sets a velocity or an impulse belongs to THIS frame's step, and
+the frame draws where the bodies ended up. A game that wants the step itself - a
+fixed-step accumulator, a replay, a paused editor - sets `Physics.AutoSimulation`
+to false and calls `Physics.Step`.
+
+A **mesh collider** is built from the same vertices and indices a mesh is drawn
+with, which is what makes "what you see" and "what you collide with" one thing
+rather than two that can drift apart. Its triangles are placed in the world once
+per step; the box-against-triangle test separates with the usual separating-axis
+tests but measures its depth along the triangle's own plane, because a triangle
+has no thickness and a plane is the only thing that can answer "how far in" for
+it.
+
+**Documented simplifications of this first simulation step**, so a reader knows
+where the model ends: contacts are resolved with linear impulses only (a contact
+never torques a body, so an object turns through its angular velocity alone);
+mesh-against-mesh pairs have no narrowphase and are reported as skipped; and the
+broadphase is a plain sweep over all pairs, which is right for the scenes this
+engine renders and wants a spatial partition beyond that.
+
 ## Features
 
 - **Vulkan 1.3 bindless renderer (no 1.2 fallback)**
@@ -527,7 +598,17 @@ collects the crash report, killing the process is the exit path's job.
   non-zero exit code. `Log` itself never terminates the process.
 - **Complete keyboard + mouse input** (`Core/Input/InputManager`): held/pressed/released
   edge state, mouse position/delta/wheel, typed characters. Window messages flow
-  Win32 -> events -> InputManager -> scripts.
+  Win32 -> events -> InputManager -> scripts. The per-frame edges are cleared by
+  the RENDERING system, not by the host: `GraphicsSystem::BeginFrame` opens a
+  frame and `GraphicsSystem::EndFrame` closes it, so "a frame" has one owner and a
+  game cannot forget to end one.
+- **A pointer a game owns** (`Cursor`): `Visible`, `Confined` or `Locked`. A locked
+  cursor is HIDDEN and put back at the centre of the window after every frame, so
+  the movement a script reads is a movement of the hand and never runs out of
+  screen - which is the whole of a mouse look. The engine takes the pointer only
+  while the window is the one the player's input goes to (alt-tabbing gives it
+  back), gives it back when the game ends, and refuses to take it at all in a run
+  that asked not to (`--no-cursor-lock`).
 - **Output devices** (`Core/Output/OutputDevice.h`): `DebugOutputDevice`,
   `ConsoleOutputDevice`, `FileOutputDevice` plus an `OutputDeviceRegistry` that
   enumerates ("gets") the available devices and looks them up by name.
@@ -536,7 +617,7 @@ collects the crash report, killing the process is the exit path's job.
   placeholders. Custom types opt in by specializing the **`VspFormatter<Type>`**
   template struct and implementing its **`Parse`** (interprets the ":spec" text) and
   **`Format`** (appends the formatted value) static methods - see the
-  `VspFormatter<Position2D>` specialization in `Scripting/ScriptCore.h` (the
+  `VspFormatter<Position2D>` specialization in `Scripting/ScriptTypes.h` (the
   ":p" / ":P" specifiers).
 - **Pluggable logging** (`Core/Logging`): the `Log` facade formats each entry once
   and forwards it to replaceable `LogBackend`s (any `OutputDevice` adapts via
@@ -559,9 +640,23 @@ collects the crash report, killing the process is the exit path's job.
   - Managed code calls back into the native core through `DllImport("VspCore")`
     (`Input`, `Time`, the scene object model, the wrapped graphics API), so interop is
     fully bidirectional.
-- **Frame clock suitable for automation**: `--fixed-delta-time=MS` replaces the wall
-  clock with a fixed step per frame, so frame N always happens at N * step of engine
-  time and a scheduled run is reproducible on any machine.
+- **A physics simulation** (`Physics/`): `Rigidbody` (the motion of an object),
+  `Collider` (its shape: box, sphere or triangle mesh) and `PhysicsWorld` (the step,
+  the broadphase, the narrowphase, the resolver and the raycasts). A body and a
+  collider are native scene objects like a camera - they belong to a game object,
+  whose transform places them - so the simulation owns no objects of its own and a
+  destroyed object simply stops being gathered. The engine advances the world once
+  per frame, after the scripts and before the frame is drawn, and a game that wants
+  to drive it itself sets `Physics.AutoSimulation = false`.
+- **One engine clock** (`Classes/Time`): the single owner of frame timing. The host
+  MEASURES a frame (`Common/PlatformMisc`'s high-resolution timer) and hands the raw
+  seconds to `Time::AdvanceFrame`, which applies the frame-step mode, the time scale
+  and the stall guard, and publishes delta time, elapsed time, the frame count and a
+  smoothed frame rate. `--fixed-delta-time=MS` configures the fixed step, so frame N
+  always happens at N * step of engine time and a scheduled run is reproducible on
+  any machine; `VspEngine.Time` is the managed view of the same instance, so a
+  script, the render pipeline and the engine's diagnostics can never disagree about
+  when "now" is.
 - **Split Vulkan module** (`Graphics/Vulkan`): the renderer is decomposed into
   functional units - `VulkanInstance` (instance + surface), `VulkanDevice` (device +
   queues + helpers), `VulkanBuffer`, `VulkanImage`, `VulkanPipeline`,
@@ -593,31 +688,67 @@ collects the crash report, killing the process is the exit path's job.
 ## Demo (acceptance test)
 
 `Assembly/CubeController.cs` (the game Assembly loaded by the engine) drives the
-demo: a **lit, per-face coloured cube** seen through a **third-person camera that
-follows it**, plus a flat interface drawn on top of the scene.
+demo: a **grey cube that is a physics object** - a `Rigidbody` carrying its
+velocity and its spin, and a `BoxCollider` that is its shape - dropped onto a
+ground plate whose `MeshCollider` is built from the plate's own triangles, under
+the **engine's sky**, seen through a **third-person camera that follows it**, plus a
+flat interface drawn on top of the scene.
 
 The camera opens 45 degrees above the horizon, behind the cube, and always looks AT
-it: the pointer turns the ORBIT, so the cube stays centred whatever the view does.
-The light shines straight down (90 degrees to the horizon), so the top face is
-fully lit while the four sides receive only the ambient fill - which is what makes
-the shape read as a solid.
+it: it is placed along the direction its own angles give, one "distance" from the
+cube, so the cube is centred by construction rather than by a second aiming step.
+The pointer turns it and tilts it:
 
 | Input | Action                                                          |
 | ----- | --------------------------------------------------------------- |
-| W / A / S / D | move the cube over the ground, relative to the camera    |
-| Mouse         | orbit the camera around the cube (it always looks at it) |
+| W / A / S / D | push the cube over the ground, relative to the camera    |
+| Mouse left / right | swing the camera around the cube - a full 360 degrees, wrapping rather than stopping |
+| Mouse up / down    | raise or lower the camera. The tilt is about the camera's OWN right axis, so "up and down" means the same thing at every yaw; the range is 178 of the 180 degrees a vertical view has |
 | Mouse wheel   | move the camera closer to / further from the cube        |
+| (the pointer) | hidden while the demo runs, and held at the centre of the window after every frame, so one movement of the hand can turn the view as far as the player keeps moving |
 | T             | flip the spin: clockwise about Y, or counter-clockwise   |
-| R             | send the cube back to the origin                         |
+| R             | drop the cube again from its starting height             |
 
-The cube spins about its own Y axis from the first frame on; T only decides WHICH
-WAY. Every static string the interface shows is a localisation KEY
+The cube falls, bounces (restitution 0.4 against the plate's 0) and comes to rest
+ON the plate - at exactly the height the collision resolution allows, which is what
+the acceptance test asserts on. W/A/S/D set the cube's horizontal VELOCITY rather
+than its position, so releasing the keys lets friction bring it to a stop. The spin
+is the body's angular velocity, so a contact can never fight a script over the
+rotation. The camera looks past the cube's own collider (a ray towards it leaves
+the cube from the inside) and stops in front of whatever the physics world finds
+between the cube and where it wants to be - which is what keeps the view out of the
+ground when the cube is watched from below.
+
+The **sky** is not the demo's at all: the engine paints it into the frame before
+the demo's first pass runs, out of the shader it ships
+(`Engine/Shaders/Runtime/Skybox.vsf`), and the demo's render graph has no sky pass
+in it. What a game changes is the MATERIAL - one line puts a sky of its own in
+`RenderSettings.Skybox`, which the demo does partway through a run so the
+acceptance can watch the sky change from the engine's blue to the game's dusk.
+`RenderSettings.CreateSkyboxMaterial()` is how that material is made, and a game
+wanting a wholly different sky writes its own shader for it and hands over a
+material of that.
+
+The sky itself is one fullscreen triangle: three vertices and no vertex buffer,
+whose fragment stage turns every pixel back into the world direction it looks along
+through the camera block of the frame. The colour is a pure function of that
+direction - a gradient from the zenith, past the horizon, plus the sun's disc and
+glow - so it never moves with the camera, only with where the camera looks.
+
+Every static string the interface shows is a localisation KEY
 (`demo.title`, `demo.hint`, ...) resolved by the engine's native
 `Core/String/I18N` service from `Assembly/Locales/<locale>.json`, so the same
 build reads correctly in English and in Chinese.
 
-The script owns no render state: it writes world positions and rotations into the
-native scene, and the game's render pipeline reads them while it builds the frame.
+The script owns no render state: it writes velocities, turn rates and a drop
+request into the native scene, and the game's render pipeline reads the result
+while it builds the frame.
+
+`Assembly/Rendering/PhysicsSelfTest.cs` asks the collision code four questions whose
+answers are arithmetic - a ray into a sphere, into a box, into the same box turned
+45 degrees about Y, and into a triangle mesh - before the demo relies on it for
+anything. It is the demo's own check, not the engine's: the shapes the demo's scene
+does not use are exactly where an error would hide.
 
 ## Building
 
@@ -706,6 +837,7 @@ Useful flags (see `LaunchLoop.cpp`):
 | `--frames N`               | exit after N frames (smoke tests)                          |
 | `--fixed-delta-time=MS`    | advance the engine clock by a fixed step per frame          |
 | `--silent`                 | errors go to the log; fatal crash prompt disabled           |
+| `--no-cursor-lock`        | never take the user's pointer, even if the game asks for it |
 | `--key VK:MS`              | post synthetic WM_KEYDOWN/KEYUP to the engine window        |
 | `--capture N:path.bmp`     | save the framebuffer after frame N (BMP)                    |
 
@@ -748,8 +880,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File Engine\Tools\Acceptance\RunA
 The script runs both halves of the acceptance test:
 
 1. **Shader compilation** (`VerifyShaderCompilation.ps1`) runs `HLSLCC.exe` over
-   the game's two shaders - `Assembly/Shaders/LitCube.vsf` (the lit cube) and
-   `Assembly/Shaders/UiQuad.vsf` (the flat interface) - and checks that
+   the game's three shaders - `Assembly/Shaders/LitCube.vsf` (the grey cube),
+   `Assembly/Shaders/Skybox.vsf` (the sky) and `Assembly/Shaders/UiQuad.vsf`
+   (the flat interface) - and checks that
 
    - the `Properties` block, the `Shader` block, the `Pass` block nested inside
      it, the entry-point pragmas and the `#include` of the Pass block are all
@@ -788,34 +921,85 @@ The script runs both halves of the acceptance test:
 
 2. **Engine behaviour** builds the solution, enables the Vulkan validation layer
    when an SDK is present, runs the demo with
-   `--fixed-delta-time=16.6667 --frames=460` together with the scheduled key
+   `--fixed-delta-time=16.6667 --frames=640` together with the scheduled key
    presses, mouse moves and captures below, **fails on any `[ERROR]`, `[WARNING]`
    or `[FATAL]` entry in the engine log**, and checks the captured frames with
    `AnalyzeShots.ps1`:
 
+   - **the ENGINE's sky is drawn**: the band above the ground plate is bright and
+     coloured where the clear colour would be nearly black - so the sky is there
+     even though the demo's render graph has no sky pass at all,
    - **the cube is on screen in every capture** - the camera follows it, so it can
      never leave the frame however far it moves,
-   - it is **colourful**: several face colours appear over the run (the per-face
-     colours are what the spin makes visible),
+   - it is **grey**: the pixels of it carry no hue worth speaking of - a per-face
+     palette would show as a saturation near 0.5 instead of 0.1, and would fail the
+     check above first, because that counts exactly these neutral pixels,
+   - **the sky material was replaced and the sky changed with it**: the first
+     capture's band is the engine's blue and the last one's is the dusk the demo put
+     in `RenderSettings.Skybox` - nothing else about the frame changed, no pass was
+     added and no shader was touched,
    - the **light comes from straight above**: the upper part of the cube is far
-     brighter than the lower part,
+     brighter than the lower part - with one colour on every face, that shading is
+     the only thing that makes the shape read,
    - the **interface is drawn on top** of the scene, in the corner its panel is
      pinned to.
 
-   What a still frame cannot show is read out of the demo's once-a-second state
-   lines instead, because a cube a follow camera keeps centred looks the same
-   wherever it is:
+   The frames the pixel checks analyse are all taken with the camera where the demo
+   opens, above the cube: the two extremes of the orbit are captured as `view`
+   frames instead, and what they show is asserted on from the log, because a cube
+   seen from straight below has no lit top face to measure.
 
-   - **W / D / A moved it** the way the camera's frame says they should, and **R**
-     put it back at the origin,
-   - **T flipped the spin** to counter-clockwise and the second T flipped it back,
-     while the cube kept spinning the whole time,
-   - the camera stayed **45 degrees above the cube at a fixed distance** - the
-     follow camera never lost it - and a **300-pixel mouse move turned the yaw by
-     exactly the 45 degrees the sensitivity asks for**, without touching the pitch,
-   - the **localisation catalog was read** (`Locales/<locale>.json`, staged next
-     to the executable by the Assembly's build), and both shaders and the render
-     graph reported themselves ready.
+   What a still frame cannot show is read out of the demo's twice-a-second state
+   lines, out of the physics world's own reports and out of the engine clock's
+   records:
+
+   - **the engine loaded its own sky** (`Loaded shader 'Vsp/Skybox'`) and the
+     demo's render graph has **no sky pass** in it, which is what proves the sky is
+     the engine's and not a pass of the game's,
+   - the **collision code answered four known-answer checks** the demo runs when it
+     starts: a ray into a sphere, into a box, into the same box turned 45 degrees
+     about Y and into a triangle mesh each have to come back with the distance and
+     the surface normal arithmetic says they must - which is what covers the shapes
+     the demo's own scene does not use,
+   - **the cube was dropped**: the first state line has it high above the plate and
+     falling, and it reports itself **grounded** within the first second,
+   - it **bounced** - the physics world's answer, logged as an impact speed, a
+     rebound speed and a count - and then **came to rest on the plate at exactly
+     y = 0.00** with no velocity at all, which is the height the collision
+     resolution against the plate's two triangles produces,
+   - **R dropped it again** and it landed a second time,
+   - **W / D / A pushed it** the way the camera's frame says they should, and
+     **T flipped the spin** to counter-clockwise, then back, while the cube kept
+     spinning the whole time,
+   - the **camera always looked at the cube**: the check recomputes, from every
+     state line, that the camera sits exactly `distance` away from the cube and
+     exactly as high above it as its pitch asks for - a rig that lost the cube, or
+     one whose maths drifted from its own angles, breaks one of the two,
+   - the **yaw covers a full turn** (it wraps past 180 degrees instead of growing)
+     and the **pitch reaches both of its 89-degree stops**, which is the whole 178
+     of the 180 degrees a vertical view has,
+   - a horizontal mouse move leaves the pitch alone and a vertical one leaves the
+     yaw alone,
+   - **the ground stops the camera, not only the cube**: looking up from below, the
+     camera is pulled in front of the plate and stays above it,
+   - **the clock (`Classes/Time`) agreed with the frames**: every capture reports an
+     elapsed time of exactly `(frame + 1) * 16.6667 ms`, which is what a fixed step
+     that the clock itself accumulates has to produce,
+   - the **localisation catalog was read** (`Locales/<locale>.json`, staged next to
+     the executable by the Assembly's build), and all three shaders, the physics
+     world and the render graph reported themselves ready,
+   - **the pointer was asked for and not taken**: the demo asks for a locked cursor
+     (it turns the camera with the mouse), and this run refuses it with
+     `--no-cursor-lock` - an automated run happens on someone's desktop and must
+     not hide their pointer or move it to the middle of a window. The engine says
+     so, and the scheduled pointer positions therefore mean exactly what they say:
+     a recentred pointer would measure every move from the centre.
+
+   A third, short run is made WITHOUT that flag, because what the cursor does when
+   it IS allowed has to be checked too: the engine has to report that it hid the
+   pointer and held it at the centre of the window, and that it gave the pointer
+   back when the window closed - a cursor left hidden would follow the user out of
+   the engine.
 
    It then patches the binding of the camera block **inside the container** and
    runs the engine once more: the load must be refused, by name, with
@@ -832,13 +1016,17 @@ powershell -NoProfile -ExecutionPolicy Bypass -File Engine\Tools\Acceptance\Veri
 The equivalent command line:
 
 ```
-Launch.exe --silent --frames=460 --fixed-delta-time=16.6667 ^
+Launch.exe --silent --frames=640 --fixed-delta-time=16.6667 --no-cursor-lock ^
   --key 0x54:0 --key 0x57:1500 --key 0x44:1500 --key 0x41:1500 ^
   --key 0x54:0 --key 0x52:0 ^
-  --mouse 400:300:6300 --mouse 700:300:6400 ^
+  --mouse 400:300:6300 --mouse 700:300:6400 --mouse 700:667:7800 ^
+  --mouse 1900:667:8300 --mouse 1900:1900:8800 --mouse 1900:0:9300 ^
   --capture 40:shot0_initial.bmp --capture 60:shot1_after_T.bmp ^
   --capture 150:shot2_after_W.bmp --capture 235:shot3_after_D.bmp ^
-  --capture 350:shot4_after_A.bmp --capture 430:shot5_after_reset.bmp
+  --capture 350:shot4_after_A.bmp --capture 430:shot5_after_reset.bmp ^
+  --capture 460:shot6_at_rest.bmp ^
+  --capture 500:view_looking_up.bmp --capture 560:view_pitch_up.bmp ^
+  --capture 620:view_pitch_down.bmp
 ```
 
 ## Layout
@@ -850,12 +1038,15 @@ Launch.exe --silent --frames=460 --fixed-delta-time=16.6667 ^
 - `Engine/Source/Programs/HLSLCC`  - the HLSL cross compiler `HLSLCC.exe`: the .vsf parser, Vulkan namespace injection, the DXC backend, the engine's binding rules, SPIR-V reflection and the `.vsfo` container writer. Nothing links it into the runtime.
 - `Engine/Source/Shared`            - `VsfoFormat.h`, the one definition of the shader-container format that both HLSLCC (writer) and VspCore (reader) compile.
 - `Engine/Shaders/Builtin`          - the HLSL builtin library (`Vsp/Common`, `Transform`, `Texture`, `Normal`, `Lighting`, `Builtin`), staged next to HLSLCC.exe and included by shaders as `<Vsp/...>`.
+- `Engine/Shaders/Runtime`          - the shaders the ENGINE ships and loads at run time: `Skybox.vsf` (the sky every frame is painted with) and the HLSL it includes. `VspEngine.csproj` compiles them with HLSLCC into the run directory's `Shaders` folder, next to the game's.
 - `Engine/Source/Programs/VspBuildTool` - the lightweight build system / stager described above.
 - `Engine/Source/Thirdparty`  - imported third-party SDKs (Vulkan, dxc, glm, fmt, ...). Read-only: never modified.
 - `Engine/Binaries`           - third-party binaries (dotnet runtime, Vulkan import lib, ...).
 - `Engine/Intermediate`       - all build outputs: binaries, obj/, NuGet restore caches, generated shader header.
 - `Engine/Tools/Build`        - the build steps: `CompileShaders.ps1` compiles a game's `.vsf` shaders into the run directory's `Shaders` folder.
 - `Engine/Tools/Acceptance`   - the acceptance runner, the shader-compilation verifier and the captured-frame analyzer.
+- `Engine/Source/Runtime/VspCore/Physics` - the collision and simulation code: `CollisionDetection` (the shape and ray tests, as pure functions on world-space shapes), `PhysicsTypes.h` (contacts, ray hits and the limits a step works within) and `PhysicsWorld` (the step: gather, integrate, broadphase, narrowphase, solve, sleep, raycast). Nothing there knows about the renderer or the platform.
+- `Engine/Source/Runtime/VspCore/Classes/Time` - the engine clock: the frame-step policy, the time scale, the stall guard and everything the engine reads about time. The platform part of timing (the high-resolution timer) stays in `Common/PlatformMisc`, so the clock itself is platform independent.
 - `Engine/Source/Runtime/VspCore/Math` - the engine's own vector and matrix maths (`Vector2/3/4`, `Matrix4x4`, `Quaternion`), exported to managed code as `VspMath_*`.
 - `Engine/Source/Runtime/VspCore/Core/Text` - the native text service (`Font`, `TextSystem`): FreeType rasterization into a coverage atlas, laid out into glyph quads.
 - `Engine/Source/Runtime/VspCore/Core/String/I18N` - the localisation service: locales, JSON catalogs, fallback and lookup.

@@ -148,9 +148,8 @@ namespace VspEngine.Rendering
 		internal static extern void VspRhi_DestroyPipeline(uint pipeline);
 
 		// ---- Frame recording ----
-		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
-		internal static extern void VspRhi_BeginFrame();
-
+		// The frame is opened by the engine's rendering system before the scripts
+		// run; a pipeline records into it and closes it through Submit().
 		[DllImport(LibraryName, CallingConvention = CallingConvention.Cdecl)]
 		internal static extern void VspRhi_EndFrame();
 

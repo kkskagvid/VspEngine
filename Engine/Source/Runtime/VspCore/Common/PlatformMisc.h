@@ -54,6 +54,29 @@ namespace Vsp
 		// exactly as a physical mouse does.
 		static void PostWindowMouseMoveMessage(void* pWindowHandle, int32 nClientX, int32 nClientY);
 
+		// -------- Cursor (the pointer a window shows) --------
+		// Hides or shows the mouse pointer. A game hides it while the pointer
+		// turns a camera and shows it again when a menu opens. Idempotent: asking
+		// for a state it is already in changes nothing. Best effort on a platform
+		// that has no such notion; never an error.
+		static void SetCursorVisible(bool bIsVisible);
+
+		// Keeps the pointer inside the window's client area, or lets it go again.
+		// A confined pointer cannot leave the game to click something behind it.
+		static void ConfineCursorToWindow(void* pWindowHandle);
+		static void ReleaseCursorConfinement();
+
+		// True while the given window is the one the user's input goes to. A window
+		// in the background does not own the pointer, so the engine gives it back.
+		static bool IsWindowFocused(void* pWindowHandle);
+
+		// Puts the pointer at the centre of the window's client area and reports
+		// where it landed, in client coordinates. Returns false when there is no
+		// window, when it could not be moved, or when the window is not the one
+		// the user is working in - a window in the background does not own the
+		// pointer and must not move it.
+		static bool CentreCursorInWindow(void* pWindowHandle, int32& outClientX, int32& outClientY);
+
 		// -------- Debugger / user prompts --------
 		static void WriteToDebugOutput(const char* pMessageUtf8);
 

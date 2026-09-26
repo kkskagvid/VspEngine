@@ -1,10 +1,14 @@
 #include "RuntimePCH.h"
 
+#include "Common/PlatformMisc.h"
 #include "Core/Events/InputEvents.h"
 #include "Core/Input/InputManager.h"
+#include "Core/Logging/Log.h"
 
 namespace Vsp
 {
+	static constexpr const char* kLogTag = "Input";
+
 	InputManager& InputManager::Get()
 	{
 		static InputManager s_Instance;
@@ -39,6 +43,98 @@ namespace Vsp
 		// Drop any unread typed characters.
 		m_nTypedCharacterCount = 0;
 		m_nTypedCharacterReadIndex = 0;
+
+		// The pointer of a locked cursor goes back to the middle of the window once
+		// the frame has read the movement it produced. Doing it HERE - after the
+		// scripts have run and after the frame has been recorded - is what keeps a
+		// frame's movement whole: the delta a script read came from the player's
+		// hand, and the jump back to the middle happens after nobody is looking.
+		ApplyCursorMode();
+		if (m_eCursorMode == CursorMode::Locked)
+		{
+			int32 nCentreX = 0;
+			int32 nCentreY = 0;
+			if (PlatformMisc::CentreCursorInWindow(m_pCursorWindowHandle, nCentreX, nCentreY))
+			{
+				m_fCursorCentreX = static_cast<float>(nCentreX);
+				m_fCursorCentreY = static_cast<float>(nCentreY);
+				m_bHasCursorCentre = true;
+			}
+		}
+	}
+
+	// =========================================================================
+	// Cursor
+	// =========================================================================
+
+	void InputManager::SetCursorMode(CursorMode eCursorMode)
+	{
+		if (m_eCursorMode == eCursorMode)
+		{
+			return;
+		}
+
+		m_eCursorMode = eCursorMode;
+		m_bHasCursorCentre = false;
+		ApplyCursorMode();
+	}
+
+	void InputManager::SetCursorLockAllowed(bool bIsCursorLockAllowed)
+	{
+		if (m_bIsCursorLockAllowed == bIsCursorLockAllowed)
+		{
+			return;
+		}
+
+		m_bIsCursorLockAllowed = bIsCursorLockAllowed;
+		ApplyCursorMode();
+	}
+
+	void InputManager::ApplyCursorMode()
+	{
+		// Three things have to hold before the pointer may be taken: the game asked
+		// for it, the run allows it, and the window is the one the player's input
+		// goes to. A window in the background does not own the pointer, so
+		// alt-tabbing away gives it back and returning takes it again - which the
+		// per-frame call below does by itself.
+		const bool bOwnsPointer = PlatformMisc::IsWindowFocused(m_pCursorWindowHandle);
+		const bool bIsLocked = bOwnsPointer && m_bIsCursorLockAllowed && (m_eCursorMode == CursorMode::Locked);
+
+		// A game that asked for the pointer and did not get it is told why once,
+		// rather than being left to wonder why its cursor never went away.
+		if (!m_bIsCursorLockAllowed && m_eCursorMode == CursorMode::Locked && !m_bHasReportedLockRefusal)
+		{
+			m_bHasReportedLockRefusal = true;
+			LOG_INFO(kLogTag, "The game asked for a locked cursor, but this run leaves the pointer to the user (--no-cursor-lock).");
+		}
+
+		// A locked cursor is a hidden one: the pointer still moves and still
+		// reports where it is, it is simply not drawn over the game.
+		PlatformMisc::SetCursorVisible(!bIsLocked);
+
+		if (!bOwnsPointer || m_eCursorMode == CursorMode::Visible)
+		{
+			PlatformMisc::ReleaseCursorConfinement();
+		}
+		else
+		{
+			PlatformMisc::ConfineCursorToWindow(m_pCursorWindowHandle);
+		}
+
+		// This runs every frame, so only the transitions are worth a line - and
+		// they are exactly what a run of the demo is checked against.
+		if (bIsLocked != m_bIsCursorLocked)
+		{
+			m_bIsCursorLocked = bIsLocked;
+			if (bIsLocked)
+			{
+				LOG_INFO(kLogTag, "Cursor locked: the pointer is hidden and held at the centre of the window.");
+			}
+			else
+			{
+				LOG_INFO(kLogTag, "Cursor released: the pointer is the user's again.");
+			}
+		}
 	}
 
 	void InputManager::OnEvent(Event& eEvent)
@@ -171,14 +267,25 @@ namespace Vsp
 
 	void InputManager::HandleMouseMoved(float fPositionX, float fPositionY)
 	{
-		if (m_bHasMousePosition)
+		// While the cursor is locked the engine puts the pointer back at the centre
+		// of the window after every frame, and the system reports that jump like any
+		// other movement. It is not one: a move that lands exactly on the place the
+		// engine chose is the engine's own doing, so it updates the position without
+		// turning anything. A hand does not land on that same pixel by accident, and
+		// the next real movement is measured from there in either case.
+		const bool bIsOwnRecentre = m_bHasCursorCentre &&
+			(m_eCursorMode == CursorMode::Locked) &&
+			(fPositionX == m_fCursorCentreX) &&
+			(fPositionY == m_fCursorCentreY);
+
+		if (!m_bHasMousePosition)
+		{
+			m_bHasMousePosition = true;
+		}
+		else if (!bIsOwnRecentre)
 		{
 			m_fMouseDeltaX += fPositionX - m_fMousePositionX;
 			m_fMouseDeltaY += fPositionY - m_fMousePositionY;
-		}
-		else
-		{
-			m_bHasMousePosition = true;
 		}
 
 		m_fMousePositionX = fPositionX;

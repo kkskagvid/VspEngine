@@ -2,7 +2,7 @@
     "locale": "zh-CN",
     "entries":
     {
-        "demo.title": "Vsp 引擎 - 彩色光照立方体",
+        "demo.title": "Vsp 引擎 - 天空下的灰色立方体",
         "demo.status": "立方体 ({0}, {1}, {2}) / 绕 Y 轴{3}旋转",
         "demo.button.spin": "顺时针",
         "demo.button.reset": "重置立方体",

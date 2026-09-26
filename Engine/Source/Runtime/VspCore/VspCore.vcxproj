@@ -22,10 +22,13 @@
     <ClInclude Include="Classes\Object.h" />
     <ClInclude Include="Classes\GameObject.h" />
     <ClInclude Include="Classes\Camera.h" />
+    <ClInclude Include="Classes\Collider.h" />
     <ClInclude Include="Classes\Component.h" />
+    <ClInclude Include="Classes\Rigidbody.h" />
     <ClInclude Include="Classes\Shader.h" />
     <ClInclude Include="Classes\Material.h" />
     <ClInclude Include="Classes\Scene.h" />
+    <ClInclude Include="Classes\Time.h" />
     <ClInclude Include="Classes\Transform.h" />
     <ClInclude Include="Common\NativeApi.h" />
     <ClInclude Include="Common\PlatformMisc.h" />
@@ -62,6 +65,9 @@
     <ClInclude Include="Core\Type.h" />
     <ClInclude Include="Core\Input\KeyCode.h" />
     <ClInclude Include="Core\Input\InputManager.h" />
+    <ClInclude Include="Physics\CollisionDetection.h" />
+    <ClInclude Include="Physics\PhysicsWorld.h" />
+    <ClInclude Include="Physics\PhysicsTypes.h" />
     <ClInclude Include="Graphics\RhiTypes.h" />
     <ClInclude Include="Graphics\GraphicsSystem.h" />
     <ClInclude Include="Graphics\ShaderBindings.h" />
@@ -78,7 +84,7 @@
     <ClInclude Include="Graphics\Vulkan\VulkanRHI.h" />
     <ClInclude Include="Graphics\Vulkan\VulkanSwapChain.h" />
     <ClInclude Include="Graphics\Vulkan\VulkanRenderer2D.h" />
-    <ClInclude Include="Scripting\ScriptCore.h" />
+    <ClInclude Include="Scripting\ScriptTypes.h" />
     <ClInclude Include="Scripting\ScriptEngine.h" />
     <ClInclude Include="Core\Window.h" />
     <ClInclude Include="Core\Events\Event.h" />
@@ -95,10 +101,13 @@
     <ClCompile Include="Classes\Object.cpp" />
     <ClCompile Include="Classes\GameObject.cpp" />
     <ClCompile Include="Classes\Camera.cpp" />
+    <ClCompile Include="Classes\Collider.cpp" />
     <ClCompile Include="Classes\Component.cpp" />
+    <ClCompile Include="Classes\Rigidbody.cpp" />
     <ClCompile Include="Classes\Shader.cpp" />
     <ClCompile Include="Classes\Material.cpp" />
     <ClCompile Include="Classes\Scene.cpp" />
+    <ClCompile Include="Classes\Time.cpp" />
     <ClCompile Include="Classes\Transform.cpp" />
     <ClCompile Include="Core\Application.cpp" />
     <ClCompile Include="Core\Engine.cpp" />
@@ -129,6 +138,8 @@
     <ClCompile Include="Graphics\GraphicsSystem.cpp" />
     <ClCompile Include="Graphics\ShaderContainer.cpp" />
     <ClCompile Include="Graphics\ShaderLibrary.cpp" />
+    <ClCompile Include="Physics\CollisionDetection.cpp" />
+    <ClCompile Include="Physics\PhysicsWorld.cpp" />
     <ClCompile Include="Graphics\ShaderReflection.cpp" />
     <ClCompile Include="Graphics\RenderCore.cpp" />
     <ClCompile Include="Graphics\Vulkan\VulkanInstance.cpp" />
@@ -144,11 +155,11 @@
     <ClCompile Include="Scripting\MathExports.cpp" />
     <ClCompile Include="Scripting\TextExports.cpp" />
     <ClCompile Include="Scripting\NativeExports.cpp" />
+    <ClCompile Include="Scripting\PhysicsExports.cpp" />
     <ClCompile Include="Scripting\AssetExports.cpp" />
     <ClCompile Include="Scripting\CameraExports.cpp" />
     <ClCompile Include="Scripting\SceneExports.cpp" />
     <ClCompile Include="Scripting\RhiExports.cpp" />
-    <ClCompile Include="Scripting\ScriptCore.cpp" />
     <ClCompile Include="Scripting\ScriptEngine.cpp" />
     <ClCompile Include="Scripting\ScriptBehaviour.cpp" />
   </ItemGroup>

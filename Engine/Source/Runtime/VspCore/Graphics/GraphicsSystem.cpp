@@ -1,7 +1,9 @@
 #include "RuntimePCH.h"
 
+#include "Core/Input/InputManager.h"
 #include "Core/Logging/Log.h"
 #include "Graphics/GraphicsSystem.h"
+#include "Graphics/RenderCore.h"
 
 namespace Vsp
 {
@@ -347,6 +349,29 @@ namespace Vsp
 		pEntry->State.uPushConstantByteCount = uPushConstantByteCount;
 	}
 
+	// -------------------------------------------------------------------------
+	// Frame
+	// -------------------------------------------------------------------------
+
+	void GraphicsSystem::BeginFrame()
+	{
+		// A frame begins with an empty command list that the render pipeline will
+		// fill, and with the input state the frame is going to read: the edges of
+		// the frame that just ended were cleared when it ended, and this is where
+		// the new frame's accumulation starts.
+		RenderCore::Get().BeginFrame();
+		InputManager::Get().BeginFrame();
+	}
+
+	void GraphicsSystem::EndFrame()
+	{
+		// The frame is over: the pressed/released edges, the mouse movement and the
+		// wheel a script could still have read are cleared now - once, for every
+		// frame. Whoever renders a frame does not have to remember to do it, and a
+		// game cannot forget it and see the same key fire twice.
+		InputManager::Get().EndFrame();
+	}
+
 	RhiPipelineHandle GraphicsSystem::BuildPipelineFromBuilder(RhiPipelineBuilderHandle uBuilder)
 	{
 		PipelineBuilderEntry* pEntry = FindPipelineBuilder(uBuilder);
@@ -360,12 +385,21 @@ namespace Vsp
 		pEntry->bIsActive = false;
 		pEntry->State = RhiGraphicsPipelineState();
 
+		// Both stages are required. Vertex input is not: a pipeline whose vertex
+		// stage generates its geometry - the sky's fullscreen triangle takes its
+		// corners from SV_VertexID - reads no vertex buffer at all, so stating
+		// neither a stride nor an attribute is a complete description rather than
+		// a forgotten one. A pipeline that states one of the two without the other
+		// is a mistake, and is refused.
+		const bool bHasVertexInput = state.uVertexStride > 0 || state.uVertexAttributeCount > 0;
+		const bool bHasCompleteVertexInput = state.uVertexStride > 0 && state.uVertexAttributeCount > 0;
+
 		if (state.uVertexShader == k_nInvalidRhiHandle ||
 			state.uFragmentShader == k_nInvalidRhiHandle ||
-			state.uVertexStride == 0 ||
-			state.uVertexAttributeCount == 0)
+			(bHasVertexInput && !bHasCompleteVertexInput))
 		{
-			LOG_ERROR(kLogTag, "BuildPipelineFromBuilder: shaders, vertex stride and at least one vertex attribute are required.");
+			LOG_ERROR(kLogTag, "BuildPipelineFromBuilder: both shader stages are required, and vertex input needs "
+				"both a stride and at least one vertex attribute (or neither, for a pipeline that reads no vertex buffer).");
 			return k_nInvalidRhiHandle;
 		}
 

@@ -6,6 +6,14 @@
 namespace Vsp
 {
 	// -------------------------------------------------------------------------
+	// Small value types the script host shares with the engine
+	// -------------------------------------------------------------------------
+	// The frame clock itself lives in Classes/Time; what remains here are the
+	// plain values the host moves across its own boundary and logs - today the
+	// 2D position a frame capture reports.
+	// -------------------------------------------------------------------------
+
+	// -------------------------------------------------------------------------
 	// Position2D
 	// -------------------------------------------------------------------------
 	// Plain 2D position pair. Demonstrates custom VspFormat support: the
@@ -16,35 +24,6 @@ namespace Vsp
 	{
 		float fPositionX = 0.0f;
 		float fPositionY = 0.0f;
-	};
-
-	// -------------------------------------------------------------------------
-	// ScriptCore
-	// -------------------------------------------------------------------------
-	// The frame clock managed scripts read through Time.DeltaTime /
-	// Time.ElapsedTime. It is the only per-frame state the script host still
-	// owns: everything else a script touches (transforms, components, render
-	// state) lives in the native scene (Classes/Scene), and rendering is driven
-	// by the managed render pipeline through the wrapped graphics API.
-	// The native exports (NativeExports.cpp) forward C# calls into this class.
-	// -------------------------------------------------------------------------
-	class RUNTIME_API ScriptCore
-	{
-	public:
-		static ScriptCore& Get();
-
-		// -------- Time --------
-		void SetDeltaTime(float fDeltaSeconds) { m_fDeltaTime = fDeltaSeconds; }
-		float GetDeltaTime() const { return m_fDeltaTime; }
-
-		void SetElapsedTime(float fElapsedSeconds) { m_fElapsedTime = fElapsedSeconds; }
-		float GetElapsedTime() const { return m_fElapsedTime; }
-
-	private:
-		ScriptCore() = default;
-
-		float m_fDeltaTime = 0.0f;
-		float m_fElapsedTime = 0.0f;
 	};
 }
 

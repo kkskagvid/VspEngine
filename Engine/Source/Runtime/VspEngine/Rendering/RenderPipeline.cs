@@ -14,6 +14,18 @@ namespace VspEngine.Rendering
 	/// </summary>
 	public abstract class RenderPipeline : IDisposable
 	{
+		/// <summary>
+		/// The camera this pipeline renders the frame from, or null for a frame
+		/// nobody looks at.
+		///
+		/// The engine asks for it BEFORE it opens the frame, because the frame needs
+		/// it: the camera block a shader reads is filled from it, and the sky is
+		/// painted with it. A pipeline that creates its resources on demand is
+		/// therefore asked once before its first Render - which is exactly when it
+		/// should build them.
+		/// </summary>
+		public virtual Camera? Camera => null;
+
 		/// <summary>Builds and records the frame.</summary>
 		public abstract void Render(ScriptableRenderContext context);
 

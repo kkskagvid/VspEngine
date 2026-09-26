@@ -21,6 +21,9 @@
       <Platform Project="x64" />
     </Project>
     <Project Path="Engine/Source/Runtime/VspEngine/VspEngine.csproj">
+      <!-- The engine's own runtime shaders (the sky) are compiled by HLSLCC while
+           the managed engine builds. -->
+      <BuildDependency Project="Engine/Source/Programs/HLSLCC/HLSLCC.vcxproj" />
       <Platform Project="x64" />
     </Project>
   </Folder>

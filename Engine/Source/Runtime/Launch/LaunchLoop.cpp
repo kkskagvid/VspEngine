@@ -26,6 +26,7 @@ namespace Vsp
 		uint32 uMaxFrameCount = 0;             // 0 = unlimited
 		float fFixedDeltaMilliseconds = 0.0f;    // 0 = wall clock; > 0 = fixed frame step (deterministic runs)
 		bool bShowErrorDialog = true;            // false = write errors to the log only (automation)
+		bool bAllowCursorLock = true;            // false = never take the user's pointer (automation)
 		VspString sEngineAssemblyPath;           // defaults to <exe dir>\VspEngine.dll
 		VspString sAssemblyPath;                 // defaults to <exe dir>\Assembly.dll (game Assembly)
 		VspString sRuntimeConfigPath;            // defaults to <exe dir>\Launch.runtimeconfig.json
@@ -183,6 +184,12 @@ namespace Vsp
 		else if (sArgument.Equals("--silent"))
 		{
 			options.bShowErrorDialog = false;
+		}
+		else if (sArgument.Equals("--no-cursor-lock"))
+		{
+			// An automated run happens on someone's desktop: it must not hide their
+			// pointer or move it to the middle of a window.
+			options.bAllowCursorLock = false;
 		}
 	}
 
@@ -365,6 +372,7 @@ namespace Vsp
 		config.fFixedDeltaSeconds = options.fFixedDeltaMilliseconds > 0.0f
 			? options.fFixedDeltaMilliseconds / 1000.0f
 			: 0.0f;
+		config.bAllowCursorLock = options.bAllowCursorLock;
 		config.sEngineAssemblyPath = options.sEngineAssemblyPath;
 		config.sAssemblyPath = options.sAssemblyPath;
 		config.sRuntimeConfigPath = options.sRuntimeConfigPath;

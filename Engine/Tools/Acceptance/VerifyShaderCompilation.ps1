@@ -48,7 +48,7 @@ param(
     # The game's shaders, relative to the repository root. Every one of them is a
     # .vsf file of the game Assembly's Shaders folder; adding a shader to the demo
     # means adding its name here.
-    [string[]]$ShaderFiles = @("Assembly\Shaders\LitCube.vsf", "Assembly\Shaders\UiQuad.vsf")
+    [string[]]$ShaderFiles = @("Assembly\Shaders\LitCube.vsf", "Assembly\Shaders\UiQuad.vsf", "Engine\Shaders\Runtime\Skybox.vsf")
 )
 
 $ErrorActionPreference = "Stop"

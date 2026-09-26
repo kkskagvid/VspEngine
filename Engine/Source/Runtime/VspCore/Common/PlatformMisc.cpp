@@ -195,6 +195,155 @@ namespace Vsp
 	}
 
 	// -------------------------------------------------------------------------
+	// Cursor
+	// -------------------------------------------------------------------------
+	// The pointer belongs to the window the user is working in, so every call here
+	// is best effort: a window in the background, or a platform without the
+	// notion, simply leaves the pointer alone.
+
+	void PlatformMisc::SetCursorVisible(bool bIsVisible)
+	{
+#if VSP_PLATFORM_WINDOWS
+		if (bIsVisible)
+		{
+			// The display counter is a COUNT, not a flag: it is raised until the
+			// cursor is shown again, whatever hid it before, and the shape is put
+			// back so the next frame draws the familiar arrow.
+			while (::ShowCursor(TRUE) < 0)
+			{
+			}
+			::SetCursor(::LoadCursorW(nullptr, IDC_ARROW));
+		}
+		else
+		{
+			// ... and lowered until it is gone, with the shape cleared as well so
+			// it disappears on THIS frame rather than on the next WM_SETCURSOR.
+			while (::ShowCursor(FALSE) >= 0)
+			{
+			}
+			::SetCursor(nullptr);
+		}
+#else
+		(void)bIsVisible;
+#endif
+	}
+
+	bool PlatformMisc::IsWindowFocused(void* pWindowHandle)
+	{
+#if VSP_PLATFORM_WINDOWS
+		if (pWindowHandle == nullptr)
+		{
+			return false;
+		}
+
+		// "The player is in the game" means the keyboard goes to THIS window: it is
+		// the active window of this thread and it (or one of its children) holds the
+		// focus. GetForegroundWindow would answer a different question - another
+		// process' window that merely sits in front would pass it - and the pointer
+		// belongs to whoever the user is typing to, not to whoever is on top.
+		const HWND hWindow = static_cast<HWND>(pWindowHandle);
+		if (::GetActiveWindow() != hWindow)
+		{
+			return false;
+		}
+
+		const HWND hFocusedWindow = ::GetFocus();
+		return (hFocusedWindow == hWindow) || (::IsChild(hWindow, hFocusedWindow) != FALSE);
+#else
+		(void)pWindowHandle;
+		return false;
+#endif
+	}
+
+	void PlatformMisc::ConfineCursorToWindow(void* pWindowHandle)
+	{
+#if VSP_PLATFORM_WINDOWS
+		if (pWindowHandle == nullptr)
+		{
+			return;
+		}
+
+		// ClipCursor works in SCREEN coordinates, so the client rectangle is
+		// mapped through ClientToScreen first - including the window's borders.
+		const HWND hWindow = static_cast<HWND>(pWindowHandle);
+		RECT clientRectangle = {};
+		if (!::GetClientRect(hWindow, &clientRectangle))
+		{
+			return;
+		}
+
+		POINT topLeft = { clientRectangle.left, clientRectangle.top };
+		POINT bottomRight = { clientRectangle.right, clientRectangle.bottom };
+		if (!::ClientToScreen(hWindow, &topLeft) || !::ClientToScreen(hWindow, &bottomRight))
+		{
+			return;
+		}
+
+		const RECT screenRectangle = { topLeft.x, topLeft.y, bottomRight.x, bottomRight.y };
+		::ClipCursor(&screenRectangle);
+#else
+		(void)pWindowHandle;
+#endif
+	}
+
+	void PlatformMisc::ReleaseCursorConfinement()
+	{
+#if VSP_PLATFORM_WINDOWS
+		// The confinement is per-process in Win32 and outlives the window it was
+		// asked for, so it is released explicitly rather than by closing anything.
+		::ClipCursor(nullptr);
+#endif
+	}
+
+	bool PlatformMisc::CentreCursorInWindow(void* pWindowHandle, int32& outClientX, int32& outClientY)
+	{
+		outClientX = 0;
+		outClientY = 0;
+
+#if VSP_PLATFORM_WINDOWS
+		if (pWindowHandle == nullptr)
+		{
+			return false;
+		}
+
+		const HWND hWindow = static_cast<HWND>(pWindowHandle);
+
+		// Only the window the user is working in may move the pointer: taking it
+		// away from whatever they are really doing would be a bug, not a feature.
+		if (::GetForegroundWindow() != hWindow)
+		{
+			return false;
+		}
+
+		RECT clientRectangle = {};
+		if (!::GetClientRect(hWindow, &clientRectangle))
+		{
+			return false;
+		}
+
+		const int32 nClientX = (clientRectangle.right - clientRectangle.left) / 2;
+		const int32 nClientY = (clientRectangle.bottom - clientRectangle.top) / 2;
+		POINT screenPoint = { nClientX, nClientY };
+		if (!::ClientToScreen(hWindow, &screenPoint))
+		{
+			return false;
+		}
+
+		if (!::SetCursorPos(screenPoint.x, screenPoint.y))
+		{
+			return false;
+		}
+
+		outClientX = nClientX;
+		outClientY = nClientY;
+		return true;
+#else
+		(void)pWindowHandle;
+		return false;
+#endif
+	}
+
+	// -------------------------------------------------------------------------
 	// Debugger / user prompts
 	// -------------------------------------------------------------------------
 
