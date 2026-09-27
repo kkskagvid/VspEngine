@@ -319,49 +319,62 @@ namespace Vsp
 
 	bool PlatformMisc::CentreCursorInWindow(void* pWindowHandle, int32& outClientX, int32& outClientY)
 	{
-		outClientX = 0;
-		outClientY = 0;
+        outClientX = 0;
+        outClientY = 0;
 
 #if VSP_PLATFORM_WINDOWS
-		if (pWindowHandle == nullptr)
-		{
-			return false;
-		}
+        if (pWindowHandle == nullptr)
+        {
+            return false;
+        }
 
-		const HWND hWindow = static_cast<HWND>(pWindowHandle);
+        const HWND hWindow = static_cast<HWND>(pWindowHandle);
 
-		// Only the window the user is working in may move the pointer: taking it
-		// away from whatever they are really doing would be a bug, not a feature.
-		if (::GetForegroundWindow() != hWindow)
-		{
-			return false;
-		}
+        // Only the window the user is working in may move the pointer: taking it
+        // away from whatever they are really doing would be a bug, not a feature.
+        if (::GetForegroundWindow() != hWindow)
+        {
+            return false;
+        }
 
-		RECT clientRectangle = {};
-		if (!::GetClientRect(hWindow, &clientRectangle))
-		{
-			return false;
-		}
+        RECT clientRectangle = {};
+        if (!::GetClientRect(hWindow, &clientRectangle))
+        {
+            return false;
+        }
 
-		const int32 nClientX = (clientRectangle.right - clientRectangle.left) / 2;
-		const int32 nClientY = (clientRectangle.bottom - clientRectangle.top) / 2;
-		POINT screenPoint = { nClientX, nClientY };
-		if (!::ClientToScreen(hWindow, &screenPoint))
-		{
-			return false;
-		}
+        const int32 nClientX = (clientRectangle.right - clientRectangle.left) / 2;
+        const int32 nClientY = (clientRectangle.bottom - clientRectangle.top) / 2;
+        POINT screenPoint = { nClientX, nClientY };
+        if (!::ClientToScreen(hWindow, &screenPoint))
+        {
+            return false;
+        }
 
-		if (!::SetCursorPos(screenPoint.x, screenPoint.y))
-		{
-			return false;
-		}
+        if (!::SetCursorPos(screenPoint.x, screenPoint.y))
+        {
+            return false;
+        }
 
-		outClientX = nClientX;
-		outClientY = nClientY;
-		return true;
+        POINT actualPoint = {};
+        if (::GetCursorPos(&actualPoint) && ::ScreenToClient(hWindow, &actualPoint))
+        {
+            outClientX = static_cast<int32>(actualPoint.x);
+            outClientY = static_cast<int32>(actualPoint.y);
+        }
+        else
+        {
+            // Fall back to the requested centre if the read-back fails; the
+            // recentre still works, the caller just tracks the intent instead
+            // of the outcome.
+            outClientX = nClientX;
+            outClientY = nClientY;
+        }
+
+        return true;
 #else
-		(void)pWindowHandle;
-		return false;
+        (void)pWindowHandle;
+        return false;
 #endif
 	}
 

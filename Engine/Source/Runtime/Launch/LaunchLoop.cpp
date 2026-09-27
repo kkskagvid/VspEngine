@@ -244,8 +244,7 @@ namespace Vsp
 		const VspString sCandidates[k_nCandidateCount] =
 		{
 			sExecutableDirectory + "\\Binaries\\dotnet\\runtime\\10.0.10",
-			sExecutableDirectory + "\\..\\..\\..\\Binaries\\dotnet\\runtime\\10.0.10",
-			sExecutableDirectory + "\\..\\..\\..\\Binaries\\dotnet\\runtime10.0.10",
+            sExecutableDirectory + "\\..\\..\\..\\Binaries\\dotnet\\runtime\\10.0.10", // Test runs from the repository's Binaries tree.
 		};
 
 		for (uint32 uCandidateIndex = 0; uCandidateIndex < k_nCandidateCount; ++uCandidateIndex)
