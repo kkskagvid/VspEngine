@@ -7,11 +7,11 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "Core/Logging/Log.h"
-#include "Graphics/Vulkan/VulkanRenderer2D.h"
+#include "Graphics/Vulkan/VulkanRenderer.h"
 
 namespace Vsp
 {
-	static constexpr const char* kLogTag = "VulkanRenderer2D";
+	static constexpr const char* kLogTag = "VulkanRenderer";
 
 	// Both programmable stages may read the push-constant block.
 	static constexpr uint32 k_nPushConstantStageFlags =
@@ -22,7 +22,7 @@ namespace Vsp
 	// -------------------------------------------------------------------------
 
 	template <typename EntryType>
-	EntryType* VulkanRenderer2D::FindResource(ArrayList<EntryType>& Table, uint32 uHandle)
+	EntryType* VulkanRenderer::FindResource(ArrayList<EntryType>& Table, uint32 uHandle)
 	{
 		if (uHandle == k_nInvalidRhiHandle || uHandle > Table.GetSize())
 		{
@@ -34,13 +34,13 @@ namespace Vsp
 	}
 
 	template <typename EntryType>
-	const EntryType* VulkanRenderer2D::FindResource(const ArrayList<EntryType>& Table, uint32 uHandle) const
+	const EntryType* VulkanRenderer::FindResource(const ArrayList<EntryType>& Table, uint32 uHandle) const
 	{
-		return const_cast<VulkanRenderer2D*>(this)->FindResource(
+		return const_cast<VulkanRenderer*>(this)->FindResource(
 			const_cast<ArrayList<EntryType>&>(Table), uHandle);
 	}
 
-	bool VulkanRenderer2D::GetPipelineShaderStage(
+	bool VulkanRenderer::GetPipelineShaderStage(
 		RhiShaderHandle uShader,
 		RhiShaderStage eStage,
 		PipelineShaderStage& outStage) const
@@ -62,7 +62,7 @@ namespace Vsp
 		return true;
 	}
 
-	uint32 VulkanRenderer2D::AcquireBindlessTextureSlot() const
+	uint32 VulkanRenderer::AcquireBindlessTextureSlot() const
 	{
 		// The lowest slot no live texture occupies; the bindless array has
 		// VulkanDescriptors::k_nMaxBindlessTextureCount entries.
@@ -90,12 +90,12 @@ namespace Vsp
 	// Lifecycle
 	// -------------------------------------------------------------------------
 
-	VulkanRenderer2D::~VulkanRenderer2D()
+	VulkanRenderer::~VulkanRenderer()
 	{
 		Shutdown();
 	}
 
-	bool VulkanRenderer2D::Initialize(void* pNativeWindowHandle)
+	bool VulkanRenderer::Initialize(void* pNativeWindowHandle)
 	{
 		// 1. Context facade (instance + surface + device), then the swapchain
 		//    and the per-frame resources.
@@ -130,7 +130,7 @@ namespace Vsp
 		return true;
 	}
 
-	void VulkanRenderer2D::Shutdown()
+	void VulkanRenderer::Shutdown()
 	{
 		if (m_Context.IsInitialized())
 		{
@@ -152,7 +152,7 @@ namespace Vsp
 		m_bIsInitialized = false;
 	}
 
-	void VulkanRenderer2D::OnWindowResize(uint32 uWidth, uint32 uHeight)
+	void VulkanRenderer::OnWindowResize(uint32 uWidth, uint32 uHeight)
 	{
 		if (!m_bIsInitialized)
 		{
@@ -174,7 +174,7 @@ namespace Vsp
 		}
 	}
 
-	void VulkanRenderer2D::DestroyBuffers()
+	void VulkanRenderer::DestroyBuffers()
 	{
 		if (!m_Context.IsInitialized())
 		{
@@ -193,7 +193,7 @@ namespace Vsp
 		m_Buffers.Clear();
 	}
 
-	void VulkanRenderer2D::DestroyShaders()
+	void VulkanRenderer::DestroyShaders()
 	{
 		if (!m_Context.IsInitialized())
 		{
@@ -215,7 +215,7 @@ namespace Vsp
 		m_Shaders.Clear();
 	}
 
-	void VulkanRenderer2D::DestroyTextures()
+	void VulkanRenderer::DestroyTextures()
 	{
 		if (!m_Context.IsInitialized())
 		{
@@ -235,7 +235,7 @@ namespace Vsp
 		m_Textures.Clear();
 	}
 
-	void VulkanRenderer2D::DestroyPipelines()
+	void VulkanRenderer::DestroyPipelines()
 	{
 		if (!m_Context.IsInitialized())
 		{
@@ -259,7 +259,7 @@ namespace Vsp
 	// Wrapped graphics API: buffers
 	// -------------------------------------------------------------------------
 
-	RhiBufferHandle VulkanRenderer2D::CreateBuffer(const RhiBufferDescriptor& descriptor)
+	RhiBufferHandle VulkanRenderer::CreateBuffer(const RhiBufferDescriptor& descriptor)
 	{
 		if (!m_bIsInitialized)
 		{
@@ -306,7 +306,7 @@ namespace Vsp
 		return static_cast<RhiBufferHandle>(m_Buffers.GetSize());
 	}
 
-	void VulkanRenderer2D::DestroyBuffer(RhiBufferHandle uBuffer)
+	void VulkanRenderer::DestroyBuffer(RhiBufferHandle uBuffer)
 	{
 		BufferEntry* pEntry = FindResource(m_Buffers, uBuffer);
 		if (pEntry == nullptr)
@@ -321,7 +321,7 @@ namespace Vsp
 		pEntry->nByteSize = 0;
 	}
 
-	bool VulkanRenderer2D::UpdateBuffer(
+	bool VulkanRenderer::UpdateBuffer(
 		RhiBufferHandle uBuffer,
 		uint32 uByteOffset,
 		const void* pData,
@@ -361,8 +361,20 @@ namespace Vsp
 			return false;
 		}
 
+		// A failed map leaves the pointer null, so it is checked before the copy:
+		// otherwise the upload of a static buffer would crash instead of failing.
 		void* pMappedData = nullptr;
-		vkMapMemory(m_Context.GetDevice(), stagingBufferMemory, 0, uByteCount, 0, &pMappedData);
+		const VkResult eMapResult =
+			vkMapMemory(m_Context.GetDevice(), stagingBufferMemory, 0, uByteCount, 0, &pMappedData);
+		if (eMapResult != VK_SUCCESS || pMappedData == nullptr)
+		{
+			LOG_ERROR(kLogTag, "UpdateBuffer: vkMapMemory failed with {} for {} byte(s).",
+				static_cast<int32>(eMapResult), uByteCount);
+			vkDestroyBuffer(m_Context.GetDevice(), stagingBuffer, nullptr);
+			vkFreeMemory(m_Context.GetDevice(), stagingBufferMemory, nullptr);
+			return false;
+		}
+
 		memcpy(pMappedData, pData, uByteCount);
 		vkUnmapMemory(m_Context.GetDevice(), stagingBufferMemory);
 
@@ -387,7 +399,7 @@ namespace Vsp
 	// Wrapped graphics API: shaders
 	// -------------------------------------------------------------------------
 
-	RhiShaderHandle VulkanRenderer2D::CreateShader(
+	RhiShaderHandle VulkanRenderer::CreateShader(
 		RhiShaderStage eStage,
 		const char* pEntryPointName,
 		const void* pSpirvCode,
@@ -430,7 +442,7 @@ namespace Vsp
 		return static_cast<RhiShaderHandle>(m_Shaders.GetSize());
 	}
 
-	void VulkanRenderer2D::DestroyShader(RhiShaderHandle uShader)
+	void VulkanRenderer::DestroyShader(RhiShaderHandle uShader)
 	{
 		ShaderEntry* pEntry = FindResource(m_Shaders, uShader);
 		if (pEntry == nullptr)
@@ -451,7 +463,7 @@ namespace Vsp
 	// Wrapped graphics API: textures
 	// -------------------------------------------------------------------------
 
-	RhiTextureHandle VulkanRenderer2D::CreateTexture(
+	RhiTextureHandle VulkanRenderer::CreateTexture(
 		const RhiTextureDescriptor& descriptor,
 		const void* pPixelDataRgba8)
 	{
@@ -498,7 +510,7 @@ namespace Vsp
 		return static_cast<RhiTextureHandle>(m_Textures.GetSize());
 	}
 
-	void VulkanRenderer2D::DestroyTexture(RhiTextureHandle uTexture)
+	void VulkanRenderer::DestroyTexture(RhiTextureHandle uTexture)
 	{
 		TextureEntry* pEntry = FindResource(m_Textures, uTexture);
 		if (pEntry == nullptr)
@@ -511,7 +523,7 @@ namespace Vsp
 		pEntry->bIsActive = false;
 	}
 
-	int32 VulkanRenderer2D::GetTextureBindlessSlot(RhiTextureHandle uTexture) const
+	int32 VulkanRenderer::GetTextureBindlessSlot(RhiTextureHandle uTexture) const
 	{
 		const TextureEntry* pEntry = FindResource(m_Textures, uTexture);
 		return pEntry != nullptr ? static_cast<int32>(pEntry->uBindlessSlot) : -1;
@@ -521,7 +533,7 @@ namespace Vsp
 	// Wrapped graphics API: pipelines
 	// -------------------------------------------------------------------------
 
-	RhiPipelineHandle VulkanRenderer2D::CreateGraphicsPipeline(const RhiGraphicsPipelineState& state)
+	RhiPipelineHandle VulkanRenderer::CreateGraphicsPipeline(const RhiGraphicsPipelineState& state)
 	{
 		if (!m_bIsInitialized)
 		{
@@ -563,7 +575,7 @@ namespace Vsp
 		return static_cast<RhiPipelineHandle>(m_Pipelines.GetSize());
 	}
 
-	void VulkanRenderer2D::DestroyGraphicsPipeline(RhiPipelineHandle uPipeline)
+	void VulkanRenderer::DestroyGraphicsPipeline(RhiPipelineHandle uPipeline)
 	{
 		PipelineEntry* pEntry = FindResource(m_Pipelines, uPipeline);
 		if (pEntry == nullptr)
@@ -576,7 +588,7 @@ namespace Vsp
 		pEntry->bIsActive = false;
 	}
 
-	void VulkanRenderer2D::GetBackbufferExtent(uint32& outWidth, uint32& outHeight) const
+	void VulkanRenderer::GetBackbufferExtent(uint32& outWidth, uint32& outHeight) const
 	{
 		const VkExtent2D extent = m_SwapChain.GetExtent();
 		outWidth = extent.width;
@@ -587,7 +599,7 @@ namespace Vsp
 	// FrameResources (command buffers, per-frame uniforms, sync primitives)
 	// -------------------------------------------------------------------------
 
-	bool VulkanRenderer2D::CreateFrameResources()
+	bool VulkanRenderer::CreateFrameResources()
 	{
 		const VkDevice device = m_Context.GetDevice();
 
@@ -655,7 +667,7 @@ namespace Vsp
 		return true;
 	}
 
-	void VulkanRenderer2D::DestroyFrameResources()
+	void VulkanRenderer::DestroyFrameResources()
 	{
 		if (!m_Context.IsInitialized())
 		{
@@ -694,7 +706,7 @@ namespace Vsp
 	// Frame rendering
 	// -------------------------------------------------------------------------
 
-	void VulkanRenderer2D::UpdateCameraUniform(uint32 uFrameIndex)
+	void VulkanRenderer::UpdateCameraUniform(uint32 uFrameIndex)
 	{
 		const VkExtent2D extent = m_SwapChain.GetExtent();
 		if (extent.height == 0)
@@ -751,7 +763,7 @@ namespace Vsp
 		m_Frames[uFrameIndex].CameraUniformBuffer.WriteData(m_Context, 0, &uniformData, sizeof(CameraUniformData));
 	}
 
-	void VulkanRenderer2D::RecordFullExtentViewportAndScissor(VkCommandBuffer commandBuffer)
+	void VulkanRenderer::RecordFullExtentViewportAndScissor(VkCommandBuffer commandBuffer)
 	{
 		const VkExtent2D extent = m_SwapChain.GetExtent();
 
@@ -770,7 +782,7 @@ namespace Vsp
 		vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 	}
 
-	void VulkanRenderer2D::RecordRenderPassBegin(VkCommandBuffer commandBuffer, uint32 uImageIndex)
+	void VulkanRenderer::RecordRenderPassBegin(VkCommandBuffer commandBuffer, uint32 uImageIndex)
 	{
 		// The clear color is the frame's clear color: BeginFrame /
 		// SetClearColor / EndFrame wrap the whole command list, so it applies
@@ -801,7 +813,7 @@ namespace Vsp
 		RecordFullExtentViewportAndScissor(commandBuffer);
 	}
 
-	void VulkanRenderer2D::RecordDefaultRenderPass(VkCommandBuffer commandBuffer, uint32 uImageIndex)
+	void VulkanRenderer::RecordDefaultRenderPass(VkCommandBuffer commandBuffer, uint32 uImageIndex)
 	{
 		// Used when the managed render pipeline submitted no usable frame (or
 		// a frame without a render pass): the window still clears to the
@@ -810,7 +822,7 @@ namespace Vsp
 		vkCmdEndRenderPass(commandBuffer);
 	}
 
-	bool VulkanRenderer2D::PlaybackCommands(VkCommandBuffer commandBuffer, uint32 uImageIndex)
+	bool VulkanRenderer::PlaybackCommands(VkCommandBuffer commandBuffer, uint32 uImageIndex)
 	{
 		const ArrayList<RhiCommand>& commands = RenderCore::Get().GetCommands();
 
@@ -957,7 +969,7 @@ namespace Vsp
 		return bRenderPassSeen;
 	}
 
-	void VulkanRenderer2D::RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32 uImageIndex)
+	void VulkanRenderer::RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32 uImageIndex)
 	{
 		VkCommandBufferBeginInfo beginInfo = {};
 		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -981,7 +993,7 @@ namespace Vsp
 		vkEndCommandBuffer(commandBuffer);
 	}
 
-	bool VulkanRenderer2D::RenderFrame()
+	bool VulkanRenderer::RenderFrame()
 	{
 		if (!m_bIsInitialized || m_bIsMinimized)
 		{
@@ -1075,7 +1087,7 @@ namespace Vsp
 	};
 	#pragma pack(pop)
 
-	bool VulkanRenderer2D::CaptureFramebuffer(const VspString& sFilePath)
+	bool VulkanRenderer::CaptureFramebuffer(const VspString& sFilePath)
 	{
 		if (!m_bIsInitialized)
 		{

@@ -16,7 +16,7 @@
 namespace Vsp
 {
 	// -------------------------------------------------------------------------
-	// VulkanRenderer2D
+	// VulkanRenderer
 	// -------------------------------------------------------------------------
 	// The Vulkan backend behind the wrapped graphics API. It is the
 	// orchestrator that owns and wires the functional units together:
@@ -38,16 +38,19 @@ namespace Vsp
 	// Vulkan 1.3 (or without bindless descriptor indexing) are rejected
 	// during device negotiation - there is no Vulkan 1.2 fallback path.
 	//
-	// The name says "2D" for historical reasons: the backend serves whatever a
-	// render pipeline records, and the engine has no separate 2D path - 2D
-	// content is 3D content on a plane, drawn through the same render pass and
-	// the same depth buffer.
+	// The name says what it is: THE Vulkan renderer of the engine. It is not a
+	// 2D renderer and never was one in practice - it serves whatever a render
+	// pipeline records, into one render pass with a colour AND a depth
+	// attachment, and the engine has no separate 2D path: 2D content is 3D
+	// content on a plane, drawn through the same pass, the same depth buffer and
+	// the same camera as everything else. A 3D renderer, a UI renderer and an
+	// editor viewport all record into it through the same wrapped graphics API.
 	// All errors are logged through the Log module; nothing throws and every
 	// creation function returns an invalid (0) handle on failure.
 	// -------------------------------------------------------------------------
 #pragma warning(push)
 #pragma warning(disable : 4251)   // ArrayList members: header-only templates.
-	class RUNTIME_API VulkanRenderer2D : public IGraphics
+	class RUNTIME_API VulkanRenderer : public IGraphics
 	{
 	public:
 		static constexpr uint32 k_nMaxFramesInFlight = 2;
@@ -58,7 +61,7 @@ namespace Vsp
 		// semaphore would be re-signaled while still in use.
 		static constexpr uint32 k_nMaxSwapChainImageCount = 8;
 
-		~VulkanRenderer2D() override;
+		~VulkanRenderer() override;
 
 		// -------- Backend lifetime --------
 		bool Initialize(void* pNativeWindowHandle) override;

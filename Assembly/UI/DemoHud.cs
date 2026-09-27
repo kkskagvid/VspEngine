@@ -3,31 +3,36 @@ using System.Globalization;
 using System.Numerics;
 
 using VspEngine;
+using VspEngine.Rendering;
 using VspEngine.UI;
 
 namespace Assembly.UI
 {
 	/// <summary>
-	/// The demo's interface: a flat, minimal heads-up display built out of the
-	/// engine's UI framework (<see cref="Canvas"/>, <see cref="Image"/>,
-	/// <see cref="Text"/>, <see cref="Button"/>).
+	/// The demo's interface, built out of the engine's two layout sources - which
+	/// is what the demo is for, so both are used for what they are good at:
 	///
-	/// It is deliberately a demo of every widget rather than a game's real HUD:
+	///   * the PANEL, its accent bar, its divider, its title and its three buttons
+	///     are described by a JSON document (<c>Assembly/Ui/DemoHud.json</c>,
+	///     staged next to the executable as <c>Ui/DemoHud.json</c>) and laid out by
+	///     the engine (<see cref="UiSystem.LoadLayoutFromJson"/>). Structure and
+	///     style are data: the layout names its elements, their rectangles, the
+	///     theme colour each one draws with and the localisation KEY a static label
+	///     shows;
+	///   * the LIVE half - the status line, the camera hint and the pointer marker,
+	///     whose text, position and visibility change every frame - is built in
+	///     CODE on a canvas of its own (<see cref="LiveCanvas"/>) and published to
+	///     the engine. Behaviour is code, and it binds onto the layout by the names
+	///     the document gives (<see cref="UiSystem.FindElement(string)"/>).
 	///
-	///   * a title, a status line and a footer, all through the localisation
-	///     service, so every static string in the demo is a KEY
-	///     (<c>demo.title</c>, ...) that a locale file translates;
-	///   * a column of buttons that drive the cube - spin direction, cube reset,
-	///     camera reset - which is what exercises the button state machine;
-	///   * a panel, an accent bar and a divider, which is what the flat style's
-	///     surfaces are made of.
-	///
-	/// The HUD owns the canvas but no graphics resources: it hands the canvas to
-	/// the <c>UiRenderer</c>, which owns the shader, the buffers and the font
-	/// atlases.
+	/// Neither half draws itself: the engine draws the layout canvas and the live
+	/// canvas in every frame it opens, in that order, through its own UI renderer.
 	/// </summary>
 	public sealed class DemoHud : IDisposable
 	{
+		/// <summary>The layout document the demo ships, next to the executable's Ui folder.</summary>
+		public const string LayoutFileName = "DemoHud.json";
+
 		public const string TitleKey = "demo.title";
 		public const string StatusKey = "demo.status";
 		public const string SpinKey = "demo.button.spin";
@@ -37,15 +42,21 @@ namespace Assembly.UI
 		public const string SpinClockwiseKey = "demo.spin.clockwise";
 		public const string SpinCounterClockwiseKey = "demo.spin.counterClockwise";
 
-		private const float PanelWidth = 330.0f;
+		// Names the LAYOUT document gives its elements: this is the whole contract
+		// between the data and the code of the interface.
+		private const string SpinButtonName = "SpinButton";
+		private const string ResetButtonName = "ResetButton";
+		private const string CameraButtonName = "CameraButton";
 
-		private readonly Canvas canvas;
-		private readonly Image panel;
-		private readonly Text titleText;
+		private const float PanelWidth = 330.0f;
+		private const float PanelMargin = 18.0f;
+
+		private readonly Canvas liveCanvas;
 		private readonly Text statusText;
 		private readonly Text hintText;
 		private readonly Image pointerMarker;
-		private readonly Button spinButton;
+
+		private Button? spinButton;
 
 		/// <summary>Raised when the spin button asks for a direction change.</summary>
 		public event Action? SpinToggleRequested;
@@ -58,113 +69,102 @@ namespace Assembly.UI
 
 		public DemoHud()
 		{
-			canvas = new Canvas(UiTheme.CreateDefault());
-			canvas.DefaultTextPixelSize = 18.0f;
-
-			// The panel the whole interface sits on, pinned to the top-left
-			// corner with the style's standard padding.
-			panel = new Image
+			liveCanvas = new Canvas(UiTheme.CreateDefault())
 			{
-				Name = "HudPanel",
-				Bounds = new UiRect(18.0f, 18.0f, PanelWidth, 214.0f),
-				Color = canvas.Theme.PanelColor,
-				BorderColor = canvas.Theme.BorderColor,
+				Name = "DemoHudLive",
 			};
-			canvas.AddChild(panel);
+			liveCanvas.DefaultTextPixelSize = 18.0f;
 
-			// A 4-pixel accent bar along the panel's top edge: the flat style's
-			// way of saying "this is the interface" without a shadow or a corner.
-			panel.AddChild(new Image
-			{
-				Name = "AccentBar",
-				Bounds = new UiRect(0.0f, 0.0f, PanelWidth, 4.0f),
-				Color = canvas.Theme.AccentColor,
-			});
-
-			titleText = new Text
-			{
-				Name = "Title",
-				TranslationKey = TitleKey,
-				Bounds = new UiRect(16.0f, 16.0f, PanelWidth - 32.0f, 26.0f),
-				PixelSize = 22.0f,
-				Color = canvas.Theme.TextColor,
-				VerticalAlignment = UiTextVerticalAlignment.Middle,
-			};
-			panel.AddChild(titleText);
-
+			// The status line sits inside the panel the LAYOUT draws, so its
+			// rectangle is stated in canvas pixels: panel margin + inner padding.
 			statusText = new Text
 			{
 				Name = "Status",
-				Bounds = new UiRect(16.0f, 46.0f, PanelWidth - 32.0f, 22.0f),
+				Bounds = new UiRect(PanelMargin + 16.0f, PanelMargin + 46.0f, PanelWidth - 32.0f, 22.0f),
 				PixelSize = 16.0f,
-				Color = canvas.Theme.TextMutedColor,
+				Color = liveCanvas.Theme.TextMutedColor,
 				VerticalAlignment = UiTextVerticalAlignment.Middle,
 			};
-			panel.AddChild(statusText);
+			liveCanvas.AddChild(statusText);
 
-			panel.AddChild(new Image
-			{
-				Name = "Divider",
-				Bounds = new UiRect(16.0f, 74.0f, PanelWidth - 32.0f, 1.0f),
-				Color = canvas.Theme.DividerColor,
-			});
-
-			// Three buttons in one column. The first one's label follows the spin
-			// state, which is the whole point of a HUD button.
-			spinButton = panel.AddChild(CreateButton(panel, "SpinButton", SpinKey, 84.0f));
-			spinButton.Clicked += OnSpinClicked;
-
-			Button resetButton = panel.AddChild(CreateButton(panel, "ResetButton", ResetKey, 126.0f));
-			resetButton.Clicked += OnResetClicked;
-
-			Button cameraButton = panel.AddChild(CreateButton(panel, "CameraButton", CameraKey, 168.0f));
-			cameraButton.Clicked += OnCameraClicked;
-
-			// The footer is pinned to the bottom-left of the canvas: it is not
-			// part of the panel's content.
+			// The footer is pinned to the bottom-left of the canvas: it is not part
+			// of the panel's content, so it belongs to the live canvas.
 			hintText = new Text
 			{
 				Name = "Hint",
 				Bounds = new UiRect(20.0f, 0.0f, 900.0f, 30.0f),
 				PixelSize = 15.0f,
-				Color = canvas.Theme.TextMutedColor,
+				Color = liveCanvas.Theme.TextMutedColor,
 				VerticalAlignment = UiTextVerticalAlignment.Bottom,
 			};
-			canvas.AddChild(hintText);
+			liveCanvas.AddChild(hintText);
 
 			// A marker that follows the pointer, drawn as the last child so it is
-			// on top of everything: the flat style has no cursor of its own, and
-			// a screenshot has to show where the pointer was.
+			// on top of everything: the flat style has no cursor of its own, and a
+			// screenshot has to show where the pointer was.
 			pointerMarker = new Image
 			{
 				Name = "PointerMarker",
 				Bounds = new UiRect(0.0f, 0.0f, 12.0f, 12.0f),
-				Color = canvas.Theme.AccentColor,
+				Color = liveCanvas.Theme.AccentColor,
 			};
-			canvas.AddChild(pointerMarker);
+			liveCanvas.AddChild(pointerMarker);
 		}
 
-		/// <summary>The tree the UI renderer draws.</summary>
-		public Canvas Canvas => canvas;
+		/// <summary>
+		/// The canvas the demo builds in CODE: it holds what changes every frame,
+		/// and the engine draws it on top of the JSON layout.
+		/// </summary>
+		public Canvas LiveCanvas => liveCanvas;
 
 		/// <summary>
-		/// Advances the interface by one frame. The pipeline calls it before it
-		/// draws, so hover state, presses and clicks are all resolved here.
+		/// Asks the engine for the JSON layout and binds this HUD to it: the three
+		/// buttons of the panel are found by name, so their clicks reach the demo
+		/// without the demo having built them.
 		/// </summary>
-		public void Update(UiInputState input, int width, int height)
+		public bool LoadLayout()
+		{
+			if (!UiSystem.LoadLayoutFromJson(LayoutFileName))
+			{
+				return false;
+			}
+
+			spinButton = UiSystem.FindElement<Button>(SpinButtonName);
+			Button? resetButton = UiSystem.FindElement<Button>(ResetButtonName);
+			Button? cameraButton = UiSystem.FindElement<Button>(CameraButtonName);
+			if (spinButton == null || resetButton == null || cameraButton == null)
+			{
+				Debug.LogError("DemoHud: the layout '" + LayoutFileName + "' is missing one of its buttons ("
+					+ SpinButtonName + ", " + ResetButtonName + ", " + CameraButtonName + ").");
+				return false;
+			}
+
+			spinButton.Clicked += OnSpinClicked;
+			resetButton.Clicked += OnResetClicked;
+			cameraButton.Clicked += OnCameraClicked;
+			return true;
+		}
+
+		/// <summary>
+		/// Places the live widgets for THIS frame's render target size. The engine
+		/// updates and draws both canvases itself, with the pointer state of the
+		/// frame, right before the frame is closed.
+		/// </summary>
+		public void UpdateFrame(int width, int height)
 		{
 			// The footer follows the bottom edge of whatever the window is.
 			hintText.Bounds = new UiRect(20.0f, height - 40.0f, width - 40.0f, 24.0f);
 
-			// Placed right before the tree is walked, so it reports where the
+			// Placed right before the canvases are drawn, so it reports where the
 			// pointer is THIS frame. While the cursor is locked the pointer is
 			// hidden and parked at the centre of the window, so the marker is put
 			// away with it: a marker that only ever sits in the middle would say
 			// nothing.
 			pointerMarker.IsVisible = !Cursor.IsLocked;
-			pointerMarker.Bounds = new UiRect(input.MousePosition.X - 6.0f, input.MousePosition.Y - 6.0f, 12.0f, 12.0f);
 
-			canvas.Update(input, width, height);
+			Vector2 pointerPosition = Input.MousePosition;
+			pointerMarker.Bounds = new UiRect(
+				pointerPosition.X - 6.0f, pointerPosition.Y - 6.0f, 12.0f, 12.0f);
 		}
 
 		/// <summary>
@@ -178,7 +178,12 @@ namespace Assembly.UI
 			SetLiveText(statusText, I18N.Translate(
 				StatusKey, FormatFloat(position.X), FormatFloat(position.Y), FormatFloat(position.Z), spinDirection));
 
-			SetLiveText(spinButton.Label, spinDirection);
+			// The button's label is the layout's, but WHAT it says is the demo's:
+			// the label is a text element like any other and code may rewrite it.
+			if (spinButton != null)
+			{
+				SetLiveText(spinButton.Label, spinDirection);
+			}
 		}
 
 		/// <summary>Reports which way the camera is currently looking.</summary>
@@ -189,7 +194,9 @@ namespace Assembly.UI
 
 		public void Dispose()
 		{
-			canvas.ClearChildren();
+			// The live canvas is the demo's; the layout canvas belongs to the engine
+			// and goes when the engine's UI does (VspEngine.UI.UiSystem.Release).
+			liveCanvas.ClearChildren();
 		}
 
 		/// <summary>
@@ -200,18 +207,6 @@ namespace Assembly.UI
 		{
 			text.TranslationKey = string.Empty;
 			text.Literal = resolvedText;
-		}
-
-		private Button CreateButton(UiElement parent, string name, string translationKey, float y)
-		{
-			Button button = new Button(translationKey)
-			{
-				Name = name,
-				Bounds = new UiRect(canvas.Theme.PanelPadding + 2.0f, y, PanelWidth - 36.0f, canvas.Theme.ControlHeight),
-			};
-			button.Label.Color = canvas.Theme.TextColor;
-			button.Label.PixelSize = 16.0f;
-			return button;
 		}
 
 		private void OnSpinClicked(Button button) => SpinToggleRequested?.Invoke();

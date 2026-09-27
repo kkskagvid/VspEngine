@@ -235,6 +235,18 @@ Add-BehaviourCheck "the game's render graph has no sky pass of its own" (
 Add-BehaviourCheck "the demo replaced the sky by replacing the material" (
     $logText -match "the sky was replaced at frame [0-9]+ by putting a material of the game's in RenderSettings.Skybox")
 
+# ---- The interface is the ENGINE's, drawn from data and from code -----------
+# The UI is not a pass of the game's render graph: the engine draws it into the
+# frame it opened (VspEngine.UI.UiSystem). One half of it is a JSON layout the
+# ENGINE reads with its own reader, the other is the canvas the demo builds in
+# code, and the demo binds to the layout by the names the document gives.
+Add-BehaviourCheck "the ENGINE loaded the demo's UI layout itself" (
+    $logText -match "UiSystem: the layout '[^']*DemoHud[.]json' is loaded [(][0-9]+ element[(]s[)][)] and is drawn by the engine")
+Add-BehaviourCheck "the UI layout went through the engine's JSON reader" (
+    $logText -match "[[]JsonExports[]] JSON document '[^']*DemoHud[.]json' parsed")
+Add-BehaviourCheck "the game's render graph has no interface pass of its own" (
+    -not ($logText -match "'Interface' (Raster)"))
+
 # ---- The engine clock (VspCore's Classes/Time) -------------------------------
 # --fixed-delta-time makes the clock advance by exactly one step per frame, and
 # the frame-capture diagnostics print the clock's own elapsed time next to the

@@ -178,6 +178,10 @@ namespace Vsp
 		static VspString ToUtf8(const icu::UnicodeString& Text);
 
 	private:
+		// The registry in Core/EngineServices.h owns this service's storage and
+		// lifetime, so it has to be able to construct it.
+		friend class EngineServices;
+
 		I18N() = default;
 
 		// One translated string: the locale it belongs to, its key and the text.

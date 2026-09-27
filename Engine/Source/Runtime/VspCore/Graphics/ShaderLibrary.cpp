@@ -4,6 +4,7 @@
 
 #include "Classes/Scene.h"
 #include "Common/PlatformMisc.h"
+#include "Core/EngineServices.h"
 #include "Core/Json/JsonReader.h"
 #include "Core/Logging/Log.h"
 #include "Graphics/ShaderBindings.h"
@@ -66,8 +67,10 @@ namespace Vsp
 
 	ShaderLibrary& ShaderLibrary::Get()
 	{
-		static ShaderLibrary s_Instance;
-		return s_Instance;
+		// The registry owns this service: it is created here on first use,
+		// reports a lookup from any thread but the one that created it, and is
+		// destroyed explicitly by EngineServices::ShutdownAll().
+		return EngineServices::GetService<ShaderLibrary>("ShaderLibrary");
 	}
 
 	void ShaderLibrary::UseDefaultShaderDirectory()

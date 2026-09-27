@@ -1,0 +1,89 @@
+// ---------------------------------------------------------------------------
+// LitCube - the demo shader (.vsf).
+//
+// A .vsf file holds everything one shader needs:
+//   Properties  the values the editor shows,
+//   Shader      the shader itself: its settings and its Pass blocks,
+//   Pass        the shader code - HLSL, with #include and with the entry points
+//               named by #pragma vertex / #pragma fragment.
+//
+// The shader draws ONE lit, per-face coloured cube: the fragment stage shades
+// the interpolated vertex colour with a single directional light that shines
+// straight down (90 degrees from the horizon), plus a small ambient term that
+// keeps the four sides visible.
+//
+// HLSLCC turns this file into
+//   LitCube.vsfo                    the container the ENGINE loads
+//   LitCube.vert.spv / .frag.spv    the modules, for a graphics debugger
+//   LitCube.shader.json             the manifest, for tools
+//   LitCube.reflection.json         the full reflection
+// ---------------------------------------------------------------------------
+
+Properties
+{
+    _BaseColor ("Base Color", Color) = (1, 1, 1, 1)
+    _Ambient ("Ambient", Float) = 0.35
+}
+
+Shader "Assembly/LitCube"
+{
+    Queue = "Geometry"
+
+    // A strippable keyword group: the build keeps only the states it is told
+    // about, so a variant nobody uses never ships.
+    Variant _UNLIT
+
+    Pass
+    {
+        // Both stage entry points live in this one file.
+        #pragma vertex LitCubeVertex
+        #pragma fragment LitCubeFragment
+
+        #include "LitCubeCommon.hlsl"
+
+        // -------------------------------------------------------------------
+        // Entry point: vertex stage
+        // -------------------------------------------------------------------
+        LitCubeVertexOutput LitCubeVertex(LitCubeVertexInput input)
+        {
+            LitCubeVertexOutput output;
+
+            // Local -> world -> clip. The world matrix is per draw, so the same
+            // mesh is drawn anywhere - and at any orientation - without
+            // rebuilding its buffer.
+            float4 worldPosition = mul(PushConstants.WorldMatrix, float4(input.Position, 1.0f));
+            output.Position = mul(ViewProjectionMatrix, worldPosition);
+            output.WorldPosition = worldPosition.xyz;
+
+            // The rotation of the world matrix carries the normal; scaled axes
+            // are normalized again so a non-uniform scale cannot tilt it.
+            output.WorldNormal = VspSafeNormalize(mul(input.Normal, (float3x3)PushConstants.WorldMatrix), input.Normal);
+            output.Color = input.Color;
+            return output;
+        }
+
+        // -------------------------------------------------------------------
+        // Entry point: fragment stage
+        // -------------------------------------------------------------------
+        float4 LitCubeFragment(LitCubeFragmentInput input) : SV_Target0
+        {
+        #if defined(_UNLIT)
+            // The "always kept" state: the base colour with no shading at all.
+            float3 litColor = PushConstants.BaseColor.rgb;
+        #else
+            float3 normal = VspSafeNormalize(input.WorldNormal, float3(0.0f, 1.0f, 0.0f));
+
+            // The light travels straight down, so the direction TOWARDS it is
+            // world up: the top face is fully lit and the sides receive nothing
+            // but the ambient fill.
+            float3 directionToLight = VspSafeNormalize(-PushConstants.LightDirection.xyz, float3(0.0f, 1.0f, 0.0f));
+            float fDiffuse = VspSaturate(dot(normal, directionToLight)) * PushConstants.LightDirection.w;
+
+            float3 lighting = PushConstants.AmbientColor.rgb + fDiffuse;
+            float3 litColor = input.Color.rgb * PushConstants.BaseColor.rgb * lighting;
+        #endif
+
+            return float4(litColor, input.Color.a * PushConstants.BaseColor.a);
+        }
+    }
+}

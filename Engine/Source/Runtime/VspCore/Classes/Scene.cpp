@@ -1,6 +1,7 @@
 #include "RuntimePCH.h"
 
 #include "Classes/Scene.h"
+#include "Core/EngineServices.h"
 #include "Core/Logging/Log.h"
 
 namespace Vsp
@@ -9,8 +10,10 @@ namespace Vsp
 
 	Scene& Scene::Get()
 	{
-		static Scene s_Instance;
-		return s_Instance;
+		// The registry owns this service: it is created here on first use,
+		// reports a lookup from any thread but the one that created it, and is
+		// destroyed explicitly by EngineServices::ShutdownAll().
+		return EngineServices::GetService<Scene>("Scene");
 	}
 
 	// -------------------------------------------------------------------------

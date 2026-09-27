@@ -1,0 +1,129 @@
+{
+  "source": "C:\\Users\\Yulin\\Desktop\\Project\\VspEngine\\Assembly\\Shaders\\LitCube.vsf",
+  "shader": "Assembly/LitCube",
+  "stageCount": 2,
+  "stages": [
+  {
+    "stage": "vertex",
+    "entryPoint": "LitCubeVertex",
+    "inputs": [
+      {
+        "name": "in.var.POSITION",
+        "location": 0,
+        "builtIn": false,
+        "class": "vector",
+        "components": 3,
+        "byteSize": 12
+      },
+      {
+        "name": "in.var.NORMAL",
+        "location": 1,
+        "builtIn": false,
+        "class": "vector",
+        "components": 3,
+        "byteSize": 12
+      },
+      {
+        "name": "in.var.COLOR",
+        "location": 2,
+        "builtIn": false,
+        "class": "vector",
+        "components": 4,
+        "byteSize": 16
+      }
+    ],
+    "outputs": [
+      {
+        "name": "out.var.TEXCOORD0",
+        "location": 0,
+        "builtIn": false,
+        "class": "vector",
+        "components": 3,
+        "byteSize": 12
+      },
+      {
+        "name": "out.var.TEXCOORD1",
+        "location": 1,
+        "builtIn": false,
+        "class": "vector",
+        "components": 3,
+        "byteSize": 12
+      },
+      {
+        "name": "out.var.TEXCOORD2",
+        "location": 2,
+        "builtIn": false,
+        "class": "vector",
+        "components": 4,
+        "byteSize": 16
+      },
+      {
+        "name": "",
+        "location": 0,
+        "builtIn": true,
+        "class": "vector",
+        "components": 4,
+        "byteSize": 16
+      }
+    ],
+    "resources": [
+      { "name": "CameraUniformBuffer", "kind": "uniformBuffer", "set": 0, "binding": 0, "descriptorCount": 1, "elementByteSize": 288 }
+    ],
+    "pushConstants": [
+      { "name": "WorldMatrix", "offset": 0, "byteSize": 64 },
+      { "name": "BaseColor", "offset": 64, "byteSize": 16 },
+      { "name": "LightDirection", "offset": 80, "byteSize": 16 },
+      { "name": "AmbientColor", "offset": 96, "byteSize": 16 }
+    ],
+    "inputCount": 3,
+    "outputCount": 4,
+    "resourceCount": 1,
+    "pushConstantMemberCount": 4,
+    "pushConstantByteSize": 112
+  },
+  {
+    "stage": "fragment",
+    "entryPoint": "LitCubeFragment",
+    "inputs": [
+      {
+        "name": "in.var.TEXCOORD1",
+        "location": 1,
+        "builtIn": false,
+        "class": "vector",
+        "components": 3,
+        "byteSize": 12
+      },
+      {
+        "name": "in.var.TEXCOORD2",
+        "location": 2,
+        "builtIn": false,
+        "class": "vector",
+        "components": 4,
+        "byteSize": 16
+      }
+    ],
+    "outputs": [
+      {
+        "name": "out.var.SV_Target0",
+        "location": 0,
+        "builtIn": false,
+        "class": "vector",
+        "components": 4,
+        "byteSize": 16
+      }
+    ],
+    "resources": [],
+    "pushConstants": [
+      { "name": "WorldMatrix", "offset": 0, "byteSize": 64 },
+      { "name": "BaseColor", "offset": 64, "byteSize": 16 },
+      { "name": "LightDirection", "offset": 80, "byteSize": 16 },
+      { "name": "AmbientColor", "offset": 96, "byteSize": 16 }
+    ],
+    "inputCount": 2,
+    "outputCount": 1,
+    "resourceCount": 0,
+    "pushConstantMemberCount": 4,
+    "pushConstantByteSize": 112
+  }
+  ]
+}

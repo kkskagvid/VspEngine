@@ -8,6 +8,7 @@
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
+#include "Common/PlatformMisc.h"
 #include "Core/Diagnostics/ErrorHandling.h"
 #include "Core/Text/Font.h"
 
@@ -379,8 +380,7 @@ namespace Vsp
 		// file leaves the font that was loaded before untouched.
 		std::vector<uint8> fontFileBytes;
 
-		FILE* pFile = nullptr;
-		fopen_s(&pFile, sFilePathUtf8.GetData(), "rb");
+		FILE* pFile = PlatformMisc::OpenFileForReading(sFilePathUtf8);
 		if (pFile == nullptr)
 		{
 			VSP_RETURN_EMPTY(false, kLogTag, "The font file '{}' could not be opened.", sFilePathUtf8.GetData());

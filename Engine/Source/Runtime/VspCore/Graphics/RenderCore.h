@@ -81,6 +81,10 @@ namespace Vsp
 		const ArrayList<RhiCommand>& GetCommands() const { return m_Commands; }
 
 	private:
+		// The registry in Core/EngineServices.h owns this service's storage and
+		// lifetime, so it has to be able to construct it.
+		friend class EngineServices;
+
 		RenderCore() = default;
 
 		// Appends one command, dropping it (with a single warning) once the

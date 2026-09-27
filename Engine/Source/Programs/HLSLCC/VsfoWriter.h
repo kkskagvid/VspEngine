@@ -16,10 +16,11 @@ namespace Hlslcc
 	// of them.
 	//
 	// The container is an index table followed by a data segment (see
-	// Shared/VsfoFormat.h for the layout): the index table says WHICH STAGE each
-	// module belongs to, HOW BIG it is and WHAT it reflects, and the data
-	// segment holds the modules and their reflection records. A reader therefore
-	// never has to parse anything to find a stage.
+	// VsfoFormat.h - the same header VspCore's Common/ folder compiles - for the
+	// layout): the index table says WHICH STAGE each module belongs to, HOW BIG it
+	// is and WHAT it reflects, and the data segment holds the modules and their
+	// reflection records. A reader therefore never has to parse anything to find a
+	// stage.
 	//
 	// Nothing throws; every failure is a HlslccResult and a message.
 	// -------------------------------------------------------------------------

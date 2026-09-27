@@ -84,7 +84,7 @@ namespace Vsp
 
 		// Solver passes over the contacts per step. More passes make a stack of
 		// bodies settle more firmly and cost proportionally more.
-		static constexpr uint32 k_fDefaultSolverIterationCount = 4;
+		static constexpr uint32 k_nDefaultSolverIterationCount = 4;
 
 		// Longest step the world simulates. A frame that took longer than this
 		// (a breakpoint, a stalled device, a window being dragged) advances the
@@ -142,6 +142,10 @@ namespace Vsp
 		const PhysicsStepStats& GetStats() const { return m_Stats; }
 
 	private:
+		// The registry in Core/EngineServices.h owns this service's storage and
+		// lifetime, so it has to be able to construct it.
+		friend class EngineServices;
+
 		PhysicsWorld() = default;
 
 		// One body, as the step works on it. The values are read from the
@@ -235,7 +239,7 @@ namespace Vsp
 		uint32 FindBodyIndex(NativeObjectHandle uGameObjectHandle, bool& bHasBody) const;
 
 		Vector3 m_Gravity = Vector3(0.0f, k_fEarthGravity, 0.0f);
-		uint32 m_uSolverIterationCount = k_fDefaultSolverIterationCount;
+		uint32 m_uSolverIterationCount = k_nDefaultSolverIterationCount;
 		float m_fMaximumStepSeconds = k_fMaximumStepSeconds;
 		bool m_bAutoSimulationEnabled = true;
 

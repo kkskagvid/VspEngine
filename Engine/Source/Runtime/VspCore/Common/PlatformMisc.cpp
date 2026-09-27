@@ -90,6 +90,28 @@ namespace Vsp
 	// File system
 	// -------------------------------------------------------------------------
 
+	FILE* PlatformMisc::OpenFileForReading(const VspString& sFilePath)
+	{
+		if (sFilePath.IsEmpty())
+		{
+			LOG_ERROR(kLogTag, "OpenFileForReading was given an empty path.");
+			return nullptr;
+		}
+
+#if defined(_MSC_VER)
+		// fopen_s reports through its return value, which is what the engine's
+		// no-exception rule wants; the standard call is the only one elsewhere.
+		FILE* pFile = nullptr;
+		if (fopen_s(&pFile, sFilePath.GetData(), "rb") != 0)
+		{
+			return nullptr;
+		}
+		return pFile;
+#else
+		return fopen(sFilePath.GetData(), "rb");
+#endif
+	}
+
 	bool PlatformMisc::DoesFileExist(const VspString& sFilePath)
 	{
 		if (sFilePath.IsEmpty())
@@ -399,6 +421,22 @@ namespace Vsp
 #if VSP_PLATFORM_WINDOWS
 		return static_cast<uint64>(::GetTickCount64());
 #else
+		return 0;
+#endif
+	}
+
+	// -------------------------------------------------------------------------
+	// Threads
+	// -------------------------------------------------------------------------
+
+	uint64 PlatformMisc::GetCurrentThreadId()
+	{
+#if VSP_PLATFORM_WINDOWS
+		return static_cast<uint64>(::GetCurrentThreadId());
+#else
+		// No thread identity on this platform yet: report 0, which the callers
+		// read as "unknown" and never report on - refusing to guess keeps the
+		// engine's own thread rule honest instead of producing false reports.
 		return 0;
 #endif
 	}

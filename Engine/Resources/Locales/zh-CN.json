@@ -1,0 +1,14 @@
+{
+    "locale": "zh-CN",
+    "entries":
+    {
+        "demo.title": "Vsp 引擎 - 天空下的灰色立方体",
+        "demo.status": "立方体 ({0}, {1}, {2}) / 绕 Y 轴{3}旋转",
+        "demo.button.spin": "顺时针",
+        "demo.button.reset": "重置立方体",
+        "demo.button.camera": "重置相机",
+        "demo.hint": "W/A/S/D 移动  |  鼠标环绕相机  |  滚轮缩放  |  T 切换旋转方向  |  R 重置   (偏航 {0}, 俯仰 {1})",
+        "demo.spin.clockwise": "顺时针",
+        "demo.spin.counterClockwise": "逆时针"
+    }
+}

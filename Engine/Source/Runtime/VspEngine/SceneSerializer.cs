@@ -218,7 +218,10 @@ namespace VspEngine
 
 			try
 			{
-				using JsonDocument document = JsonDocument.Parse(json);
+				// Fully qualified on purpose: VspEngine has a JsonDocument of its own
+				// (the engine's native reader, see JsonDocument.cs), and this file
+				// reads a scene document out of a string it was handed.
+				using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(json);
 				JsonElement root = document.RootElement;
 
 				if (root.ValueKind != JsonValueKind.Object)

@@ -59,6 +59,21 @@
       <executable directory>Locales<locale>.json, so the build stages them
       next to the executable exactly like the compiled shaders.
     -->
+    <!--
+      The game owns its UI layouts too. The engine resolves a layout file name
+      against <executable directory>\Ui, so the build stages the documents there,
+      exactly like the compiled shaders and the translation catalogs.
+    -->
+    <Target Name="CopyGameUiLayouts" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true'">
+        <ItemGroup>
+            <GameUiLayoutFiles Include="$(MSBuildProjectDirectory)\Ui\*.json" />
+        </ItemGroup>
+        <Copy SourceFiles="@(GameUiLayoutFiles)"
+              DestinationFolder="$(EngineIntermediateRoot)\Binaries\$(Configuration)_$(Platform)\Ui"
+              SkipUnchangedFiles="true"
+              ContinueOnError="true" />
+    </Target>
+
     <Target Name="CopyGameLocales" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true'">
         <ItemGroup>
             <GameLocaleFiles Include="$(MSBuildProjectDirectory)\Locales\*.json" />

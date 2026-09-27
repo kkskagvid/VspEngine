@@ -58,6 +58,10 @@ namespace Vsp
 		uint32 GetLoadedShaderCount() const { return static_cast<uint32>(m_Entries.GetSize()); }
 
 	private:
+		// The registry in Core/EngineServices.h owns this service's storage and
+		// lifetime, so it has to be able to construct it.
+		friend class EngineServices;
+
 		ShaderLibrary() = default;
 
 		struct Entry

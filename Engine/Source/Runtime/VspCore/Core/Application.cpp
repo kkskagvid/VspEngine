@@ -5,10 +5,13 @@
 
 #include "Application.h"
 #include "Core/Input/InputManager.h"
+#include "Core/Logging/Log.h"
 #include "Templates/Delegate.h"
 
 namespace Vsp
 {
+	static constexpr const char* kLogTag = "Application";
+
 	Application::Application(const ApplicationArguments& args)
 		: Application(args, WindowProperties())
 	{
@@ -19,6 +22,11 @@ namespace Vsp
 		m_Window = Window::Create(windowProperties);
 		if (!m_Window)
 		{
+			// The one thing an application cannot run without: report it here, in
+			// the function that detected it, so the caller's "the window is not
+			// valid" is a consequence rather than the only evidence.
+			LOG_ERROR(kLogTag, "The application window '{}' ({}x{}) could not be created.",
+				windowProperties.Title.GetData(), windowProperties.Width, windowProperties.Height);
 			return;
 		}
 

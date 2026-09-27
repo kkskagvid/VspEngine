@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdio>
+
 #include "Core/Core.h"
 #include "Core/String/VspString.h"
 
@@ -37,6 +39,12 @@ namespace Vsp
 		// True when the path addresses an existing file. Used for the startup
 		// probes that locate the shipped .NET runtime.
 		static bool DoesFileExist(const VspString& sFilePath);
+
+		// Opens a file for BINARY READING, or returns nullptr (with a log line
+		// when the path is unusable). The spelling of the call is the platform's
+		// business - fopen_s is MSVC/Annex K only - so every reader in the engine
+		// opens its file through here instead of naming one itself.
+		static FILE* OpenFileForReading(const VspString& sFilePath);
 
 		// -------- Dynamic library loading (DLL / shared object) --------
 		static void* LoadDynamicLibrary(const VspString& sFilePath);
@@ -93,6 +101,14 @@ namespace Vsp
 		// -------- Time --------
 		// Milliseconds since the system started (used for log timestamps).
 		static uint64 GetElapsedMilliseconds();
+
+		// -------- Threads --------
+		// Identifier of the CALLING thread, as the platform names it. The engine
+		// uses it to say which thread created a service and to report a service
+		// used from any other one (Core/EngineServices.h). Returns 0 when the
+		// platform cannot name a thread, which the callers treat as "unknown" and
+		// do not report on.
+		static uint64 GetCurrentThreadId();
 	};
 
 	// -------------------------------------------------------------------------

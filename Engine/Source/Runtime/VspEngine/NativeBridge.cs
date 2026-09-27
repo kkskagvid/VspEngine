@@ -56,7 +56,7 @@ namespace VspEngine
 		private delegate void CallLifecycleDelegate(IntPtr handlePtr);
 
 		[UnmanagedFunctionPointer(CallingConvention.StdCall)]
-		private delegate void CallRenderFlowDelegate();
+		private delegate void CallRenderFrameDelegate();
 
 		[UnmanagedFunctionPointer(CallingConvention.StdCall)]
 		private delegate int LoadGameAssemblyDelegate(IntPtr assemblyPathPtr);
@@ -71,7 +71,7 @@ namespace VspEngine
 		private static readonly CallLifecycleDelegate s_CallOnStartDelegate = CallOnStart;
 		private static readonly CallLifecycleDelegate s_CallOnUpdateDelegate = CallOnUpdate;
 		private static readonly CallLifecycleDelegate s_DestroyInstanceDelegate = DestroyInstance;
-		private static readonly CallRenderFlowDelegate s_CallRenderFlowDelegate = CallRenderFlow;
+		private static readonly CallRenderFrameDelegate s_CallRenderFrameDelegate = CallRenderFrame;
 		private static readonly LoadGameAssemblyDelegate s_LoadGameAssemblyDelegate = LoadGameAssembly;
 		private static readonly ReleaseRenderPipelineDelegate s_ReleaseRenderPipelineDelegate = ReleaseRenderPipeline;
 
@@ -105,7 +105,7 @@ namespace VspEngine
 		/// VspEngine.dll. Slot order (mirrored in ScriptEngine.cpp):
 		///   0 CreateInstance, 1 GetScriptTypeCount, 2 GetScriptTypeName,
 		///   3 CallOnInit, 4 CallOnStart, 5 CallOnUpdate, 6 DestroyInstance,
-		///   7 CallRenderFlow, 8 LoadGameAssembly, 9 ReleaseRenderPipeline.
+		///   7 CallRenderFrame, 8 LoadGameAssembly, 9 ReleaseRenderPipeline.
 		/// </summary>
 		[UnmanagedCallersOnly(EntryPoint = "GetBridgeFunctionTable")]
 		public static void GetBridgeFunctionTable(IntPtr tablePtr)
@@ -121,7 +121,7 @@ namespace VspEngine
 			Marshal.WriteIntPtr(tablePtr, (slotIndex++) * IntPtr.Size, Marshal.GetFunctionPointerForDelegate(s_CallOnStartDelegate));
 			Marshal.WriteIntPtr(tablePtr, (slotIndex++) * IntPtr.Size, Marshal.GetFunctionPointerForDelegate(s_CallOnUpdateDelegate));
 			Marshal.WriteIntPtr(tablePtr, (slotIndex++) * IntPtr.Size, Marshal.GetFunctionPointerForDelegate(s_DestroyInstanceDelegate));
-			Marshal.WriteIntPtr(tablePtr, (slotIndex++) * IntPtr.Size, Marshal.GetFunctionPointerForDelegate(s_CallRenderFlowDelegate));
+			Marshal.WriteIntPtr(tablePtr, (slotIndex++) * IntPtr.Size, Marshal.GetFunctionPointerForDelegate(s_CallRenderFrameDelegate));
 			Marshal.WriteIntPtr(tablePtr, (slotIndex++) * IntPtr.Size, Marshal.GetFunctionPointerForDelegate(s_LoadGameAssemblyDelegate));
 			Marshal.WriteIntPtr(tablePtr, (slotIndex++) * IntPtr.Size, Marshal.GetFunctionPointerForDelegate(s_ReleaseRenderPipelineDelegate));
 		}
@@ -360,17 +360,17 @@ namespace VspEngine
 		/// frame. The pipeline gathers its draw list from the native scene and
 		/// records every graphics command through the wrapped graphics API.
 		/// </summary>
-		public static void CallRenderFlow()
+		public static void CallRenderFrame()
 		{
 			try
 			{
-				RenderFlow.Execute();
+				RenderFrameDriver.RenderFrame();
 			}
 			catch (Exception exception)
 			{
 				// A broken render pipeline must not tear the process down: report
 				// the failure and keep the last submitted frame state.
-				NativeApi.VspLog_Error("RenderFlow: " + exception.Message);
+				NativeApi.VspLog_Error("RenderFrameDriver: " + exception.Message);
 			}
 		}
 
@@ -382,12 +382,12 @@ namespace VspEngine
 		{
 			try
 			{
-				RenderFlow.Release();
+				RenderFrameDriver.ReleasePipelineResources();
 				UnloadGameModule();
 			}
 			catch (Exception exception)
 			{
-				NativeApi.VspLog_Error("RenderFlow: " + exception.Message);
+				NativeApi.VspLog_Error("RenderFrameDriver: " + exception.Message);
 			}
 		}
 

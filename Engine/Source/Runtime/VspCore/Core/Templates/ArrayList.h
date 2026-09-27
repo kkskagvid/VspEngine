@@ -123,16 +123,15 @@ namespace Vsp
 		}
 
 		// -------- Add --------
-		// Appends a copy of Value to the end of the array and returns it. When
-		// the array cannot grow (migration to a new block failed),
-		// DEBUG_BREAK() fires and the returned reference falls back to the
-		// first element; the array itself is left unchanged.
+		// Appends a copy of Value to the end of the array and returns it. When the
+		// array cannot grow (migration to a new block failed) the element is NOT
+		// added, DEBUG_BREAK() fires and the caller gets the fallback below; the
+		// array itself is left unchanged.
 		Type& Add(const Type& Value)
 		{
 			if (!EnsureCapacityForAdd())
 			{
-				DEBUG_BREAK();
-				return m_pData[0];
+				return ReportGrowthFailure();
 			}
 			Type* pElement = std::construct_at(m_pData + m_Size, Value);
 			++m_Size;
@@ -144,8 +143,7 @@ namespace Vsp
 		{
 			if (!EnsureCapacityForAdd())
 			{
-				DEBUG_BREAK();
-				return m_pData[0];
+				return ReportGrowthFailure();
 			}
 			Type* pElement = std::construct_at(m_pData + m_Size, std::move(Value));
 			++m_Size;
@@ -158,12 +156,29 @@ namespace Vsp
 		{
 			if (!EnsureCapacityForAdd())
 			{
-				DEBUG_BREAK();
-				return m_pData[0];
+				return ReportGrowthFailure();
 			}
 			Type* pElement = std::construct_at(m_pData + m_Size, std::forward<ArgumentTypes>(Arguments)...);
 			++m_Size;
 			return *pElement;
+		}
+
+		// -------- Growth failure --------
+		// What Add()/Emplace() return when the array could not grow: an element of
+		// its own that is never part of the array, so a failed append can neither
+		// crash nor silently overwrite the first element (which is what returning
+		// m_pData[0] did - on an empty array that is a null dereference).
+		//
+		// Nothing here can log: the log module itself stores its history, its
+		// backends and its lines in an ArrayList, so this container cannot depend
+		// on it. A caller that must not miss the failure checks CanGrow() before
+		// appending, or checks the size it got back.
+		static Type& ReportGrowthFailure()
+		{
+			DEBUG_BREAK();
+
+			static Type s_FallbackElement{};
+			return s_FallbackElement;
 		}
 
 		// -------- Remove --------

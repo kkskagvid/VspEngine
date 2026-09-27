@@ -20,13 +20,19 @@ namespace Vsp
 {
 	static constexpr const char* kLogTag = "VulkanInstance";
 
-	// Instance extensions required for presenting into a Win32 window.
+	// Instance extensions required for presenting into the platform's window.
+	// The window-system extension is the platform's own, so it is selected by the
+	// platform macro rather than listed unconditionally: requiring Win32's on a
+	// platform that has no Win32 surface would make every device look unsupported.
 	static const char* const k_sRequiredInstanceExtensions[] =
 	{
 		VK_KHR_SURFACE_EXTENSION_NAME,
+#if VSP_PLATFORM_WINDOWS
 		VK_KHR_WIN32_SURFACE_EXTENSION_NAME,
+#endif
 	};
-	static constexpr uint32 k_nRequiredInstanceExtensionCount = 2;
+	static constexpr uint32 k_nRequiredInstanceExtensionCount =
+		static_cast<uint32>(sizeof(k_sRequiredInstanceExtensions) / sizeof(k_sRequiredInstanceExtensions[0]));
 
 	// Validation-layer messages are forwarded into the engine log.
 	static VKAPI_ATTR VkBool32 VKAPI_CALL DebugMessengerCallback(

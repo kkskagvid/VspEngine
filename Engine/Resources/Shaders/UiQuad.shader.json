@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "name": "Assembly/UiQuad",
+  "source": "C:\\Users\\Yulin\\Desktop\\Project\\VspEngine\\Assembly\\Shaders\\UiQuad.vsf",
+  "baseName": "UiQuad",
+  "renderQueue": 4000,
+  "properties": [
+    { "name": "_Tint", "displayName": "Tint", "type": "Color", "defaults": [1, 1, 1, 1] }
+  ],
+  "keywordGroups": [
+  ],
+  "passCount": 1,
+  "variantCount": 1,
+  "variants": [
+    {
+      "index": 0,
+      "key": "",
+      "keywordStateIndices": [],
+      "passes": [
+        {
+          "index": 0,
+          "name": "Pass0",
+          "stages": [
+            {
+              "stage": "vertex",
+              "entryPoint": "UiPassVertex",
+              "file": "UiQuad.vert.spv",
+              "byteCount": 836,
+              "inputCount": 3,
+              "outputCount": 3,
+              "resourceCount": 0,
+              "pushConstantByteSize": 0,
+              "resources": []
+            },
+            {
+              "stage": "fragment",
+              "entryPoint": "UiPassFragment",
+              "file": "UiQuad.frag.spv",
+              "byteCount": 1688,
+              "inputCount": 2,
+              "outputCount": 1,
+              "resourceCount": 2,
+              "pushConstantByteSize": 32,
+              "resources": [
+                { "name": "BindlessTextures", "kind": "sampledImage", "set": 0, "binding": 1, "descriptorCount": 0 },
+                { "name": "BindlessSampler", "kind": "sampler", "set": 0, "binding": 2, "descriptorCount": 1 }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

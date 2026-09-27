@@ -1,0 +1,146 @@
+// ---------------------------------------------------------------------------
+// Skybox - THE ENGINE'S SKY (.vsf).
+//
+// This shader belongs to the engine, not to a game: VspEngine's renderer loads it,
+// builds its pipeline and paints it into every frame, behind everything the game
+// draws. What a game changes is the MATERIAL - the values in the Properties block
+// below - through RenderSettings.Skybox; replacing that material replaces the sky,
+// and a game that never touches it gets this one.
+//
+// A .vsf file holds everything one shader needs:
+//   Properties  the values the editor shows,
+//   Shader      the shader itself: its settings and its Pass blocks,
+//   Pass        the shader code - HLSL, with #include and with the entry points
+//               named by #pragma vertex / #pragma fragment.
+//
+// The shader draws the sky behind EVERYTHING else: one fullscreen triangle
+// whose fragments are coloured by the world direction they look along - a
+// gradient from the zenith down past the horizon, plus a sun disc and its glow.
+// The camera it unprojects with is the one the render pipeline handed to the
+// frame, so the sky follows the view exactly.
+//
+// HLSLCC turns this file into
+//   Skybox.vsfo                    the container the ENGINE loads
+//   Skybox.vert.spv / .frag.spv    the modules, for a graphics debugger
+//   Skybox.shader.json             the manifest, for tools
+//   Skybox.reflection.json         the full reflection
+// ---------------------------------------------------------------------------
+
+Properties
+{
+    _ZenithColor ("Zenith Color", Color) = (0.16, 0.34, 0.66, 1)
+    _HorizonColor ("Horizon Color", Color) = (0.62, 0.74, 0.9, 1)
+    _GroundColor ("Below-Horizon Color", Color) = (0.26, 0.31, 0.4, 1)
+    _SunColor ("Sun Color", Color) = (1.0, 0.95, 0.84, 1)
+    // Direction TOWARDS the sun, in world space. A game whose light comes from
+    // elsewhere sets this to match, so the sky and the shading agree.
+    _SunDirection ("Sun Direction", Vector) = (0, 1, 0, 0)
+    _SunIntensity ("Sun Intensity", Float) = 1.0
+    _SunAngularSize ("Sun Angular Size (degrees)", Float) = 3.5
+    _ZenithFalloff ("Zenith Falloff", Float) = 0.65
+    _GroundFalloff ("Below-Horizon Falloff", Float) = 0.5
+    _SunGlowFalloff ("Sun Glow Falloff", Float) = 32.0
+}
+
+Shader "Vsp/Skybox"
+{
+    // The sky is the FIRST thing a frame draws: everything else is in front of
+    // it, so it belongs to the background queue.
+    Queue = "Background"
+
+    Pass
+    {
+        // Both stage entry points live in this one file.
+        #pragma vertex SkyboxVertex
+        #pragma fragment SkyboxFragment
+
+        #include "SkyboxCommon.hlsl"
+
+        // -------------------------------------------------------------------
+        // Entry point: vertex stage
+        // -------------------------------------------------------------------
+        SkyboxVertexOutput SkyboxVertex(uint uVertexId : SV_VertexID)
+        {
+            // The classic fullscreen triangle: (-1,-1), (3,-1), (-1,3) in clip
+            // space. It covers the whole viewport with three vertices and one
+            // primitive - no vertex buffer, no index buffer - and the two
+            // off-screen corners are clipped away by the rasterizer.
+            float2 fClipPosition = float2((uVertexId << 1) & 2, uVertexId & 2) * 2.0f - 1.0f;
+
+            SkyboxVertexOutput output;
+            // z = 1 is the far plane: the sky is as far away as anything can be.
+            output.Position = float4(fClipPosition, 1.0f, 1.0f);
+            output.ClipPosition = fClipPosition;
+            return output;
+        }
+
+        // -------------------------------------------------------------------
+        // Entry point: fragment stage
+        // -------------------------------------------------------------------
+        float4 SkyboxFragment(SkyboxFragmentInput input) : SV_Target0
+        {
+            // Unproject. The projection maps view space to clip space, so
+            // dividing the clip position by the projection's two scale terms
+            // gives the view-space DIRECTION this pixel looks along; the matrix's
+            // own signs - Vulkan's Y-down clip space included - cancel in the
+            // division, so no convention is repeated here. The -1 is the camera's
+            // forward axis: a camera looks down its local -Z.
+            // A degenerate projection (a zero scale on an axis) would put a NaN
+            // in every pixel, so the two terms are held away from zero.
+            float2 fProjectionScale = float2(ProjectionMatrix[0][0], ProjectionMatrix[1][1]);
+            float2 fSafeProjectionScale = float2(
+                (abs(fProjectionScale.x) > VSP_EPSILON) ? fProjectionScale.x : 1.0f,
+                (abs(fProjectionScale.y) > VSP_EPSILON) ? fProjectionScale.y : 1.0f);
+            float3 fViewDirection = float3(input.ClipPosition / fSafeProjectionScale, -1.0f);
+
+            // Into the world: the camera-to-world matrix is the world transform
+            // of the object the camera belongs to, so its rotation is exactly
+            // what turns a view direction into a world direction.
+            float3 fWorldDirection = VspSafeNormalize(
+                mul((float3x3)CameraToWorldMatrix, fViewDirection),
+                float3(0.0f, 0.0f, -1.0f));
+
+            // -------- The gradient --------
+            // The sky is a function of HEIGHT alone: the same colours appear
+            // wherever the camera looks, which is what makes it read as a sky
+            // rather than as a backdrop glued to the screen. The falloff powers
+            // put the visible change near the horizon, where a real sky changes
+            // fastest.
+            float fHeight = fWorldDirection.y;
+            float3 fTargetColor = PushConstants.ZenithColor.rgb;
+            float fFalloff = PushConstants.SkyShape.x;
+            if (fHeight < 0.0f)
+            {
+                fTargetColor = PushConstants.GroundColor.rgb;
+                fFalloff = PushConstants.SkyShape.y;
+                fHeight = -fHeight;
+            }
+
+            float fBlend = pow(VspSaturate(fHeight), max(fFalloff, VSP_EPSILON));
+            float3 fSkyColor = lerp(PushConstants.HorizonColor.rgb, fTargetColor, fBlend);
+
+            // -------- The sun --------
+            // A disc of a known angular size plus a wide glow around it. The
+            // direction is the one the directional light in the scene travels
+            // FROM, so the sky and the shading agree about where the light is.
+            float3 fDirectionToSun = VspSafeNormalize(
+                PushConstants.SunDirection.xyz, float3(0.0f, 1.0f, 0.0f));
+            float fCosineToSun = dot(fWorldDirection, fDirectionToSun);
+
+            // Full brightness inside the angular radius, fading over its last
+            // 15% so an 8-bit back buffer has a smooth edge to show.
+            float fDiscInner = PushConstants.SunColor.a;
+            float fDiscOuter = fDiscInner + ((1.0f - fDiscInner) * 0.15f);
+            float fSunDisc = smoothstep(fDiscInner, fDiscOuter, fCosineToSun);
+            float fSunGlow = pow(VspSaturate(fCosineToSun), max(PushConstants.SkyShape.z, VSP_EPSILON));
+
+            float3 fSunLight = PushConstants.SunColor.rgb *
+                ((fSunGlow + fSunDisc) * PushConstants.SunDirection.w);
+
+            // Every colour above is authored the way it should appear, so the
+            // result is written straight out; saturate keeps an over-bright sun
+            // from wrapping around.
+            return float4(saturate(fSkyColor + fSunLight), 1.0f);
+        }
+    }
+}

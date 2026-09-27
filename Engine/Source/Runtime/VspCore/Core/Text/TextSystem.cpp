@@ -4,6 +4,7 @@
 
 #include "Common/PlatformMisc.h"
 #include "Core/Diagnostics/ErrorHandling.h"
+#include "Core/EngineServices.h"
 #include "Core/Text/TextSystem.h"
 
 #if VSP_PLATFORM_WINDOWS
@@ -137,8 +138,10 @@ namespace Vsp
 
 	TextSystem& TextSystem::Get()
 	{
-		static TextSystem s_Instance;
-		return s_Instance;
+		// The registry owns this service: it is created here on first use,
+		// reports a lookup from any thread but the one that created it, and is
+		// destroyed explicitly by EngineServices::ShutdownAll().
+		return EngineServices::GetService<TextSystem>("TextSystem");
 	}
 
 	// -------------------------------------------------------------------------

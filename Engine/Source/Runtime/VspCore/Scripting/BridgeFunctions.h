@@ -31,8 +31,8 @@ namespace Vsp
 	//
 	// Assembly model: the bridge lives in the engine's managed runtime
 	// (VspEngine.dll); LoadGameAssembly loads the game Assembly (Assembly.dll)
-	// that holds the user scripts and CallRenderFlow drives the managed render
-	// pipeline once per frame.
+	// that holds the user scripts and CallRenderFrame renders one frame through
+	// the managed frame driver (VspEngine.Rendering.RenderFrameDriver).
 	// -------------------------------------------------------------------------
 
 	namespace ManagedBridgeDetail
@@ -75,10 +75,11 @@ namespace Vsp
 		using CallOnUpdateFn = void (CORECLR_DELEGATE_CALLTYPE*)(void* pManagedHandle);
 		using DestroyInstanceFn = void (CORECLR_DELEGATE_CALLTYPE*)(void* pManagedHandle);
 
-		// Runs the managed render pipeline for one frame. The pipeline builds
-		// its own draw list from the native scene and records everything it
-		// needs through the wrapped graphics API.
-		using CallRenderFlowFn = void (CORECLR_DELEGATE_CALLTYPE*)();
+		// Renders one frame through the managed frame driver: the engine's frame
+		// is opened, the active pipeline records its passes inside it - building
+		// its draw list from the native scene - and everything is recorded
+		// through the wrapped graphics API.
+		using CallRenderFrameFn = void (CORECLR_DELEGATE_CALLTYPE*)();
 
 		// Lets the managed render pipeline release the graphics resources it
 		// created before the backend shuts down.
@@ -96,7 +97,7 @@ namespace Vsp
 		ManagedBridgeDetail::CallOnStartFn CallOnStart = nullptr;
 		ManagedBridgeDetail::CallOnUpdateFn CallOnUpdate = nullptr;
 		ManagedBridgeDetail::DestroyInstanceFn DestroyInstance = nullptr;
-		ManagedBridgeDetail::CallRenderFlowFn CallRenderFlow = nullptr;
+		ManagedBridgeDetail::CallRenderFrameFn CallRenderFrame = nullptr;
 		ManagedBridgeDetail::ReleaseRenderPipelineFn ReleaseRenderPipeline = nullptr;
 	};
 }

@@ -15,8 +15,12 @@ namespace Vsp
 	//   - mouse button equivalents, cursor position, movement delta, wheel
 	//   - a queue of typed Unicode characters
 	// Edge state (pressed/released), the mouse delta and the wheel accumulate
-	// during a frame and are cleared by EndFrame(), so scripts always see one
-	// consistent snapshot per frame.
+	// during a frame and are cleared by EndInputFrame(), so scripts always see
+	// one consistent snapshot per frame.
+	//
+	// The FRAME itself belongs to EngineFrame (Core/EngineFrame.h), which opens
+	// and closes this input window as part of the frame it owns - the input
+	// system never decides where a frame starts or ends.
 	// -------------------------------------------------------------------------
 	class RUNTIME_API InputManager
 	{
@@ -48,10 +52,25 @@ namespace Vsp
 
 		static InputManager& Get();
 
-		// Frame lifecycle: call BeginFrame before processing window messages
-		// and EndFrame after rendering.
-		void BeginFrame();
-		void EndFrame();
+		// -------- Input accumulation window --------
+		// The window in which the events of ONE engine frame accumulate. It is
+		// opened and closed by EngineFrame::BeginFrame / EndFrame - the frame has
+		// one owner - and these two calls are the input half of it:
+		//
+		//   BeginInputFrame()  opens the window. Nothing to reset: the previous
+		//                      frame's edges were already cleared when it ended,
+		//                      and the state a game keeps reading (is the key
+		//                      held?) survives from frame to frame.
+		//   EndInputFrame()    closes it: the per-frame edges, the mouse delta,
+		//                      the wheel and the unread typed characters are
+		//                      cleared, and a locked cursor is recentred for the
+		//                      next frame - after everyone who reads the mouse
+		//                      this frame has read it.
+		//
+		// Window messages must be pumped BETWEEN the two, which is what makes
+		// them belong to exactly one frame.
+		void BeginInputFrame();
+		void EndInputFrame();
 
 		// -------- Cursor --------
 		// The window the pointer belongs to. The host sets it once, when the
@@ -97,6 +116,10 @@ namespace Vsp
 		bool PopTypedCharacter(uint32& outCodePoint);
 
 	private:
+		// The registry in Core/EngineServices.h owns this service's storage and
+		// lifetime, so it has to be able to construct it.
+		friend class EngineServices;
+
 		InputManager() = default;
 
 		// Pushes the current mode onto the platform: the pointer's visibility and

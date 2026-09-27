@@ -157,10 +157,10 @@ CSHARP_EXPORT void VspRhi_DestroyPipeline(uint32 uPipeline)
 }
 
 // -------- Frame recording (the command list of one frame) --------
-// The frame itself is opened and closed by the rendering system
-// (GraphicsSystem::BeginFrame/EndFrame), which the host drives once per frame, so
-// the managed side only ever CLOSES the frame it was given - and only through
-// Submit(), which is what tells the backend the command list is complete.
+// The frame itself is opened and closed by EngineFrame (Core/EngineFrame.h),
+// which the host drives once per frame, so the managed side only ever CLOSES the
+// command list it recorded - and only through Submit(), which is what tells the
+// backend the frame it plays back is complete.
 
 CSHARP_EXPORT void VspRhi_EndFrame()
 {

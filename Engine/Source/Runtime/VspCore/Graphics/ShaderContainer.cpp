@@ -3,11 +3,15 @@
 #include <cstdio>
 #include <cstring>
 
+#include "Common/PlatformMisc.h"
+#include "Core/Logging/Log.h"
 #include "Core/String/VspStringFormat.h"
 #include "Graphics/ShaderContainer.h"
 
 namespace Vsp
 {
+	static constexpr const char* kLogTag = "ShaderContainer";
+
 	namespace
 	{
 		// True when a range of the file lies inside it, so a malformed container
@@ -33,8 +37,7 @@ namespace Vsp
 		m_Entries.Clear();
 		m_Metadata = JsonValue();
 
-		FILE* pFile = nullptr;
-		fopen_s(&pFile, sFilePath.GetData(), "rb");
+		FILE* pFile = PlatformMisc::OpenFileForReading(sFilePath);
 		if (pFile == nullptr)
 		{
 			outErrorText = "cannot read the shader container '" + sFilePath + "'";
@@ -77,8 +80,27 @@ namespace Vsp
 		}
 
 		const size_t nFileByteSize = m_Bytes.size();
-		const uint32 uIndexTableByteSize =
-			static_cast<uint32>(sizeof(Vsfo::IndexEntry) * header.uEntryCount);
+
+		// The index table is described by a 32-bit byte count and holds entries of
+		// sizeof(Vsfo::IndexEntry) bytes each, so the two numbers are computed in
+		// 64 bits and both are checked against the FILE: a count whose product
+		// wraps around 32 bits would otherwise pass the size comparison below and
+		// let the loop read far past the buffer.
+		const uint64 uIndexTableByteSize64 =
+			static_cast<uint64>(sizeof(Vsfo::IndexEntry)) * static_cast<uint64>(header.uEntryCount);
+		const uint64 uMaximumEntryCount =
+			static_cast<uint64>(nFileByteSize) / static_cast<uint64>(sizeof(Vsfo::IndexEntry));
+		if (static_cast<uint64>(header.uEntryCount) > uMaximumEntryCount ||
+			uIndexTableByteSize64 > static_cast<uint64>(UINT32_MAX))
+		{
+			LOG_ERROR(kLogTag, "The shader container '{}' declares {} module(s), more than the {} its {} byte(s) can hold.",
+				sFilePath.GetData(), header.uEntryCount,
+				static_cast<uint32>(uMaximumEntryCount), static_cast<uint32>(nFileByteSize));
+			outErrorText = "the shader container '" + sFilePath + "' declares more modules than the file can hold";
+			return false;
+		}
+
+		const uint32 uIndexTableByteSize = static_cast<uint32>(uIndexTableByteSize64);
 
 		if (header.uIndexTableByteSize != uIndexTableByteSize ||
 			!IsRangeInside(nFileByteSize, header.uIndexTableByteOffset, header.uIndexTableByteSize, 4u) ||

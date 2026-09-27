@@ -84,6 +84,41 @@ namespace VspEngine.UI
 		public void ClearChildren() => children.Clear();
 
 		/// <summary>
+		/// The first element of this subtree whose <see cref="Name"/> is the given
+		/// one, this element included, or null when the subtree holds none.
+		///
+		/// This is how code finds an element a JSON layout declared
+		/// (<see cref="UiSystem.FindElement"/>): the layout names the elements, and
+		/// code binds a value or a reaction onto them by name.
+		/// </summary>
+		public UiElement? FindDescendant(string elementName)
+		{
+			if (string.IsNullOrEmpty(elementName))
+			{
+				return null;
+			}
+
+			if (string.Equals(Name, elementName, StringComparison.Ordinal))
+			{
+				return this;
+			}
+
+			for (int childIndex = 0; childIndex < children.Count; ++childIndex)
+			{
+				UiElement? foundElement = children[childIndex].FindDescendant(elementName);
+				if (foundElement != null)
+				{
+					return foundElement;
+				}
+			}
+			return null;
+		}
+
+		/// <summary>The same lookup, as the widget type the caller expects.</summary>
+		public TElement? FindDescendant<TElement>(string elementName) where TElement : UiElement =>
+			FindDescendant(elementName) as TElement;
+
+		/// <summary>
 		/// Walks the subtree: resolves absolute positions, updates hover state and
 		/// gives every widget its chance to react to the pointer.
 		/// </summary>

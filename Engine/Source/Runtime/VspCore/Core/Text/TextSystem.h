@@ -60,6 +60,10 @@ namespace Vsp
 		void Clear();
 
 	private:
+		// The registry in Core/EngineServices.h owns this service's storage and
+		// lifetime, so it has to be able to construct it.
+		friend class EngineServices;
+
 		TextSystem() = default;
 
 		// The service is a process-wide singleton and a Font owns a face, so

@@ -86,9 +86,10 @@ namespace Vsp
 		// Invokes OnUpdate for every registered instance.
 		void UpdateAllScripts();
 
-		// Invokes the managed render pipeline (RenderPipelineManager) once; the
-		// pipeline builds the frame from the native scene.
-		void CallRenderFlow();
+		// Renders one frame through the managed frame driver
+		// (VspEngine.Rendering.RenderFrameDriver): the engine's frame with the
+		// active pipeline's passes inside it.
+		void CallRenderFrame();
 
 		// Lets the managed render pipeline release the graphics resources it
 		// created through the wrapped graphics API.
@@ -125,6 +126,10 @@ namespace Vsp
 		}
 
 	private:
+		// The registry in Core/EngineServices.h owns this service's storage and
+		// lifetime, so it has to be able to construct it.
+		friend class EngineServices;
+
 		ScriptEngine() = default;
 
 		ScriptInstanceEntry* FindInstanceEntry(ScriptInstanceId uInstanceId);

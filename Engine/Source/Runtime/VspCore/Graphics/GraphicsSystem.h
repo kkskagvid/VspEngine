@@ -31,17 +31,15 @@ namespace Vsp
 		static GraphicsSystem& Get();
 
 		// -------- Frame --------
-		// The FRAME belongs to the rendering system, and these two calls are what a
-		// frame is: BeginFrame opens it - the frame's command list starts empty and
-		// the per-frame systems are told a new frame has begun - and EndFrame closes
-		// it, putting what a frame accumulates to bed.
+		// The graphics system does NOT own a frame: it owns the RECORDED COMMAND
+		// LIST of one (RenderCore) and the backend that plays it back. The frame
+		// itself - when it starts, what accumulates in it, when it ends - belongs
+		// to EngineFrame (Core/EngineFrame.h), which the host drives once per
+		// frame and which opens the command list through RenderCore.
 		//
-		// The host calls them once per frame around everything else (messages,
-		// scripts, the recorded frame, the presentation), because only the host
-		// knows where a frame starts and ends. Nothing else opens or closes a frame:
-		// a render pipeline records INTO the frame it was given.
-		void BeginFrame();
-		void EndFrame();
+		// A render pipeline records INTO the frame it was handed and never opens
+		// or closes one; the managed side only ever CLOSES the recorded list by
+		// submitting it (VspRhi_EndFrame).
 
 		// -------- Active backend --------
 		// The engine sets the backend once it is initialized and clears it
@@ -108,6 +106,10 @@ namespace Vsp
 		void ClearPipelineBuilders();
 
 	private:
+		// The registry in Core/EngineServices.h owns this service's storage and
+		// lifetime, so it has to be able to construct it.
+		friend class EngineServices;
+
 		GraphicsSystem() = default;
 
 		// One open pipeline-state assembly.

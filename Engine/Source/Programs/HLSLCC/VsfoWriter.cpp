@@ -61,12 +61,22 @@ namespace Hlslcc
 		}
 
 		// Writes a whole file in one call. fopen_s is used instead of a stream so
-		// a failure is a plain return value, never an exception.
+		// a failure is a plain return value, never an exception - and it is guarded,
+		// because fopen_s is MSVC/Annex K only: the same pattern the reader and the
+		// output writer already use keeps this file compilable elsewhere.
 		bool WriteWholeFile(const std::string& sFilePath, const void* pData, size_t nByteCount)
 		{
 			std::FILE* pFile = nullptr;
-			if (fopen_s(&pFile, sFilePath.c_str(), "wb") != 0 || pFile == nullptr)
+#if defined(_MSC_VER)
+			const errno_t eOpenResult = fopen_s(&pFile, sFilePath.c_str(), "wb");
+			const bool bIsOpen = (eOpenResult == 0) && (pFile != nullptr);
+#else
+			pFile = std::fopen(sFilePath.c_str(), "wb");
+			const bool bIsOpen = (pFile != nullptr);
+#endif
+			if (!bIsOpen)
 			{
+				std::fprintf(stderr, "error: the file '%s' could not be opened for writing\n", sFilePath.c_str());
 				return false;
 			}
 

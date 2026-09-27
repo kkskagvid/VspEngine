@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "name": "Vsp/Skybox",
+  "source": "C:\\Users\\Yulin\\Desktop\\Project\\VspEngine\\Engine\\Shaders\\Runtime\\Skybox.vsf",
+  "baseName": "Skybox",
+  "renderQueue": 1000,
+  "properties": [
+    { "name": "_ZenithColor", "displayName": "Zenith Color", "type": "Color", "defaults": [0.16, 0.34, 0.66, 1] },
+    { "name": "_HorizonColor", "displayName": "Horizon Color", "type": "Color", "defaults": [0.62, 0.74, 0.9, 1] },
+    { "name": "_GroundColor", "displayName": "Below-Horizon Color", "type": "Color", "defaults": [0.26, 0.31, 0.4, 1] },
+    { "name": "_SunColor", "displayName": "Sun Color", "type": "Color", "defaults": [1, 0.95, 0.84, 1] },
+    { "name": "_SunDirection", "displayName": "Sun Direction", "type": "Vector", "defaults": [0, 1, 0, 0] },
+    { "name": "_SunIntensity", "displayName": "Sun Intensity", "type": "Float", "defaults": [1, 0, 0, 0] },
+    { "name": "_SunAngularSize", "displayName": "", "type": "Float", "defaults": [3.5, 0, 0, 0] },
+    { "name": "_ZenithFalloff", "displayName": "Zenith Falloff", "type": "Float", "defaults": [0.65, 0, 0, 0] },
+    { "name": "_GroundFalloff", "displayName": "Below-Horizon Falloff", "type": "Float", "defaults": [0.5, 0, 0, 0] },
+    { "name": "_SunGlowFalloff", "displayName": "Sun Glow Falloff", "type": "Float", "defaults": [32, 0, 0, 0] }
+  ],
+  "keywordGroups": [
+  ],
+  "passCount": 1,
+  "variantCount": 1,
+  "variants": [
+    {
+      "index": 0,
+      "key": "",
+      "keywordStateIndices": [],
+      "passes": [
+        {
+          "index": 0,
+          "name": "Pass0",
+          "stages": [
+            {
+              "stage": "vertex",
+              "entryPoint": "SkyboxVertex",
+              "file": "Skybox.vert.spv",
+              "byteCount": 748,
+              "inputCount": 1,
+              "outputCount": 2,
+              "resourceCount": 0,
+              "pushConstantByteSize": 0,
+              "resources": []
+            },
+            {
+              "stage": "fragment",
+              "entryPoint": "SkyboxFragment",
+              "file": "Skybox.frag.spv",
+              "byteCount": 4132,
+              "inputCount": 1,
+              "outputCount": 1,
+              "resourceCount": 1,
+              "pushConstantByteSize": 96,
+              "resources": [
+                { "name": "CameraUniformBuffer", "kind": "uniformBuffer", "set": 0, "binding": 0, "descriptorCount": 1 }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

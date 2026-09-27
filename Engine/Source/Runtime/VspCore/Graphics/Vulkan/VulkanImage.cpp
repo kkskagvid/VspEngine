@@ -75,8 +75,18 @@ namespace Vsp
 			return false;
 		}
 
+		// The mapping is CHECKED before anything is copied into it: a failed map
+		// leaves the pointer null, and a memcpy into null is a crash rather than a
+		// reported error.
 		void* pMappedData = nullptr;
-		vkMapMemory(device, stagingBufferMemory, 0, k_nImageByteSize, 0, &pMappedData);
+		const VkResult eMapResult = vkMapMemory(device, stagingBufferMemory, 0, k_nImageByteSize, 0, &pMappedData);
+		if (eMapResult != VK_SUCCESS || pMappedData == nullptr)
+		{
+			LOG_ERROR(kLogTag, "MapImageMemory: vkMapMemory failed with {} for {} byte(s).",
+				static_cast<int32>(eMapResult), static_cast<uint32>(k_nImageByteSize));
+			return false;
+		}
+
 		memcpy(pMappedData, pPixelDataRgba8, static_cast<size_t>(k_nImageByteSize));
 		vkUnmapMemory(device, stagingBufferMemory);
 

@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "Common/PlatformMisc.h"
 #include "Core/Json/JsonReader.h"
 #include "Core/Logging/Log.h"
 
@@ -483,8 +484,7 @@ namespace Vsp
 	{
 		outErrorText = nullptr;
 
-		FILE* pFile = nullptr;
-		fopen_s(&pFile, sFilePath.GetData(), "rb");
+		FILE* pFile = PlatformMisc::OpenFileForReading(sFilePath);
 		if (pFile == nullptr)
 		{
 			outErrorText = "cannot read the JSON file '" + sFilePath + "'";

@@ -1,6 +1,7 @@
 #include "RuntimePCH.h"
 
 #include "Common/PlatformMisc.h"
+#include "Core/EngineServices.h"
 #include "Core/Events/InputEvents.h"
 #include "Core/Input/InputManager.h"
 #include "Core/Logging/Log.h"
@@ -11,16 +12,25 @@ namespace Vsp
 
 	InputManager& InputManager::Get()
 	{
-		static InputManager s_Instance;
-		return s_Instance;
+		// The registry owns this service: it is created here on first use,
+		// reports a lookup from any thread but the one that created it, and is
+		// destroyed explicitly by EngineServices::ShutdownAll().
+		return EngineServices::GetService<InputManager>("InputManager");
 	}
 
-	void InputManager::BeginFrame()
+	// -------------------------------------------------------------------------
+	// Input accumulation window (opened and closed by EngineFrame)
+	// -------------------------------------------------------------------------
+
+	void InputManager::BeginInputFrame()
 	{
-		// Accumulation happens during the frame; nothing to reset here.
+		// The window opens: the events of this frame accumulate from here on.
+		// Nothing has to be reset - the frame that just ended cleared its own
+		// edges, and the state a game polls across frames (is the key held?)
+		// is deliberately kept.
 	}
 
-	void InputManager::EndFrame()
+	void InputManager::EndInputFrame()
 	{
 		// Clear per-frame edge state so the next frame starts fresh.
 		for (int32 nKeyIndex = 0; nKeyIndex < k_nKeyStateCount; ++nKeyIndex)

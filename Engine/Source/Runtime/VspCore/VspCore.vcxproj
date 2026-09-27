@@ -48,6 +48,8 @@
     <ClInclude Include="Core\Json\JsonReader.h" />
     <ClInclude Include="Core\Defines.h" />
     <ClInclude Include="Core\Engine.h" />
+    <ClInclude Include="Core\EngineFrame.h" />
+    <ClInclude Include="Core\EngineServices.h" />
     <ClInclude Include="Core\Logging\Log.h" />
     <ClInclude Include="Core\Logging\LogBackend.h" />
     <ClInclude Include="Core\Output\OutputDevice.h" />
@@ -83,7 +85,7 @@
     <ClInclude Include="Graphics\Vulkan\VulkanDescriptors.h" />
     <ClInclude Include="Graphics\Vulkan\VulkanRHI.h" />
     <ClInclude Include="Graphics\Vulkan\VulkanSwapChain.h" />
-    <ClInclude Include="Graphics\Vulkan\VulkanRenderer2D.h" />
+    <ClInclude Include="Graphics\Vulkan\VulkanRenderer.h" />
     <ClInclude Include="Scripting\ScriptTypes.h" />
     <ClInclude Include="Scripting\ScriptEngine.h" />
     <ClInclude Include="Core\Window.h" />
@@ -111,6 +113,8 @@
     <ClCompile Include="Classes\Transform.cpp" />
     <ClCompile Include="Core\Application.cpp" />
     <ClCompile Include="Core\Engine.cpp" />
+    <ClCompile Include="Core\EngineFrame.cpp" />
+    <ClCompile Include="Core\EngineServices.cpp" />
     <ClCompile Include="Core\String\StringConv.cpp" />
     <ClCompile Include="Core\String\VspString.cpp" />
     <ClCompile Include="Core\Templates\Allocator.cpp" />
@@ -150,8 +154,9 @@
     <ClCompile Include="Graphics\Vulkan\VulkanDescriptors.cpp" />
     <ClCompile Include="Graphics\Vulkan\VulkanRHI.cpp" />
     <ClCompile Include="Graphics\Vulkan\VulkanSwapChain.cpp" />
-    <ClCompile Include="Graphics\Vulkan\VulkanRenderer2D.cpp" />
+    <ClCompile Include="Graphics\Vulkan\VulkanRenderer.cpp" />
     <ClCompile Include="Scripting\I18NExports.cpp" />
+    <ClCompile Include="Scripting\JsonExports.cpp" />
     <ClCompile Include="Scripting\MathExports.cpp" />
     <ClCompile Include="Scripting\TextExports.cpp" />
     <ClCompile Include="Scripting\NativeExports.cpp" />

@@ -1,13 +1,19 @@
 // -------------------------------------------------------------------------
 // Launch entry point (Windows).
 //
-// Everything Windows-only lives in Common behind #if VSP_PLATFORM_WINDOWS;
-// the two pieces below CANNOT move there, because Windows requires them to
-// be in the executable module itself:
+// The whole translation unit is Windows-only, which is why it is guarded: the
+// file is named by the project, but a build that globs sources (or a CMake
+// port) has to be ABLE to see why it does not belong on another platform. The
+// platform-independent host lives in LaunchLoop.cpp; what CANNOT move out of
+// the executable module is here, because Windows requires it:
 //   - the wWinMain entry point, and
 //   - the GPU-selection exports (they only work when exported from the .exe).
-// The command-line parsing itself is encapsulated in Common/PlatformMisc.
+// Everything else Windows-only stays behind Common/PlatformMisc.
 // -------------------------------------------------------------------------
+
+#include "Core/Platform.h"
+
+#if VSP_PLATFORM_WINDOWS
 
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
@@ -16,14 +22,14 @@
 #include "Core/Core.h"
 #include "Core/Logging/Log.h"
 
-// http://developer.download.nvidia.com/devzone/devcenter/gamegraphics/files/OptimusRenderingPolicies.pdf
+// http://developer.download.nvidia.com/devzone/devcenter/gamegraphics/files/OptimuxRenderingPolicies.pdf
 // The following line is to favor the high performance NVIDIA GPU if there are multiple GPUs
 // Has to be .exe module to be correctly detected.
-extern "C" { _declspec(dllexport) uint32 NvOptimusEnablement = 0x00000001; }
+extern "C" { __declspec(dllexport) uint32 NvOptimusEnablement = 0x00000001; }
 
 // And the AMD equivalent
 // Also has to be .exe module to be correctly detected.
-extern "C" { _declspec(dllexport) uint32 AmdPowerXpressRequestHighPerformance = 0x00000001; }
+extern "C" { __declspec(dllexport) uint32 AmdPowerXpressRequestHighPerformance = 0x00000001; }
 
 namespace Vsp
 {
@@ -37,12 +43,14 @@ int WINAPI wWinMain(
 	_In_ LPWSTR lpCmdLine,
 	_In_ int nShowCmd)
 {
-	// Parse the wide command line the same way the CRT would (the parsing is
-	// encapsulated in Common/PlatformMisc behind #if VSP_PLATFORM_WINDOWS).
+	// Parse the wide command line the way the CRT does. The parsing itself is a
+	// Windows call, so it happens here - in the platform entry - and the host
+	// below only ever sees the argument array.
 	int32 nArgumentCount = 0;
 	LPWSTR* pArguments = ::CommandLineToArgvW(::GetCommandLineW(), &nArgumentCount);
 	if (pArguments == nullptr)
 	{
+		LOG_ERROR("Launch", "The command line could not be parsed (CommandLineToArgvW failed).");
 		return 1;
 	}
 
@@ -51,3 +59,5 @@ int WINAPI wWinMain(
 	::LocalFree(pArguments);
 	return nExitCode;
 }
+
+#endif   // VSP_PLATFORM_WINDOWS

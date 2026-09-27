@@ -742,6 +742,9 @@ namespace Hlslcc
 			}
 			if (m_Properties.size() >= k_nMaxShaderPropertyCount)
 			{
+				std::fprintf(stderr,
+					"error: the Properties block of '%s' declares more than %zu propert(ies); the rest is ignored\n",
+					m_sShaderName.c_str(), static_cast<size_t>(k_nMaxShaderPropertyCount));
 				break;
 			}
 
@@ -823,6 +826,11 @@ namespace Hlslcc
 	{
 		if (m_Passes.size() >= k_nMaxShaderPassCount)
 		{
+			// A pass that is dropped without a word makes a shader that declares
+			// more passes than the limit ships fewer modules than it says it has.
+			std::fprintf(stderr,
+				"error: '%s' declares more than %zu Pass blocks; the block '%s' and every later one are ignored\n",
+				m_sShaderName.c_str(), static_cast<size_t>(k_nMaxShaderPassCount), sPassName.c_str());
 			return;
 		}
 
@@ -906,6 +914,14 @@ namespace Hlslcc
 		if (m_KeywordGroups.size() < k_nMaxShaderKeywordGroupCount)
 		{
 			m_KeywordGroups.push_back(keywordGroup);
+		}
+		else
+		{
+			// A group that silently disappears takes its keywords - and with them
+			// the variants a game selects - with it.
+			std::fprintf(stderr,
+				"error: '%s' declares more than %zu keyword group(s); the group '%s' is ignored\n",
+				m_sShaderName.c_str(), static_cast<size_t>(k_nMaxShaderKeywordGroupCount), keywordGroup.Name);
 		}
 	}
 

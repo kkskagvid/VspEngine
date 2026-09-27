@@ -1,22 +1,24 @@
 #pragma once
 
-#ifdef _MSC_VER
+// Clang is tested BEFORE GCC: Clang defines __GNUC__ as well, so a GCC-first
+// chain would never reach the Clang branch (it used to be unreachable).
+#if defined(_MSC_VER)
     #define VSP_COMPILER_MSVC 1
-    #ifdef _DEBUG
-        #define VSP_ENGINE_DEBUG 1
-    #else
-        #define VSP_ENGINE_DEBUG 0
-    #endif
-#elif defined(__GNUC__)
-    #define VSP_COMPILER_GCC 1
-    #ifdef (DEBUG)
+    #if defined(_DEBUG)
         #define VSP_ENGINE_DEBUG 1
     #else
         #define VSP_ENGINE_DEBUG 0
     #endif
 #elif defined(__clang__)
     #define VSP_COMPILER_CLANG 1
-    #ifdef (DEBUG)
+    #if defined(DEBUG)
+        #define VSP_ENGINE_DEBUG 1
+    #else
+        #define VSP_ENGINE_DEBUG 0
+    #endif
+#elif defined(__GNUC__)
+    #define VSP_COMPILER_GCC 1
+    #if defined(DEBUG)
         #define VSP_ENGINE_DEBUG 1
     #else
         #define VSP_ENGINE_DEBUG 0

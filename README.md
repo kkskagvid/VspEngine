@@ -60,9 +60,28 @@ Creating a script instance therefore creates real native data: a `GameObject`
 with its own `Transform` plus the script `Component`, whose handles the host
 hands to the managed instance through the bridge.
 
-### 2. The render flow lives in C#; the native layer only exports a wrapped graphics API
+### 2. A frame is opened by the engine and filled by C#; the native layer only exports a wrapped graphics API
 
-The native layer never builds a frame on its own. It exposes two things:
+The native layer never lets a game open a frame of its own. It exposes three
+things:
+
+- **the frame itself** — `Core/EngineFrame` opens one engine frame and closes it
+  (`BeginFrame` / `EndFrame`), which is what empties the frame's command list and
+  opens and closes the window in which the frame accumulates input;
+- **resource creation** — `IGraphics` / `GraphicsSystem` create buffers,
+  shader modules, bindless textures and graphics pipelines on request
+  (`VspRhi_*` in `Scripting/RhiExports.cpp`);
+- **a recorded command list** — `Graphics/RenderCore` collects one frame's
+  commands (begin/end render pass, viewport, scissor, bind pipeline, bind vertex
+  buffer, push constants, draw) and the backend plays them back while it records
+  the swapchain command buffer.
+
+The C# side of that frame is `VspEngine.Rendering.RenderFrameDriver`: the host
+calls its `RenderFrame()` once per frame, and it is what opens the render pass,
+clears it, paints the engine's sky, runs the active pipeline's passes inside it,
+draws the engine's interface and submits.
+
+The native layer never builds a frame on its own:
 
 - **resource creation** — `IGraphics` / `GraphicsSystem` create buffers,
   shader modules, bindless textures and graphics pipelines on request
@@ -430,15 +449,78 @@ peak number of live resources. Logging in a graph that is compiled once per fram
 would bury the log, so nothing is written on the success path: a pipeline that wants
 the details asks for `GetDebugSummary()`.
 
-### 9. The interface, and the text in it
+### 9. The interface: the engine draws it, from data or from code
 
-`VspEngine.UI` is a small flat-style widget framework: `Canvas` is the root and
-owns the theme, the fonts and the render-target size; `Image` is a filled rectangle
-(or a textured one) with an optional hairline border; `Text` is a run of text;
-`Button` is the state machine - rest, hover, press, release - with a click that
-fires only when the release lands inside it. `UiRenderer` owns what the widgets do
-not: the shader, one pipeline, one dynamic vertex and index buffer for the whole
-frame, and the 1x1 white texture solid fills sample.
+**The interface is the engine's, like the sky.** `VspEngine.UI.UiSystem` owns the
+frame's UI - its renderer (the shader, one pipeline, one dynamic vertex and index
+buffer per frame, the 1x1 white texture solid fills sample) and the canvases it
+draws - and `RenderPipelineManager` calls it in every frame, after the active
+pipeline's passes and before the render pass is closed:
+
+```
+engine: gather the draw list, set the camera, open the render pass, paint the sky
+game:   the active pipeline records its own passes
+ENGINE: UiSystem.RenderFrame(...)      <- the interface, on top of them
+engine: close the render pass, submit
+```
+
+The UI is therefore recorded into the same command buffer, the same render pass
+and the same depth buffer as the scene, through the same wrapped graphics API -
+being the engine's does not mean bypassing the engine's render flow, it means
+being part of it. A game shows an interface by publishing a canvas, not by
+recording draws, and a game that publishes none still gets one if its layout file
+is loaded.
+
+**Two layout sources, one job each.** They are drawn in one frame, the layout
+first and the code canvas on top of it, so a game binds behaviour onto a layout
+instead of re-describing it:
+
+| Source | What it says | Where it lives |
+| ------ | ------------ | -------------- |
+| **JSON layout** | *what the interface IS*: which elements exist, where they sit, how they look, which localisation key a static label shows. Data, read once, changed by editing a file | `<executable>\Ui\<name>.json`, loaded by `UiSystem.LoadLayoutFromJson` |
+| **Code (IMGUI)** | *what the interface SHOWS NOW*: a live readout, an element that exists only in some state, the pointer marker, what a click does. Behaviour, updated every frame | a `Canvas` the game builds in code and publishes as `UiSystem.ImmediateCanvas` |
+
+The two meet by NAME: the document names its elements (`"name": "SpinButton"`)
+and code finds them again with `UiSystem.FindElement<Button>("SpinButton")`, which
+is what lets a layout own the structure while the game owns the reactions.
+
+The document is read by the engine's own JSON reader (`Core/Json/JsonReader`,
+through `VspJson_*`), so a layout, a locale catalog, a scene file and a shader
+manifest all go through one parser and one set of errors:
+
+```json
+{
+  "name": "DemoHudLayout",
+  "theme":  { "PanelColor": "#1C1F26EB" },
+  "elements": [
+    { "type": "Image", "name": "HudPanel", "rect": [18, 18, 330, 214],
+      "color": "PanelColor", "borderColor": "BorderColor",
+      "children": [
+        { "type": "Text", "name": "Title", "rect": [16, 16, 298, 26],
+          "key": "demo.title", "pixelSize": 22, "color": "TextColor",
+          "verticalAlignment": "Middle" },
+        { "type": "Button", "name": "SpinButton", "rect": [16, 84, 294, 34],
+          "key": "demo.button.spin", "labelColor": "TextColor" }
+      ] }
+  ]
+}
+```
+
+A colour is a theme role by name (`"PanelColor"`, `"AccentColor"`, ...) or a
+literal `#RRGGBB`/`#RRGGBBAA`; a text is a localisation `key` or a literal
+`text`; every field has a default, and a member that is missing or wrong keeps it
+and is reported. `Assembly/Ui/DemoHud.json` is the worked example: the demo's
+panel, accent bar, divider, title and three buttons are data, and its status line,
+camera hint and pointer marker are code.
+
+**The widgets.** `VspEngine.UI` is a small flat-style framework: `Canvas` is the
+root and owns the theme, the fonts and the render-target size; `Image` is a filled
+rectangle (or a textured one) with an optional hairline border; `Text` is a run of
+text; `Button` is the state machine - rest, hover, press, release - with a click
+that fires only when the release lands inside it. `UiRenderer` owns what the
+widgets do not: the shader, the pipeline, the per-frame buffers and the solid-fill
+texture - and it draws EVERY canvas of the frame in ONE buffer upload, because two
+uploads into the same dynamic buffer would overwrite each other.
 
 Text does not come from a bitmap font baked into the engine. `Core/Text` rasterizes
 a real face with **FreeType** into a 1024x1024 coverage atlas (white RGB, coverage in
@@ -505,7 +587,7 @@ handles it everywhere else.
 The engine advances the world once per frame, between the scripts and the frame:
 
 ```
-window messages -> input -> scripts OnUpdate -> PhysicsWorld::Step(dt) -> render flow
+window messages -> input -> scripts OnUpdate -> PhysicsWorld::Step(dt) -> the frame driver renders the frame
 ```
 
 so a script that sets a velocity or an impulse belongs to THIS frame's step, and
@@ -599,9 +681,28 @@ engine renders and wants a spatial partition beyond that.
 - **Complete keyboard + mouse input** (`Core/Input/InputManager`): held/pressed/released
   edge state, mouse position/delta/wheel, typed characters. Window messages flow
   Win32 -> events -> InputManager -> scripts. The per-frame edges are cleared by
-  the RENDERING system, not by the host: `GraphicsSystem::BeginFrame` opens a
-  frame and `GraphicsSystem::EndFrame` closes it, so "a frame" has one owner and a
-  game cannot forget to end one.
+  the ENGINE FRAME, not by the game and not by the input system on its own:
+  `EngineFrame::BeginFrame` opens the frame's input window
+  (`InputManager::BeginInputFrame`) and `EngineFrame::EndFrame` closes it
+  (`InputManager::EndInputFrame`), so "a frame" has exactly one owner and a game
+  cannot forget to end one. The three frame-ish pairs the engine used to mix up -
+  `EngineFrame` (the frame), `RenderCore` (the frame's command list) and
+  `InputManager` (the frame's input window) - now say which of the three they are.
+- **One owner for a frame** (`Core/EngineFrame`): `BeginFrame` empties the frame's
+  command list and opens its input window, `EndFrame` clears the input the frame
+  accumulated and recentres a locked cursor once. The host drives it; the graphics
+  system owns the command list of the frame and the backend that plays it back,
+  and a render pipeline records INTO the frame it is handed rather than opening
+  one of its own.
+- **Explicit service lifetime** (`Core/EngineServices`): the engine's process-wide
+  services (scene, clock, input, graphics front end, render core, shader library,
+  physics world, text service, localisation, output devices, script host, frame)
+  are created on first use through one registry, which records WHICH THREAD created
+  each of them and reports a use from any other one, and which destroys them - in
+  reverse creation order - when the host asks (`EngineServices::ShutdownAll`).
+  Teardown is therefore explicit and ordered instead of depending on the
+  static-destruction order at process exit, and a service used after that point is
+  reported and re-created rather than dereferenced.
 - **A pointer a game owns** (`Cursor`): `Visible`, `Confined` or `Locked`. A locked
   cursor is HIDDEN and put back at the centre of the window after every frame, so
   the movement a script reads is a movement of the hand and never runs out of
@@ -660,9 +761,12 @@ engine renders and wants a spatial partition beyond that.
 - **Split Vulkan module** (`Graphics/Vulkan`): the renderer is decomposed into
   functional units - `VulkanInstance` (instance + surface), `VulkanDevice` (device +
   queues + helpers), `VulkanBuffer`, `VulkanImage`, `VulkanPipeline`,
-  `VulkanDescriptors` (bindless), `VulkanSwapChain` and `VulkanRenderer2D`
+  `VulkanDescriptors` (bindless), `VulkanSwapChain` and `VulkanRenderer`
   (the backend that owns them and plays the recorded frame back) behind a thin
-  `VulkanContext` RHI facade.
+  `VulkanContext` RHI facade. `VulkanRenderer` is the engine's ONE renderer -
+  `VulkanRenderer2D` was a historical name for something that was never a 2D path:
+  the engine draws everything, the scene and the interface alike, in 3D through the
+  same render pass, depth buffer and camera.
 - **Windows-only code encapsulated in Common** (`Common/PlatformMisc`,
   `Common/PlatformWindow`, `Common/PlatformDllMain`): every platform-specific
   call (window creation, dynamic library loading, environment variables, the
@@ -942,7 +1046,10 @@ The script runs both halves of the acceptance test:
      brighter than the lower part - with one colour on every face, that shading is
      the only thing that makes the shape read,
    - the **interface is drawn on top** of the scene, in the corner its panel is
-     pinned to.
+     pinned to - and it is the ENGINE that draws it, from a JSON layout it read
+     itself (the panel, its title and its buttons) and from the canvas the demo
+     builds in code (the status line, the camera hint, the pointer marker), which
+     is why the demo's render graph holds no interface pass either.
 
    The frames the pixel checks analyse are all taken with the camera where the demo
    opens, above the cube: the two extremes of the orbit are captured as `view`
@@ -956,6 +1063,13 @@ The script runs both halves of the acceptance test:
    - **the engine loaded its own sky** (`Loaded shader 'Vsp/Skybox'`) and the
      demo's render graph has **no sky pass** in it, which is what proves the sky is
      the engine's and not a pass of the game's,
+   - the **engine loaded and read the interface**: its UI renderer loaded
+     `Assembly/UiQuad`, its own JSON reader parsed the demo's layout
+     (`[JsonExports] JSON document '...\Ui\DemoHud.json' parsed`), the layout is
+     drawn by the engine (`UiSystem: the layout '...' is loaded (11 element(s)) and
+     is drawn by the engine`) and the demo's render graph holds **no interface pass**
+     either - the interface is the frame's, like the sky, and not a pass of the
+     game's,
    - the **collision code answered four known-answer checks** the demo runs when it
      starts: a ray into a sphere, into a box, into the same box turned 45 degrees
      about Y and into a triangle mesh each have to come back with the distance and
@@ -1031,9 +1145,9 @@ Launch.exe --silent --frames=640 --fixed-delta-time=16.6667 --no-cursor-lock ^
 
 ## Layout
 
-- `Engine/Source/Runtime/VspCore`    - the native engine DLL. `Classes/` owns the object model, `Graphics/` the wrapped graphics API and the backends, `Scripting/` the CoreCLR host and every export managed code P/Invokes. All Windows-only code is encapsulated in its `Common/` folder behind `#if VSP_PLATFORM_WINDOWS`.
-- `Engine/Source/Runtime/VspEngine`  - the engine's managed runtime assembly (VspEngine.dll): the object model reference handles, the Input/Time facades, the interop bridge, the RHI wrappers, the render-pipeline framework with the render graph (`Rendering/`), the UI framework (`UI/`), the localisation facade (`I18N.cs`) and the native-maths facade (`NativeMath.cs`).
-- `Assembly`                          - the game Assembly (Assembly.dll): the user script (the demo `CubeController`), the render pipeline the game installs (`Rendering/`, including its render graph and the third-person camera rig), the flat interface it builds (`UI/`), the translation catalogs it ships (`Locales/*.json`) and the shaders it ships (`Assembly/Shaders/*.vsf`), which HLSLCC compiles during its build.
+- `Engine/Source/Runtime/VspCore`    - the native engine DLL. `Classes/` owns the object model, `Graphics/` the wrapped graphics API and the backends, `Scripting/` the CoreCLR host and every export managed code P/Invokes (the scene, the wrapped graphics API, the localisation and the JSON reader - `VspJson_*`). `Core/EngineFrame` owns one engine frame, `Core/EngineServices` owns the lifetime of every engine service, and all Windows-only code is encapsulated in its `Common/` folder behind `#if VSP_PLATFORM_WINDOWS`.
+- `Engine/Source/Runtime/VspEngine`  - the engine's managed runtime assembly (VspEngine.dll): the object model reference handles, the Input/Time facades, the interop bridge, the RHI wrappers, the render-pipeline framework with the render graph and the frame driver (`Rendering/`), the UI framework the ENGINE draws every frame with (`UI/UiSystem`, `UI/UiRenderer`, `UI/UiLayoutLoader` and the widgets), the localisation facade (`I18N.cs`), the JSON facade over the native reader (`JsonDocument.cs`) and the native-maths facade (`NativeMath.cs`).
+- `Assembly`                          - the game Assembly (Assembly.dll): the user script (the demo `CubeController`), the render pipeline the game installs (`Rendering/`, including its render graph and the third-person camera rig), the interface the game owns (`UI/DemoHud.cs` - its live canvas and its bindings), the UI LAYOUT it ships as data (`Assembly/Ui/*.json`, staged as `Ui/*.json` next to the executable), the translation catalogs it ships (`Locales/*.json`) and the shaders it ships (`Assembly/Shaders/*.vsf`), which HLSLCC compiles during its build.
 - `Engine/Source/Runtime/Launch`     - the host executable: parses the command line, runs `GameEngine`.
 - `Engine/Source/Programs/HLSLCC`  - the HLSL cross compiler `HLSLCC.exe`: the .vsf parser, Vulkan namespace injection, the DXC backend, the engine's binding rules, SPIR-V reflection and the `.vsfo` container writer. Nothing links it into the runtime.
 - `Engine/Source/Shared`            - `VsfoFormat.h`, the one definition of the shader-container format that both HLSLCC (writer) and VspCore (reader) compile.
@@ -1051,6 +1165,10 @@ Launch.exe --silent --frames=640 --fixed-delta-time=16.6667 --no-cursor-lock ^
 - `Engine/Source/Runtime/VspCore/Core/Text` - the native text service (`Font`, `TextSystem`): FreeType rasterization into a coverage atlas, laid out into glyph quads.
 - `Engine/Source/Runtime/VspCore/Core/String/I18N` - the localisation service: locales, JSON catalogs, fallback and lookup.
 - `Engine/Source/Runtime/VspCore/Core/Diagnostics/ErrorHandling.h` - the engine's error rule and `ProcessFailedExit`.
+- `Engine/Source/Runtime/VspCore/Core/EngineFrame.h` - the single owner of one engine frame: `BeginFrame`/`EndFrame` for the host, and the two subsystem calls they stand for (the frame's command list and the frame's input window).
+- `Engine/Source/Runtime/VspCore/Core/EngineServices.h` - the registry that owns every engine service: creation on first use, the thread that created each one, and an explicit, ordered `ShutdownAll`.
+- `Engine/Source/Runtime/Launch/Windows/LaunchPlatformWindows.cpp` - the Windows half of the host's environment (`DOTNET_ROOT`), next to `wWinMain`.
 - `Engine/Intermediate/Binaries/<config>/Locales` - the game's translation catalogs, staged next to the executable.
+- `Engine/Intermediate/Binaries/<config>/Ui` - the game's UI layouts, staged next to the executable; `UiSystem.LoadLayoutFromJson` resolves a layout name against this folder.
 - `Engine/Intermediate/Binaries/<config>/Shaders` - the compiled shaders the engine loads: the `.vsfo` container per shader, next to the loose SPIR-V modules and the JSON documents the tools read.
 - `Engine/Intermediate/Binaries/<config>/Builtin` - the HLSL builtin library staged next to HLSLCC.exe.

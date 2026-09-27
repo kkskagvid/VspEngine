@@ -1,6 +1,6 @@
 #include "RuntimePCH.h"
 
-#include "Core/Input/InputManager.h"
+#include "Core/EngineServices.h"
 #include "Core/Logging/Log.h"
 #include "Graphics/GraphicsSystem.h"
 #include "Graphics/RenderCore.h"
@@ -11,8 +11,10 @@ namespace Vsp
 
 	GraphicsSystem& GraphicsSystem::Get()
 	{
-		static GraphicsSystem s_Instance;
-		return s_Instance;
+		// The registry owns this service: it is created here on first use,
+		// reports a lookup from any thread but the one that created it, and is
+		// destroyed explicitly by EngineServices::ShutdownAll().
+		return EngineServices::GetService<GraphicsSystem>("GraphicsSystem");
 	}
 
 	// -------------------------------------------------------------------------
@@ -349,28 +351,12 @@ namespace Vsp
 		pEntry->State.uPushConstantByteCount = uPushConstantByteCount;
 	}
 
-	// -------------------------------------------------------------------------
-	// Frame
-	// -------------------------------------------------------------------------
-
-	void GraphicsSystem::BeginFrame()
-	{
-		// A frame begins with an empty command list that the render pipeline will
-		// fill, and with the input state the frame is going to read: the edges of
-		// the frame that just ended were cleared when it ended, and this is where
-		// the new frame's accumulation starts.
-		RenderCore::Get().BeginFrame();
-		InputManager::Get().BeginFrame();
-	}
-
-	void GraphicsSystem::EndFrame()
-	{
-		// The frame is over: the pressed/released edges, the mouse movement and the
-		// wheel a script could still have read are cleared now - once, for every
-		// frame. Whoever renders a frame does not have to remember to do it, and a
-		// game cannot forget it and see the same key fire twice.
-		InputManager::Get().EndFrame();
-	}
+	// The FRAME of the engine - when it starts, what accumulates in it, when it
+	// ends - is owned by EngineFrame (Core/EngineFrame.h): the graphics system
+	// owns the recorded command list of that frame (RenderCore) and the backend
+	// that plays it back, and nothing else. Opening or closing a frame from here
+	// would give the frame two owners, which is exactly what the two
+	// BeginFrame/EndFrame pairs of the input and the command list used to blur.
 
 	RhiPipelineHandle GraphicsSystem::BuildPipelineFromBuilder(RhiPipelineBuilderHandle uBuilder)
 	{

@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "name": "Assembly/LitCube",
+  "source": "C:\\Users\\Yulin\\Desktop\\Project\\VspEngine\\Assembly\\Shaders\\LitCube.vsf",
+  "baseName": "LitCube",
+  "renderQueue": 2000,
+  "properties": [
+    { "name": "_BaseColor", "displayName": "Base Color", "type": "Color", "defaults": [1, 1, 1, 1] },
+    { "name": "_Ambient", "displayName": "Ambient", "type": "Float", "defaults": [0.35, 0, 0, 0] }
+  ],
+  "keywordGroups": [
+    { "name": "_UNLIT", "kind": "variant", "strippable": true, "local": false, "states": ["_", "_UNLIT"] }
+  ],
+  "passCount": 1,
+  "variantCount": 1,
+  "variants": [
+    {
+      "index": 0,
+      "key": "",
+      "keywordStateIndices": [0],
+      "passes": [
+        {
+          "index": 0,
+          "name": "Pass0",
+          "stages": [
+            {
+              "stage": "vertex",
+              "entryPoint": "LitCubeVertex",
+              "file": "LitCube.vert.spv",
+              "byteCount": 2532,
+              "inputCount": 3,
+              "outputCount": 4,
+              "resourceCount": 1,
+              "pushConstantByteSize": 112,
+              "resources": [
+                { "name": "CameraUniformBuffer", "kind": "uniformBuffer", "set": 0, "binding": 0, "descriptorCount": 1 }
+              ]
+            },
+            {
+              "stage": "fragment",
+              "entryPoint": "LitCubeFragment",
+              "file": "LitCube.frag.spv",
+              "byteCount": 2068,
+              "inputCount": 2,
+              "outputCount": 1,
+              "resourceCount": 0,
+              "pushConstantByteSize": 112,
+              "resources": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

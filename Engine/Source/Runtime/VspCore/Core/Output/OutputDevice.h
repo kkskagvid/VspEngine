@@ -98,6 +98,10 @@ namespace Vsp
 		OutputDevice* FindDeviceByName(const VspString& sDeviceName) const;
 
 	private:
+		// The registry in Core/EngineServices.h owns this service's storage and
+		// lifetime, so it has to be able to construct it.
+		friend class EngineServices;
+
 		OutputDeviceRegistry();
 
 		DebugOutputDevice m_DebugDevice;

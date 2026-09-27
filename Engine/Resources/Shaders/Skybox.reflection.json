@@ -1,0 +1,86 @@
+{
+  "source": "C:\\Users\\Yulin\\Desktop\\Project\\VspEngine\\Engine\\Shaders\\Runtime\\Skybox.vsf",
+  "shader": "Vsp/Skybox",
+  "stageCount": 2,
+  "stages": [
+  {
+    "stage": "vertex",
+    "entryPoint": "SkyboxVertex",
+    "inputs": [
+      {
+        "name": "",
+        "location": 0,
+        "builtIn": true,
+        "class": "scalar",
+        "components": 1,
+        "byteSize": 4
+      }
+    ],
+    "outputs": [
+      {
+        "name": "out.var.TEXCOORD0",
+        "location": 0,
+        "builtIn": false,
+        "class": "vector",
+        "components": 2,
+        "byteSize": 8
+      },
+      {
+        "name": "",
+        "location": 0,
+        "builtIn": true,
+        "class": "vector",
+        "components": 4,
+        "byteSize": 16
+      }
+    ],
+    "resources": [],
+    "pushConstants": [],
+    "inputCount": 1,
+    "outputCount": 2,
+    "resourceCount": 0,
+    "pushConstantMemberCount": 0,
+    "pushConstantByteSize": 0
+  },
+  {
+    "stage": "fragment",
+    "entryPoint": "SkyboxFragment",
+    "inputs": [
+      {
+        "name": "in.var.TEXCOORD0",
+        "location": 0,
+        "builtIn": false,
+        "class": "vector",
+        "components": 2,
+        "byteSize": 8
+      }
+    ],
+    "outputs": [
+      {
+        "name": "out.var.SV_Target0",
+        "location": 0,
+        "builtIn": false,
+        "class": "vector",
+        "components": 4,
+        "byteSize": 16
+      }
+    ],
+    "resources": [
+      { "name": "CameraUniformBuffer", "kind": "uniformBuffer", "set": 0, "binding": 0, "descriptorCount": 1, "elementByteSize": 288 }
+    ],
+    "pushConstants": [
+      { "name": "ZenithColor", "offset": 0, "byteSize": 16 },
+      { "name": "HorizonColor", "offset": 16, "byteSize": 16 },
+      { "name": "GroundColor", "offset": 32, "byteSize": 16 },
+      { "name": "SunDirection", "offset": 48, "byteSize": 16 },
+      { "name": "SunColor", "offset": 64, "byteSize": 16 },
+      { "name": "SkyShape", "offset": 80, "byteSize": 16 }
+    ],
+    "inputCount": 1,
+    "outputCount": 1,
+    "resourceCount": 1,
+    "pushConstantMemberCount": 6,
+    "pushConstantByteSize": 96
+  }
+  ]
+}

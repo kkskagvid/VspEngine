@@ -21,7 +21,7 @@ namespace Vsp
 		uint32 uWindowHeight = 720;
 
 		// Engine's managed runtime assembly (VspEngine.dll): hosts the
-		// interop bridge, the script base types and the managed render flow.
+		// interop bridge, the script base types and the managed frame driver.
 		VspString sEngineAssemblyPath;
 
 		// Game Assembly (Assembly.dll): the assembly holding the user scripts.

@@ -224,6 +224,18 @@ namespace Hlslcc
 				outResult.bVulkanNamespaceHeaderIncluded = true;
 				outResult.VulkanNamespaceIncludeDirectory = sIncludeDirectory;
 			}
+			else
+			{
+				// Without "<root>/hlsl/vk/spirv.h" the Vulkan namespace cannot be
+				// injected at all. Saying so HERE is what keeps the failure from
+				// surfacing later as a confusing "vk is not defined" from DXC - and
+				// it names the file that was looked for.
+				std::fprintf(stderr,
+					"warning: '%s' could not be found under any include root (VSP_DXC_ROOT, DXC_ROOT, "
+					"VULKAN_SDK, the executable's own Thirdparty/dxc); the Vulkan namespace is NOT "
+					"injected into this source\n",
+					k_sVulkanNamespaceHeader);
+			}
 		}
 
 		if (options.bInjectEngineAttributeShorthands)

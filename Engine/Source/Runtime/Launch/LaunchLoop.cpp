@@ -5,10 +5,13 @@
 #include "Common/PlatformMisc.h"
 #include "Core/Core.h"
 #include "Core/Engine.h"
+#include "Core/EngineServices.h"
 #include "Core/Logging/Log.h"
 #include "Core/Logging/LogBackend.h"
 #include "Core/Output/OutputDevice.h"
 #include "Core/String/VspString.h"
+
+#include "LaunchPlatform.h"
 
 namespace Vsp
 {
@@ -130,6 +133,37 @@ namespace Vsp
 		return pArgument + wcslen(pOptionName);
 	}
 
+	// True for every option this host knows, in both its "--name=value" and its
+	// "--name value" spelling, so an unknown one can be reported rather than
+	// ignored. The check is on the NAME, so "--width=800" and "--width" are both
+	// known here even though only one of them carries its value.
+	static bool IsKnownCommandLineOption(const VspString& sArgument)
+	{
+		static constexpr const char* k_pKnownOptionNames[] =
+		{
+			"--frames", "--width", "--height", "--fixed-delta-time", "--title",
+			"--engine-assembly", "--assembly", "--runtime-config", "--dotnet-root",
+			"--key", "--mouse", "--capture", "--silent", "--no-cursor-lock",
+		};
+
+		// The name ends where an "=" starts: "--title=Foo" is the option "--title".
+		VspString sOptionName = sArgument;
+		const size_t nEqualsIndex = sArgument.Find("=");
+		if (nEqualsIndex != VspString::InvalidIndex)
+		{
+			sOptionName = sArgument.GetSubString(0, nEqualsIndex);
+		}
+
+		for (const char* pKnownName : k_pKnownOptionNames)
+		{
+			if (sOptionName.Equals(pKnownName))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
 	static void ApplyCommandLineOption(LaunchOptions& options, const wchar_t* pArgument)
 	{
 		if (pArgument == nullptr)
@@ -176,11 +210,6 @@ namespace Vsp
 		{
 			options.sDotNetRootPath = VspString(pValue);
 		}
-		else if (sArgument.Equals("--frames") || sArgument.Equals("--width") || sArgument.Equals("--height"))
-		{
-			// Space-separated numeric options are consumed together with the
-			// next argument in RunLaunchLoop; marker values are ignored here.
-		}
 		else if (sArgument.Equals("--silent"))
 		{
 			options.bShowErrorDialog = false;
@@ -190,6 +219,17 @@ namespace Vsp
 			// An automated run happens on someone's desktop: it must not hide their
 			// pointer or move it to the middle of a window.
 			options.bAllowCursorLock = false;
+		}
+		else if (IsKnownCommandLineOption(sArgument))
+		{
+			// A known option whose value is consumed by the caller: nothing to do
+			// here, and not a mistake.
+		}
+		else
+		{
+			// A typo used to be accepted in silence, which made "--widht=800" look
+			// like it worked. Every argument the host does not know is reported.
+			LOG_WARNING(kLogTag, "The command line option '{}' is not known and is ignored.", sArgument.GetData());
 		}
 	}
 
@@ -298,6 +338,13 @@ namespace Vsp
 						options.uKeyScriptCursorMilliseconds += step.uHoldMilliseconds + 300;
 						options.KeySimulationSteps.Add(step);
 					}
+					else
+					{
+						// A malformed schedule used to be dropped in silence, which
+						// made a typo look like a key that never fired.
+						LOG_ERROR(kLogTag, "--key expects VKCODE:HOLD_MS, got '{}'; the step is ignored.",
+							VspString(pValue).GetData());
+					}
 				}
 				else if (sArgument.Equals("--mouse"))
 				{
@@ -311,6 +358,11 @@ namespace Vsp
 						}
 						options.MouseSimulationSteps.Add(mouseStep);
 					}
+					else
+					{
+						LOG_ERROR(kLogTag, "--mouse expects X:Y[:START_MS], got '{}'; the step is ignored.",
+							VspString(pValue).GetData());
+					}
 				}
 				else if (sArgument.Equals("--capture"))
 				{
@@ -318,6 +370,11 @@ namespace Vsp
 					if (ParseCaptureValue(pValue, capture))
 					{
 						options.FrameCaptures.Add(capture);
+					}
+					else
+					{
+						LOG_ERROR(kLogTag, "--capture expects FRAME:PATH, got '{}'; the capture is ignored.",
+							VspString(pValue).GetData());
 					}
 				}
 				++nIndex;
@@ -337,12 +394,33 @@ namespace Vsp
 		Log::AddBackend(&s_DebugLogBackend);
 		Log::AddBackend(&s_ConsoleLogBackend);
 
-		time_t nowtime;
-		time(&nowtime);
-		tm* p = localtime(&nowtime);
-		VspString timeS = VspFormat::Format("{:04}-{:02}-{:02}-{:02}-{:02}-{:02}", p->tm_year + 1900, p->tm_mon + 1, p->tm_mday, p->tm_hour, p->tm_min, p->tm_sec);
+		// The clock is READ and CHECKED: localtime returns null when the value it
+		// is given cannot be represented, and dereferencing that was undefined
+		// behaviour on a machine whose clock is out of range. A run that cannot
+		// name its own start time still runs - the log file is simply named after
+		// the fallback below.
+		VspString sTimeStampText("unknown-time");
+		const time_t nNowTime = time(nullptr);
+		if (nNowTime != static_cast<time_t>(-1))
+		{
+			const tm* pLocalTime = localtime(&nNowTime);
+			if (pLocalTime != nullptr)
+			{
+				sTimeStampText = VspFormat::Format("{:04}-{:02}-{:02}-{:02}-{:02}-{:02}",
+					pLocalTime->tm_year + 1900, pLocalTime->tm_mon + 1, pLocalTime->tm_mday,
+					pLocalTime->tm_hour, pLocalTime->tm_min, pLocalTime->tm_sec);
+			}
+			else
+			{
+				LOG_WARNING(kLogTag, "The system clock could not be converted to local time; the log file uses a fallback name.");
+			}
+		}
+		else
+		{
+			LOG_WARNING(kLogTag, "The system clock could not be read; the log file uses a fallback name.");
+		}
 
-		const VspString sLogFilePath = sExecutableDirectory + "\\" + timeS + ".log";
+		const VspString sLogFilePath = sExecutableDirectory + "\\" + sTimeStampText + ".log";
 		if (s_FileOutputDevice.Open(sLogFilePath))
 		{
 			Log::AddBackend(&s_FileLogBackend);
@@ -381,22 +459,47 @@ namespace Vsp
 		config.MouseSimulationSteps = options.MouseSimulationSteps;
 		config.FrameCaptures = options.FrameCaptures;
 
-		GameEngine engine;
-		VspString sErrorText;
-		if (!engine.Initialize(config, sErrorText))
-		{
-			LOG_ERROR(kLogTag, "{}", sErrorText.GetData());
+		// The HOST owns the process environment, not the engine: this is the
+		// platform entry (Launch/Windows/LaunchPlatformWindows.cpp) putting
+		// DOTNET_ROOT in place before the CoreCLR bootstrap runs, so the engine
+		// core never has to know how a platform resolves its runtime.
+		ApplyLaunchPlatformEnvironment(options.sDotNetRootPath);
 
-			// Fatal: the Log module collects the recent log history and
-			// prompts the crash dialog with it (details of the failure,
-			// e.g. an unsupported Vulkan device, are part of that history).
-			LOG_FATAL(kLogTag, "Engine initialization failed: {}", sErrorText.GetData());
-			return 1;   // Reached only when crash prompts are disabled.
+		{
+			// The engine lives in its own scope: its destructor is what shuts the
+			// script host, the renderer and the scene down, and it has to have run
+			// before the services those point at are destroyed below.
+			GameEngine engine;
+			VspString sErrorText;
+			if (!engine.Initialize(config, sErrorText))
+			{
+				LOG_ERROR(kLogTag, "{}", sErrorText.GetData());
+
+				// Fatal: the Log module collects the recent log history and
+				// prompts the crash dialog with it (details of the failure,
+				// e.g. an unsupported Vulkan device, are part of that history).
+				LOG_FATAL(kLogTag, "Engine initialization failed: {}", sErrorText.GetData());
+				return 1;   // Reached only when crash prompts are disabled.
+			}
+
+			engine.Run();
+			LOG_INFO(kLogTag, "Launch exiting cleanly after {} frames.", engine.GetFrameCount());
 		}
 
-		engine.Run();
-		LOG_INFO(kLogTag, "Launch exiting cleanly after {} frames.", engine.GetFrameCount());
 		Log::Flush();
+
+		// Teardown order is explicit, and it is the host that decides it:
+		//   1. the engine's services are destroyed, in reverse creation order, by
+		//      the registry - instead of at process exit in an order no one can
+		//      see. This is the last thing the engine logs, and it is logged while
+		//      the output devices still exist;
+		//   2. the log backends stop being registered, because they point at
+		//      output devices one of those services owned (Log does not own them).
+		EngineServices::ShutdownAll();
+		Log::RemoveBackend(&s_FileLogBackend);
+		Log::RemoveBackend(&s_ConsoleLogBackend);
+		Log::RemoveBackend(&s_DebugLogBackend);
+
 		return 0;
 	}
 }

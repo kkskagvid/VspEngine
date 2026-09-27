@@ -4,6 +4,7 @@
 
 #include "Classes/Scene.h"
 #include "Common/PlatformMisc.h"
+#include "Core/EngineServices.h"
 #include "Core/Logging/Log.h"
 #include "Scripting/ScriptEngine.h"
 
@@ -38,8 +39,10 @@ namespace Vsp
 
 	ScriptEngine& ScriptEngine::Get()
 	{
-		static ScriptEngine s_Instance;
-		return s_Instance;
+		// The registry owns this service: it is created here on first use,
+		// reports a lookup from any thread but the one that created it, and is
+		// destroyed explicitly by EngineServices::ShutdownAll().
+		return EngineServices::GetService<ScriptEngine>("ScriptEngine");
 	}
 
 	bool ScriptEngine::Initialize(
@@ -237,7 +240,7 @@ namespace Vsp
 		// Slot order mirrors NativeBridge.GetBridgeFunctionTable:
 		//   0 CreateInstance, 1 GetScriptTypeCount, 2 GetScriptTypeName,
 		//   3 CallOnInit, 4 CallOnStart, 5 CallOnUpdate, 6 DestroyInstance,
-		//   7 CallRenderFlow, 8 LoadGameAssembly, 9 ReleaseRenderPipeline.
+		//   7 CallRenderFrame, 8 LoadGameAssembly, 9 ReleaseRenderPipeline.
 		void* pFunctionTable[k_nManagedBridgeFunctionCount] = {};
 		m_BridgeFunctions.GetBridgeFunctionTable(pFunctionTable);
 
@@ -248,7 +251,7 @@ namespace Vsp
 		m_BridgeFunctions.CallOnStart = reinterpret_cast<ManagedBridgeDetail::CallOnStartFn>(pFunctionTable[4]);
 		m_BridgeFunctions.CallOnUpdate = reinterpret_cast<ManagedBridgeDetail::CallOnUpdateFn>(pFunctionTable[5]);
 		m_BridgeFunctions.DestroyInstance = reinterpret_cast<ManagedBridgeDetail::DestroyInstanceFn>(pFunctionTable[6]);
-		m_BridgeFunctions.CallRenderFlow = reinterpret_cast<ManagedBridgeDetail::CallRenderFlowFn>(pFunctionTable[7]);
+		m_BridgeFunctions.CallRenderFrame = reinterpret_cast<ManagedBridgeDetail::CallRenderFrameFn>(pFunctionTable[7]);
 		m_BridgeFunctions.LoadGameAssembly = reinterpret_cast<ManagedBridgeDetail::LoadGameAssemblyFn>(pFunctionTable[8]);
 		m_BridgeFunctions.ReleaseRenderPipeline = reinterpret_cast<ManagedBridgeDetail::ReleaseRenderPipelineFn>(pFunctionTable[9]);
 
@@ -259,7 +262,7 @@ namespace Vsp
 			m_BridgeFunctions.CallOnStart == nullptr ||
 			m_BridgeFunctions.CallOnUpdate == nullptr ||
 			m_BridgeFunctions.DestroyInstance == nullptr ||
-			m_BridgeFunctions.CallRenderFlow == nullptr ||
+			m_BridgeFunctions.CallRenderFrame == nullptr ||
 			m_BridgeFunctions.LoadGameAssembly == nullptr ||
 			m_BridgeFunctions.ReleaseRenderPipeline == nullptr)
 		{
@@ -509,17 +512,18 @@ namespace Vsp
 		}
 	}
 
-	void ScriptEngine::CallRenderFlow()
+	void ScriptEngine::CallRenderFrame()
 	{
-		if (!IsInitialized() || m_BridgeFunctions.CallRenderFlow == nullptr)
+		if (!IsInitialized() || m_BridgeFunctions.CallRenderFrame == nullptr)
 		{
 			return;
 		}
 
-		// The managed render pipeline builds the frame's draw list from the
-		// native scene and records every graphics command through the wrapped
-		// graphics API; the backend plays the recorded list back on RenderFrame.
-		m_BridgeFunctions.CallRenderFlow();
+		// The managed frame driver opens the frame (render pass, clear, sky,
+		// interface), lets the active pipeline record its passes inside it and
+		// records every graphics command through the wrapped graphics API; the
+		// backend plays the recorded list back when it renders the frame.
+		m_BridgeFunctions.CallRenderFrame();
 	}
 
 	void ScriptEngine::ReleaseRenderPipeline()

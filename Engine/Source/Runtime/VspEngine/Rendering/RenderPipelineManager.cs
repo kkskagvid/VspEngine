@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 
+using VspEngine.UI;
+
 namespace VspEngine.Rendering
 {
 	/// <summary>
@@ -111,6 +113,13 @@ namespace VspEngine.Rendering
 				}
 			}
 
+			// The INTERFACE is the engine's, like the sky: it is drawn here - after
+			// the pipeline's passes and inside the frame the engine opened - so a
+			// game shows a UI without recording it, and a game that records nothing
+			// still shows one. Both layout sources go through it: the JSON layout
+			// first, then the canvas the game builds in code (VspEngine.UI.UiSystem).
+			UiSystem.RenderFrame(commandBuffer, renderContext.BackbufferWidth, renderContext.BackbufferHeight);
+
 			// ... and it is closed here, so a pass that forgot to is still inside a
 			// complete frame rather than one the backend refuses.
 			commandBuffer.EndRenderPass();
@@ -127,6 +136,11 @@ namespace VspEngine.Rendering
 			activePipeline?.Dispose();
 			activePipeline = null;
 			SkyboxRenderer.ReleaseResources();
+
+			// The interface is the engine's, so its device resources are released
+			// with the frame that owns them rather than by the pipeline that was
+			// drawing into it.
+			UiSystem.Release();
 			frameDrawItems.Clear();
 		}
 

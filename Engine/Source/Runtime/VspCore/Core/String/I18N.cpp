@@ -9,6 +9,7 @@
 
 #include "Common/PlatformMisc.h"
 #include "Core/Diagnostics/ErrorHandling.h"
+#include "Core/EngineServices.h"
 #include "Core/Json/JsonReader.h"
 #include "Core/String/I18N.h"
 
@@ -45,8 +46,10 @@ namespace Vsp
 
 	I18N& I18N::Get()
 	{
-		static I18N s_Instance;
-		return s_Instance;
+		// The registry owns this service: it is created here on first use,
+		// reports a lookup from any thread but the one that created it, and is
+		// destroyed explicitly by EngineServices::ShutdownAll().
+		return EngineServices::GetService<I18N>("I18N");
 	}
 
 	// -------------------------------------------------------------------------

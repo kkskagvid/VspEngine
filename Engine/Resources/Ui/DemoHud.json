@@ -1,0 +1,63 @@
+{
+    "name": "DemoHudLayout",
+    "canvas": {
+        "defaultTextPixelSize": 18.0
+    },
+    "elements": [
+        {
+            "type": "Image",
+            "name": "HudPanel",
+            "rect": [ 18, 18, 330, 214 ],
+            "color": "PanelColor",
+            "borderColor": "BorderColor",
+            "borderThickness": 1.0,
+            "children": [
+                {
+                    "type": "Image",
+                    "name": "AccentBar",
+                    "rect": [ 0, 0, 330, 4 ],
+                    "color": "AccentColor"
+                },
+                {
+                    "type": "Text",
+                    "name": "Title",
+                    "rect": [ 16, 16, 298, 26 ],
+                    "key": "demo.title",
+                    "pixelSize": 22.0,
+                    "color": "TextColor",
+                    "verticalAlignment": "Middle"
+                },
+                {
+                    "type": "Image",
+                    "name": "Divider",
+                    "rect": [ 16, 74, 298, 1 ],
+                    "color": "DividerColor"
+                },
+                {
+                    "type": "Button",
+                    "name": "SpinButton",
+                    "rect": [ 16, 84, 294, 34 ],
+                    "key": "demo.button.spin",
+                    "labelColor": "TextColor",
+                    "labelPixelSize": 16.0
+                },
+                {
+                    "type": "Button",
+                    "name": "ResetButton",
+                    "rect": [ 16, 126, 294, 34 ],
+                    "key": "demo.button.reset",
+                    "labelColor": "TextColor",
+                    "labelPixelSize": 16.0
+                },
+                {
+                    "type": "Button",
+                    "name": "CameraButton",
+                    "rect": [ 16, 168, 294, 34 ],
+                    "key": "demo.button.camera",
+                    "labelColor": "TextColor",
+                    "labelPixelSize": 16.0
+                }
+            ]
+        }
+    ]
+}

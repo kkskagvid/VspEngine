@@ -23,6 +23,14 @@ namespace Vsp
 	// ProcessFailedExit (Core/Diagnostics/ErrorHandling.h), which writes the
 	// fatal entry, flushes, shows the crash prompt when prompts are enabled and
 	// then exits with a non-zero code. The engine never throws.
+	//
+	// Thread safety: the facade's state (the backends, the history, the crash
+	// prompt flag) lives behind one recursive lock, so a line written from another
+	// thread is serialized rather than raced - which matters because a backend
+	// writes to a file, and two threads interleaving bytes into one log file is
+	// corruption. That is the whole of the module's thread contract: the engine
+	// still logs from the thread that runs the frame, and a line's ORDER is the
+	// order the lock was taken in.
 	// -------------------------------------------------------------------------
 	class RUNTIME_API Log
 	{

@@ -1,6 +1,7 @@
 #include "RuntimePCH.h"
 
 #include <cstdlib>
+#include <mutex>
 
 #include "Common/PlatformMisc.h"
 #include "Core/Logging/Log.h"
@@ -15,32 +16,6 @@ namespace Vsp
 			"DEBUG", "INFO", "WARNING", "ERROR", "FATAL"
 		};
 
-		// Bounded history of the most recent log entries (the information
-		// collected for the fatal crash report).
-		static ArrayList<VspString> s_History;
-		static uint32 s_nHistoryLimit = Log::k_nDefaultHistoryLimit;
-
-		// Registered backends. The list is replaceable at runtime; entries are
-		// borrowed pointers that must outlive the log module.
-		static ArrayList<LogBackend*> s_Backends;
-
-		static bool s_bCrashPromptEnabled = true;
-
-		// The Log module always starts with the debugger as its default
-		// backend so log entries are never silently dropped; hosts can add or
-		// replace backends afterwards.
-		static DebugOutputDevice s_DefaultDebugDevice;
-		static OutputDeviceLogBackend s_DefaultDebugBackend(&s_DefaultDebugDevice);
-
-		struct DefaultBackendInstaller
-		{
-			DefaultBackendInstaller()
-			{
-				Log::AddBackend(&s_DefaultDebugBackend);
-			}
-		};
-		static DefaultBackendInstaller s_DefaultBackendInstaller;
-
 		const char* GetLevelPrefix(LogLevel eLevel)
 		{
 			const uint32 nLevelIndex = static_cast<uint32>(eLevel);
@@ -49,6 +24,51 @@ namespace Vsp
 				return "???";
 			}
 			return k_sLevelPrefixes[nLevelIndex];
+		}
+
+		// ---------------------------------------------------------------------
+		// The log's state, behind one accessor
+		// ---------------------------------------------------------------------
+		// A log entry can be written from ANOTHER translation unit's static
+		// initializer - before a namespace-scope static in this file would have
+		// been constructed - so the state is built on first use rather than at
+		// load time. The same accessor is what makes the state reachable by every
+		// function below, which is what the single lock protects.
+		//
+		// The lock is RECURSIVE because the facade's functions call each other (a
+		// Fatal entry collects the history, which collects the crash report), and
+		// a plain mutex would deadlock on the second frame.
+		// ---------------------------------------------------------------------
+		struct LogState
+		{
+			std::recursive_mutex Mutex;
+
+			// Bounded history of the most recent log entries (the information the
+			// fatal crash report collects).
+			ArrayList<VspString> History;
+			uint32 nHistoryLimit = Log::k_nDefaultHistoryLimit;
+
+			// Registered backends. The list is replaceable at runtime; entries are
+			// borrowed pointers that must outlive the log module.
+			ArrayList<LogBackend*> Backends;
+
+			bool bCrashPromptEnabled = true;
+
+			// The debugger is the backend the log always has: the state owns it, and
+			// Write installs it when nothing else is registered, so an entry written
+			// before a host wired its own backends is not dropped.
+			DebugOutputDevice DefaultDebugDevice;
+			OutputDeviceLogBackend DefaultDebugBackend{ &DefaultDebugDevice };
+
+			// True once a host asked for no backends at all (ClearBackends): the
+			// default is then not re-installed behind its back.
+			bool bDefaultBackendDisabled = false;
+		};
+
+		LogState& GetLogState()
+		{
+			static LogState s_State;
+			return s_State;
 		}
 	}
 
@@ -65,24 +85,30 @@ namespace Vsp
 			return;
 		}
 
-		for (size_t nIndex = 0; nIndex < s_Backends.GetSize(); ++nIndex)
+		LogState& state = GetLogState();
+		std::lock_guard<std::recursive_mutex> lock(state.Mutex);
+
+		for (size_t nIndex = 0; nIndex < state.Backends.GetSize(); ++nIndex)
 		{
-			if (s_Backends[nIndex] == pBackend)
+			if (state.Backends[nIndex] == pBackend)
 			{
 				return;   // Already registered.
 			}
 		}
 
-		s_Backends.Add(pBackend);
+		state.Backends.Add(pBackend);
 	}
 
 	void Log::RemoveBackend(LogBackend* pBackend)
 	{
-		for (size_t nIndex = 0; nIndex < s_Backends.GetSize(); ++nIndex)
+		LogState& state = GetLogState();
+		std::lock_guard<std::recursive_mutex> lock(state.Mutex);
+
+		for (size_t nIndex = 0; nIndex < state.Backends.GetSize(); ++nIndex)
 		{
-			if (s_Backends[nIndex] == pBackend)
+			if (state.Backends[nIndex] == pBackend)
 			{
-				s_Backends.RemoveAt(nIndex);
+				state.Backends.RemoveAt(nIndex);
 				return;
 			}
 		}
@@ -90,14 +116,21 @@ namespace Vsp
 
 	void Log::ClearBackends()
 	{
-		s_Backends.Clear();
+		LogState& state = GetLogState();
+		std::lock_guard<std::recursive_mutex> lock(state.Mutex);
+
+		state.Backends.Clear();
+		state.bDefaultBackendDisabled = true;
 	}
 
 	void Log::Flush()
 	{
-		for (size_t nIndex = 0; nIndex < s_Backends.GetSize(); ++nIndex)
+		LogState& state = GetLogState();
+		std::lock_guard<std::recursive_mutex> lock(state.Mutex);
+
+		for (size_t nIndex = 0; nIndex < state.Backends.GetSize(); ++nIndex)
 		{
-			s_Backends[nIndex]->Flush();
+			state.Backends[nIndex]->Flush();
 		}
 	}
 
@@ -107,47 +140,59 @@ namespace Vsp
 
 	void Log::SetHistoryLimit(uint32 uMaxEntryCount)
 	{
-		s_nHistoryLimit = uMaxEntryCount;
+		LogState& state = GetLogState();
+		std::lock_guard<std::recursive_mutex> lock(state.Mutex);
+
+		state.nHistoryLimit = uMaxEntryCount;
 
 		// Trim the existing history down to the new limit.
-		while (s_History.GetSize() > s_nHistoryLimit)
+		while (state.History.GetSize() > state.nHistoryLimit)
 		{
-			s_History.RemoveAt(0);
+			state.History.RemoveAt(0);
 		}
 	}
 
 	uint32 Log::GetHistoryLimit()
 	{
-		return s_nHistoryLimit;
+		LogState& state = GetLogState();
+		std::lock_guard<std::recursive_mutex> lock(state.Mutex);
+		return state.nHistoryLimit;
 	}
 
 	uint32 Log::GetHistoryCount()
 	{
-		return static_cast<uint32>(s_History.GetSize());
+		LogState& state = GetLogState();
+		std::lock_guard<std::recursive_mutex> lock(state.Mutex);
+		return static_cast<uint32>(state.History.GetSize());
 	}
 
 	void Log::CollectHistory(VspString& outHistoryText)
 	{
+		LogState& state = GetLogState();
+		std::lock_guard<std::recursive_mutex> lock(state.Mutex);
+
 		outHistoryText = nullptr;
-		for (size_t nIndex = 0; nIndex < s_History.GetSize(); ++nIndex)
+		for (size_t nIndex = 0; nIndex < state.History.GetSize(); ++nIndex)
 		{
-			outHistoryText.Append(s_History[nIndex]);
+			outHistoryText.Append(state.History[nIndex]);
 			outHistoryText.Append("\n");
 		}
 	}
 
+	// Called with the lock already held (from Write).
 	void Log::AppendToHistory(const VspString& sLine)
 	{
-		if (s_nHistoryLimit == 0)
+		LogState& state = GetLogState();
+		if (state.nHistoryLimit == 0)
 		{
 			return;
 		}
 
-		while (s_History.GetSize() >= s_nHistoryLimit)
+		while (state.History.GetSize() >= state.nHistoryLimit)
 		{
-			s_History.RemoveAt(0);
+			state.History.RemoveAt(0);
 		}
-		s_History.Add(sLine);
+		state.History.Add(sLine);
 	}
 
 	// =========================================================================
@@ -156,12 +201,16 @@ namespace Vsp
 
 	void Log::SetCrashPromptEnabled(bool bEnabled)
 	{
-		s_bCrashPromptEnabled = bEnabled;
+		LogState& state = GetLogState();
+		std::lock_guard<std::recursive_mutex> lock(state.Mutex);
+		state.bCrashPromptEnabled = bEnabled;
 	}
 
 	bool Log::IsCrashPromptEnabled()
 	{
-		return s_bCrashPromptEnabled;
+		LogState& state = GetLogState();
+		std::lock_guard<std::recursive_mutex> lock(state.Mutex);
+		return state.bCrashPromptEnabled;
 	}
 
 	void Log::CollectCrashReport(const VspString& sReason, VspString& outReportText)
@@ -185,6 +234,17 @@ namespace Vsp
 
 	void Log::Write(LogLevel eLevel, const char* pTag, const VspString& sMessage)
 	{
+		LogState& state = GetLogState();
+		std::lock_guard<std::recursive_mutex> lock(state.Mutex);
+
+		// Never drop an entry for want of a backend: a host that has not wired one
+		// yet - or an entry written from another translation unit's static
+		// initializer - still reaches the debugger.
+		if (state.Backends.GetSize() == 0 && !state.bDefaultBackendDisabled)
+		{
+			state.Backends.Add(&state.DefaultDebugBackend);
+		}
+
 		const uint64_t uElapsedMilliseconds = PlatformMisc::GetElapsedMilliseconds();
 		const char* pLevelPrefix = GetLevelPrefix(eLevel);
 
@@ -202,9 +262,9 @@ namespace Vsp
 		AppendToHistory(sLine);
 
 		// Forward to every registered backend.
-		for (size_t nIndex = 0; nIndex < s_Backends.GetSize(); ++nIndex)
+		for (size_t nIndex = 0; nIndex < state.Backends.GetSize(); ++nIndex)
 		{
-			s_Backends[nIndex]->WriteLogEntry(eLevel, pTag, sLine);
+			state.Backends[nIndex]->WriteLogEntry(eLevel, pTag, sLine);
 		}
 
 		if (eLevel != LogLevel::Fatal)
@@ -217,11 +277,11 @@ namespace Vsp
 		// (Core/Diagnostics/ErrorHandling.h), not the log's.
 		VspString sReportText;
 		CollectCrashReport(sMessage, sReportText);
-		Flush();
 
-		for (size_t nIndex = 0; nIndex < s_Backends.GetSize(); ++nIndex)
+		for (size_t nIndex = 0; nIndex < state.Backends.GetSize(); ++nIndex)
 		{
-			s_Backends[nIndex]->WriteLogEntry(eLevel, pTag, sReportText);
+			state.Backends[nIndex]->Flush();
+			state.Backends[nIndex]->WriteLogEntry(eLevel, pTag, sReportText);
 		}
 	}
 }

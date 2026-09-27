@@ -30,14 +30,24 @@ namespace Vsp
 
         void Dispatch(Event& e)
         {
-            EventType type = e.GetEventType();
-            std::lock_guard<std::mutex> lock(m_Mutex);
+            // The listeners of the event's type are COPIED under the lock and
+            // invoked OUTSIDE it. A callback is arbitrary code - it may dispatch
+            // another event or add a listener - and calling it while the mutex is
+            // held would deadlock on the engine's non-recursive mutex (and let a
+            // callback mutate the list it is being iterated).
+            std::vector<std::function<void(Event&)>> listenersOfType;
+            {
+                EventType type = e.GetEventType();
+                std::lock_guard<std::mutex> lock(m_Mutex);
 
-            auto it = m_Listeners.find(type);
-            if (it == m_Listeners.end())
-                return;
+                auto it = m_Listeners.find(type);
+                if (it == m_Listeners.end())
+                    return;
 
-            for (auto& callback : it->second)
+                listenersOfType = it->second;
+            }
+
+            for (auto& callback : listenersOfType)
             {
                 callback(e);
                 if (e.IsHandled())

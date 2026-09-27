@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using VspEngine.Rendering;
@@ -62,6 +63,10 @@ namespace VspEngine.UI
 		private Texture2D? solidTexture;
 		private UiVertex[] vertexScratch = new UiVertex[MaxVertexCount];
 		private uint[] indexScratch = new uint[MaxIndexCount];
+
+		// The one-canvas entry point is built on the multi-canvas one, so both go
+		// through exactly the same upload and recording path.
+		private static readonly List<Canvas> singleCanvasScratch = new List<Canvas>(1);
 
 		private bool initializationFailed;
 
@@ -130,7 +135,33 @@ namespace VspEngine.UI
 		/// </summary>
 		public bool Render(CommandBuffer commandBuffer, Canvas canvas, int width, int height)
 		{
-			if (commandBuffer == null || canvas == null)
+			if (canvas == null)
+			{
+				return false;
+			}
+
+			singleCanvasScratch.Clear();
+			singleCanvasScratch.Add(canvas);
+			return Render(commandBuffer, singleCanvasScratch, width, height);
+		}
+
+		/// <summary>
+		/// Builds the frame's interface out of EVERY canvas of the frame - the
+		/// JSON-described layout first, the code-built (immediate) one after it -
+		/// and records its draws into the command buffer.
+		///
+		/// All canvases go into ONE draw list and ONE buffer upload, because the
+		/// vertex and index buffers are per frame rather than per canvas: a second
+		/// upload would overwrite the geometry the first canvas just recorded.
+		/// Recording order is therefore drawing order, and the immediate interface
+		/// is on top of the layout one.
+		///
+		/// The caller has already opened the render pass; the UI is drawn after the
+		/// 3D scene, depth-tested against it and never writing depth.
+		/// </summary>
+		public bool Render(CommandBuffer commandBuffer, IReadOnlyList<Canvas> canvases, int width, int height)
+		{
+			if (commandBuffer == null || canvases == null || canvases.Count == 0)
 			{
 				return false;
 			}
@@ -143,21 +174,40 @@ namespace VspEngine.UI
 				return false;
 			}
 
-			canvas.SolidTextureBindlessSlot = solidTexture!.BindlessSlot;
+			// 1. Upload whatever is already rasterized, and tell every canvas where
+			//    the solid-fill texture lives.
+			for (int canvasIndex = 0; canvasIndex < canvases.Count; ++canvasIndex)
+			{
+				Canvas? canvas = canvases[canvasIndex];
+				if (canvas == null)
+				{
+					continue;
+				}
 
-			// 1. Upload whatever is already rasterized.
-			canvas.SyncFontAtlases();
+				canvas.SolidTextureBindlessSlot = solidTexture!.BindlessSlot;
+				canvas.SyncFontAtlases();
+			}
 
 			// 2. Build the list; this is what rasterizes glyphs on first use.
 			UiDrawList drawList = new UiDrawList();
-			canvas.BuildDrawList(drawList, width, height);
+			BuildDrawList(drawList, canvases, width, height);
 
 			// 3. A glyph rasterized in step 2 changed an atlas; upload it and
 			//    build the list again so the new glyphs are drawn this frame.
-			if (canvas.SyncFontAtlases())
+			bool didAnyAtlasChange = false;
+			for (int canvasIndex = 0; canvasIndex < canvases.Count; ++canvasIndex)
+			{
+				Canvas? canvas = canvases[canvasIndex];
+				if (canvas != null && canvas.SyncFontAtlases())
+				{
+					didAnyAtlasChange = true;
+				}
+			}
+
+			if (didAnyAtlasChange)
 			{
 				drawList.Clear();
-				canvas.BuildDrawList(drawList, width, height);
+				BuildDrawList(drawList, canvases, width, height);
 			}
 
 			if (drawList.Commands.Count == 0)
@@ -166,6 +216,19 @@ namespace VspEngine.UI
 			}
 
 			return RecordDraws(commandBuffer, drawList, width, height);
+		}
+
+		/// <summary>Appends every canvas of the frame to one draw list, in order.</summary>
+		private static void BuildDrawList(UiDrawList drawList, IReadOnlyList<Canvas> canvases, int width, int height)
+		{
+			for (int canvasIndex = 0; canvasIndex < canvases.Count; ++canvasIndex)
+			{
+				Canvas? canvas = canvases[canvasIndex];
+				if (canvas != null && canvas.IsVisible)
+				{
+					canvas.BuildDrawList(drawList, width, height);
+				}
+			}
 		}
 
 		public void Dispose()

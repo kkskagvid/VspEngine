@@ -170,6 +170,10 @@ namespace Vsp
 		uint32 GetLiveMaterialCount() const;
 
 	private:
+		// The registry in Core/EngineServices.h owns this service's storage and
+		// lifetime, so it has to be able to construct it.
+		friend class EngineServices;
+
 		Scene() = default;
 
 		// Returns the slot of a free (recycled or brand new) entry, binding the

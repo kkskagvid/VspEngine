@@ -1,24 +1,36 @@
 namespace VspEngine.Rendering
 {
 	/// <summary>
-	/// The native host's entry point into managed rendering: it runs the active
-	/// programmable render pipeline (see <see cref="RenderPipelineManager"/>)
-	/// once per frame.
+	/// The engine's frame driver, as the native host reaches it: the one managed
+	/// entry point that renders A FRAME (see <see cref="RenderPipelineManager"/>).
 	///
-	/// The flow itself - which passes run, which state they set, what they draw -
-	/// belongs entirely to the pipeline; the native layer only provides the
-	/// wrapped graphics API the pipeline records through.
+	/// The host calls <see cref="RenderFrame"/> once per engine frame, after the
+	/// scripts and the physics step, and <see cref="ReleasePipelineResources"/>
+	/// once at shutdown, while the graphics backend is still alive.
+	///
+	/// Which passes run, which state they set and what they draw belongs entirely
+	/// to the ACTIVE PIPELINE, and the FRAME those passes are recorded inside -
+	/// its render pass, its clear, its sky and its interface - belongs to the
+	/// engine. The native layer also provides the wrapped graphics API the
+	/// pipeline records through.
 	/// </summary>
-	public static class RenderFlow
+	public static class RenderFrameDriver
 	{
-		/// <summary>Runs one frame of the active render pipeline.</summary>
-		public static void Execute()
+		/// <summary>
+		/// Renders one frame of the active render pipeline: the engine's frame
+		/// (render pass, clear, sky, interface) with the active pipeline's passes
+		/// inside it.
+		/// </summary>
+		public static void RenderFrame()
 		{
 			RenderPipelineManager.Render();
 		}
 
-		/// <summary>Lets the active pipeline release its graphics resources.</summary>
-		public static void Release()
+		/// <summary>
+		/// Lets the active pipeline release the graphics resources it created, and
+		/// releases the ones the engine's own frame owns.
+		/// </summary>
+		public static void ReleasePipelineResources()
 		{
 			RenderPipelineManager.ReleaseActivePipeline();
 		}

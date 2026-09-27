@@ -6,11 +6,12 @@
 #include "Core/Diagnostics/ErrorHandling.h"
 #include "Core/Application.h"
 #include "Core/Engine.h"
+#include "Core/EngineFrame.h"
 #include "Core/Input/InputManager.h"
 #include "Core/Logging/Log.h"
 #include "Graphics/GraphicsSystem.h"
 #include "Graphics/RenderCore.h"
-#include "Graphics/Vulkan/VulkanRenderer2D.h"
+#include "Graphics/Vulkan/VulkanRenderer.h"
 #include "Physics/PhysicsWorld.h"
 #include "Scripting/ScriptEngine.h"
 #include "Scripting/ScriptTypes.h"
@@ -27,7 +28,7 @@ namespace Vsp
 	{
 		GameEngineConfig Config;
 		std::unique_ptr<Application> pApplication;
-		std::unique_ptr<VulkanRenderer2D> pRenderer;
+		std::unique_ptr<VulkanRenderer> pRenderer;
 
 		bool bInitialized = false;
 		bool bExitRequested = false;
@@ -93,7 +94,7 @@ namespace Vsp
 		//
 		// The order inside a frame is what makes this a simulation rather than a
 		// replay: the scripts run FIRST, so a velocity or a force they set
-		// belongs to this frame's step, and the render flow runs LAST, so the
+		// belongs to this frame's step, and the frame driver runs LAST, so the
 		// frame draws where the bodies ended up. A game can take the step over
 		// (Physics.AutoSimulation = false) and call Physics.Step itself.
 		void UpdatePhysics()
@@ -106,13 +107,14 @@ namespace Vsp
 			PhysicsWorld::Get().Step(Time::Get().GetDeltaTime());
 		}
 
-		// Runs the managed render pipeline: it builds the frame's draw list
-		// from the native scene and records every graphics command through the
-		// wrapped graphics API; the Vulkan backend plays the recorded command
-		// list back on RenderFrame.
-		void RunRenderFlow()
+		// Renders the frame through the managed frame driver: the engine opens
+		// the frame (its render pass, its clear, its sky, its interface), the
+		// active render pipeline records its own passes inside it, and the
+		// Vulkan backend plays the recorded command list back when the frame is
+		// rendered.
+		void RunRenderFrame()
 		{
-			ScriptEngine::Get().CallRenderFlow();
+			ScriptEngine::Get().CallRenderFrame();
 		}
 	};
 
@@ -195,10 +197,10 @@ namespace Vsp
 			PhysicsWorld::Get().GetSolverIterationCount(),
 			PhysicsWorld::Get().IsAutoSimulationEnabled() ? "on" : "off");
 
-		// The CoreCLR host needs DOTNET_ROOT pointing at the shipped runtime,
-		// so nethost/get_hostfxr_path and hostpolicy resolve from there.
-		PlatformMisc::SetEnvironmentVariableValue("DOTNET_ROOT", config.sDotNetRootPath);
-		PlatformMisc::SetEnvironmentVariableValue("DOTNET_ROOT(x86)", config.sDotNetRootPath);
+		// The process environment the CoreCLR host needs (DOTNET_ROOT) is NOT set
+		// here: it is the HOST's platform entry that owns it
+		// (Launch/Windows/LaunchPlatformWindows.cpp, called by RunLaunchLoop),
+		// so the engine core stays free of platform-specific environment setup.
 
 		// 1. Window + message pump.
 		WindowProperties windowProperties(config.sWindowTitle, config.uWindowWidth, config.uWindowHeight);
@@ -220,7 +222,7 @@ namespace Vsp
 		cursorInput.SetCursorLockAllowed(config.bAllowCursorLock);
 
 		// 2. Vulkan renderer (logs its own errors, including unsupported devices).
-		m_pImpl->pRenderer = std::make_unique<VulkanRenderer2D>();
+		m_pImpl->pRenderer = std::make_unique<VulkanRenderer>();
 		if (!m_pImpl->pRenderer->Initialize(
 			m_pImpl->pApplication->GetWindow()->GetNativeWindowHandle()))
 		{
@@ -297,10 +299,10 @@ namespace Vsp
 				break;
 			}
 
-			// 1. The rendering system opens the frame: its command list starts empty
-			//    and the input state the frame reads begins here. Window messages
-			//    then flow into that state.
-			GraphicsSystem::Get().BeginFrame();
+			// 1. The frame opens: the frame's command list starts empty and the
+			//    window in which this frame accumulates input opens with it. Window
+			//    messages then flow into that state (Core/EngineFrame.h).
+			EngineFrame::Get().BeginFrame();
 			m_pImpl->pApplication->Update();
 
 			if (!m_pImpl->pApplication->IsRunning())
@@ -308,11 +310,11 @@ namespace Vsp
 				break;
 			}
 
-			// 2. Scripts (C#) update, then the managed render flow builds
-			//    the frame's render commands.
+			// 2. Scripts (C#) update and the physics world steps, then the
+			//    engine's frame driver renders the frame.
 			m_pImpl->UpdateScripts();
 			m_pImpl->UpdatePhysics();
-			m_pImpl->RunRenderFlow();
+			m_pImpl->RunRenderFrame();
 
 			// 2b. Synthetic key simulation (acceptance tests): post real window
 			// messages into the engine's own queue, so the whole input pipeline
@@ -424,10 +426,10 @@ namespace Vsp
 					static_cast<uint32>(m_pImpl->nWindowHeight));
 			}
 
-			// 5. Frame bookkeeping: the rendering system closes the frame, which is
-			//    what clears the input edges and the mouse movement the frame
-			//    accumulated.
-			GraphicsSystem::Get().EndFrame();
+			// 5. Frame bookkeeping: the frame closes, which is what clears the
+			//    input edges and the mouse movement this frame accumulated - once,
+			//    for every frame, so no game can forget it.
+			EngineFrame::Get().EndFrame();
 			++m_pImpl->uFrameCount;
 		}
 

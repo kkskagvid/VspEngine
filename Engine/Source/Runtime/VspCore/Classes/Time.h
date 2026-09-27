@@ -93,6 +93,10 @@ namespace Vsp
 		void SetMaximumDeltaSeconds(float fMaximumDeltaSeconds);
 
 	private:
+		// The registry in Core/EngineServices.h owns this service's storage and
+		// lifetime, so it has to be able to construct it.
+		friend class EngineServices;
+
 		Time() = default;
 
 		// How far one frame moves the smoothed frame rate towards the frame's

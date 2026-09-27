@@ -106,7 +106,9 @@ namespace Assembly.Rendering
 		private ThirdPersonCameraRig? cameraRig;
 
 		// -------- Interface --------
-		private UiRenderer? uiRenderer;
+		// The demo owns its HUD and the live canvas in it; the RENDERER of the
+		// interface - its shader, its pipeline, its buffers - and the frame it is
+		// drawn in belong to the engine (VspEngine.UI.UiSystem).
 		private DemoHud? hud;
 
 		// -------- Frame assembly --------
@@ -271,10 +273,12 @@ namespace Assembly.Rendering
 			whiteTexture?.Dispose();
 			whiteTexture = null;
 
-			uiRenderer?.Dispose();
-			uiRenderer = null;
 			hud?.Dispose();
 			hud = null;
+
+			// The engine draws the canvas this HUD published; the canvas is the
+			// demo's, so all the demo has to do is stop offering it.
+			UiSystem.ImmediateCanvas = null;
 
 			ThirdPersonCameraRig.Detach();
 			cameraRig = null;
@@ -467,20 +471,27 @@ namespace Assembly.Rendering
 
 		private bool CreateInterface()
 		{
-			uiRenderer = new UiRenderer();
-			if (!uiRenderer.EnsureReady())
-			{
-				// A missing interface is not fatal to the frame: the cube still
-				// renders, and the reason is already in the log.
-				Debug.LogError("LitCubeRenderPipeline: the interface could not be created; the demo runs without a HUD.");
-				uiRenderer = null;
-				return true;
-			}
-
 			hud = new DemoHud();
 			hud.SpinToggleRequested += OnSpinToggleRequested;
 			hud.ResetRequested += OnResetRequested;
 			hud.CameraResetRequested += OnCameraResetRequested;
+
+			// The ENGINE draws the interface of every frame (it is a property of the
+			// frame, like the sky), so all the demo publishes is the canvas its own
+			// live widgets live in. Nothing here creates a renderer, a pipeline or a
+			// buffer: the engine's UiSystem owns them.
+			UiSystem.ImmediateCanvas = hud.LiveCanvas;
+
+			// The panel, its buttons and its title are not built in code: they are
+			// the JSON layout Assembly/Ui/DemoHud.json, which the engine reads and
+			// lays out. This HUD only binds its live values - and its button
+			// reactions - onto the elements that layout names.
+			if (!hud.LoadLayout())
+			{
+				// Not fatal to the frame: the live readout is still drawn, the
+				// layout is not, and the reason is already in the log.
+				Debug.LogError("LitCubeRenderPipeline: the demo's UI layout could not be loaded.");
+			}
 			return true;
 		}
 
@@ -495,7 +506,10 @@ namespace Assembly.Rendering
 				return;
 			}
 
-			hud.Update(UiInputState.Capture(), backbufferWidth, backbufferHeight);
+			// Where the live widgets sit in THIS frame's size. The engine updates
+			// the canvases itself - with the pointer state of the frame - right
+			// before it draws them.
+			hud.UpdateFrame(backbufferWidth, backbufferHeight);
 
 			// The status line is fed from the scene, not from the script: the
 			// cube's world position is what the frame actually drew.
@@ -544,14 +558,10 @@ namespace Assembly.Rendering
 		{
 			frameGraph.Reset();
 
-			// The font atlas the interface samples is a REAL texture with a real
-			// bindless slot, so the graph tracks it like any other resource: the
-			// Interface pass below reads it, which is what keeps that pass from
-			// being culled.
-			int atlasSlot = hud?.Canvas.GetFont(hud.Canvas.DefaultTextPixelSize)?.AtlasBindlessSlot ?? -1;
-			RenderGraphTextureHandle fontAtlas = frameGraph.CreateTexture("UiFontAtlas", 1024, 1024, atlasSlot);
-			RenderGraphTextureHandle solidTexture = frameGraph.CreateTexture(
-				"UiSolidTexture", 1, 1, uiRenderer?.SolidTextureBindlessSlot ?? -1);
+			// The interface is NOT a pass of this graph: the engine draws it into
+			// every frame it opens, on top of whatever the graph recorded (see
+			// VspEngine.UI.UiSystem), which is why a game's graph describes the
+			// scene and nothing else.
 
 			frameGraph.AddPass("Ground")
 				.SetKind(RenderGraphPassKind.Raster)
@@ -563,14 +573,6 @@ namespace Assembly.Rendering
 				.SetKind(RenderGraphPassKind.Raster)
 				.WriteBackBuffer()
 				.SetExecute(DrawCubePass)
-				.Done();
-
-			frameGraph.AddPass("Interface")
-				.SetKind(RenderGraphPassKind.Raster)
-				.WriteBackBuffer()
-				.ReadTexture(fontAtlas)
-				.ReadTexture(solidTexture)
-				.SetExecute(DrawInterfacePass)
 				.Done();
 
 			// A pass that exists but is switched off: the graph culls it, and
@@ -633,20 +635,6 @@ namespace Assembly.Rendering
 				commandBuffer.PushConstants(PushConstantStages, in pushConstants);
 				commandBuffer.DrawIndexed((uint)cubeMesh.Indices.Length);
 			}
-		}
-
-		private void DrawInterfacePass(RenderGraphContext graphContext)
-		{
-			if (uiRenderer == null || hud == null)
-			{
-				return;
-			}
-
-			uiRenderer.Render(
-				graphContext.CommandBuffer,
-				hud.Canvas,
-				graphContext.BackbufferWidth,
-				graphContext.BackbufferHeight);
 		}
 
 		/// <summary>
